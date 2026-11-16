@@ -100212,7 +100212,7 @@ export const BUILT_IN_CUSTOM_SETTINGS_PRESETS: CustomSettingsPreset[] = [
   {
     id: 'builtin_default',
     name: 'Default / Balanced',
-    description: 'Puts every game setting back to its factory default. Your look, sound and accessibility choices are kept unless you tick the box below.', // V10.1 (SECTION 20BG): says what it does
+    description: 'Puts every game setting back to its factory default. Your look, sound, accessibility and interface-level choices are kept unless you tick the box at the top.', // V10.1 (SECTION 20BG): says what it does
     category: 'builtin',
     settings: { ...DEFAULT_GAME_SETTINGS }
   },
@@ -100465,7 +100465,7 @@ export const SettingsPresetManagerModal: React.FC<SettingsPresetManagerModalProp
         <div className="p-4 flex-1 overflow-y-auto space-y-4">
           <label className="flex items-start gap-2 text-xs text-slate-300" data-testid="v101-preset-include-profile">
             <input type="checkbox" checked={includeProfile} onChange={e => setIncludeProfile(e.target.checked)} className="mt-0.5" />
-            <span>Also change my look, sound and accessibility settings. {V101_PRESET_PROFILE_NOTE}</span>
+            <span>Also change my look, sound, accessibility and layout settings. {V101_PRESET_PROFILE_NOTE}</span>
           </label>{/* V10.1 (SECTION 20BG): the opt-in; off by default */}
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-400 uppercase">Select Preset</span>
@@ -212928,23 +212928,30 @@ export function v101SettingsWritePipeline(prev: GameSettingsState, rawNext: Game
 }
 
 // ---- S4: the preset manager ------------------------------------------------------------------------------------------------------
-const V101_PRESET_PROFILE_KEYS: ReadonlySet<string> = new Set<string>([...V95_PROFILE_SCOPED_SETTING_KEYS, ...V99_DEVICE_KEPT_SAVE_SCOPED_KEYS]);
+// The player's own: the profile-scoped list, the device-kept switch and the Smart Settings profile (interface level). A preset leaves them unless asked; the tutorial/onboarding state keys (SETTINGS_STATE_KEYS) it never touches.
+const V101_PRESET_PROFILE_KEYS: ReadonlySet<string> = new Set<string>([...V95_PROFILE_SCOPED_SETTING_KEYS, ...V99_DEVICE_KEPT_SAVE_SCOPED_KEYS, 'smartSettingsProfile']);
 /** True for a look, sound, accessibility, layout or V9.9 helper setting: the player's own, not part of a match. A preset leaves these alone unless asked. */
 export function v101IsProfileSettingKey(key: string): boolean { return V101_PRESET_PROFILE_KEYS.has(key); }
-export const V101_PRESET_PROFILE_NOTE = 'Off: a preset leaves them as they are.';
+export const V101_PRESET_PROFILE_NOTE = 'Off: a preset leaves them and your interface level as they are. Your tutorial progress is never touched.';
 /** The settings that differ from the factory defaults: all a saved preset stores (a whole copy was about 38 KB each). Internal "_" keys are not kept. */
 export function v101PresetDeltaFromDefaults(settings: Partial<GameSettingsState>): Partial<GameSettingsState> {
   const out: Record<string, unknown> = {};
   const defaults = DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>;
   Object.entries(settings as Record<string, unknown>).forEach(([key, value]) => {
-    if (key.startsWith('_') || value === undefined) return;
+    if (key.startsWith('_') || value === undefined || SETTINGS_STATE_KEYS.includes(key)) return; // tutorial progress and the like is state, not a setting a preset should carry
     if (!settingsValuesEqual(value, defaults[key])) out[key] = value;
   });
   return out as Partial<GameSettingsState>;
 }
+/** What "the defaults" means when a preset is applied: every setting except the ones that are the player's own state (tutorial progress, interface level), which a preset never resets. */
+function v101PresetDefaultsToApply(): Partial<GameSettingsState> {
+  const out: Record<string, unknown> = { ...(DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>) };
+  [...SETTINGS_STATE_KEYS, 'smartSettingsProfile'].forEach(key => { delete out[key]; });
+  return out as Partial<GameSettingsState>;
+}
 /** What applying a preset means: a V10.1-saved (sparse) preset is "the defaults plus these", so applying it sets the same whole picture a full copy used to; every other preset is just its own keys. */
 export function v101PresetEffectiveSettings(preset: { settings: Partial<GameSettingsState>; sparse?: boolean }): Partial<GameSettingsState> {
-  return preset.sparse === true ? { ...DEFAULT_GAME_SETTINGS, ...preset.settings } : preset.settings;
+  return preset.sparse === true ? { ...v101PresetDefaultsToApply(), ...preset.settings } : preset.settings;
 }
 export interface V101PresetPlan {
   /** Only the settings that change (and, unless asked, no look, sound or accessibility setting). */
@@ -212957,7 +212964,12 @@ export interface V101PresetPlan {
   matchKeys: string[];
   message: string;
 }
-function v101SettingLabel(key: string): string { const meta = SETTINGS_HUB_FIELD_META[key]; return meta && meta.label ? meta.label : key; }
+function v101SettingLabel(key: string): string {
+  const meta = SETTINGS_HUB_FIELD_META[key];
+  if (meta && meta.label) return meta.label;
+  const words = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase(); // no hub label: "winConditionCoachEnabled" reads "Win condition coach enabled"
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 /** The difference between a preset and the settings now, and the words to confirm it with. */
 export function v101PresetApplyPlan(current: GameSettingsState, presetSettings: Partial<GameSettingsState>, opts: { includeProfile: boolean; liveMatch: boolean; rulesLocked?: boolean }): V101PresetPlan {
   const now = current as unknown as Record<string, unknown>;
@@ -212965,7 +212977,7 @@ export function v101PresetApplyPlan(current: GameSettingsState, presetSettings: 
   const changedKeys: string[] = [];
   const skippedProfileKeys: string[] = [];
   Object.entries(presetSettings as Record<string, unknown>).forEach(([key, value]) => {
-    if (key.startsWith('_') || value === undefined || settingsValuesEqual(now[key], value)) return;
+    if (key.startsWith('_') || value === undefined || SETTINGS_STATE_KEYS.includes(key) || settingsValuesEqual(now[key], value)) return; // tutorial progress is state: a preset never touches it
     if (v101IsProfileSettingKey(key) && !opts.includeProfile) { skippedProfileKeys.push(key); return; }
     patch[key] = value;
     changedKeys.push(key);
@@ -213241,7 +213253,7 @@ export function runV101SettingsSelfTests(): V9SelfTestResult[] {
     const old = { settings: { totalDays: 14 } as Partial<GameSettingsState> };
     const keys = Object.keys(delta).sort();
     const ok = json(keys) === json(['soundVolume', 'totalDays', 'winCondition']) && small * 50 < whole && eff.totalDays === 40 && eff.soundVolume === 0.1 && eff.winCondition === 'regions' && eff.actionLimitsEnabled === DEFAULT_GAME_SETTINGS.actionLimitsEnabled
-      && Object.keys(eff).length === Object.keys(DEFAULT_GAME_SETTINGS).length && v101PresetEffectiveSettings(old) === old.settings && json(v101PresetDeltaFromDefaults({})) === '{}' && json(v101PresetDeltaFromDefaults({ _x: 1, totalDays: undefined } as unknown as Partial<GameSettingsState>)) === '{}';
+      && !('guidedLearning' in eff) && !('smartSettingsProfile' in eff) && v101PresetEffectiveSettings(old) === old.settings && json(v101PresetDeltaFromDefaults({})) === '{}' && json(v101PresetDeltaFromDefaults({ _x: 1, totalDays: undefined } as unknown as Partial<GameSettingsState>)) === '{}';
     return ok || json({ keys, small, whole });
   });
   check('v101st_17_preset_apply_plan_strips_profile_and_flags_match_rules', 'The preset diff: counted against your settings now, look/sound/accessibility settings left out by default and put back by the opt-in, match settings flagged for the stronger warning in a running match, unchanged values not counted', () => {
@@ -213253,12 +213265,16 @@ export function runV101SettingsSelfTests(): V9SelfTestResult[] {
     const liveOld = v101PresetApplyPlan(cur, preset, { includeProfile: false, liveMatch: true, rulesLocked: false });
     const profileOnly = v101PresetApplyPlan(cur, { soundEnabled: !cur.soundEnabled }, { includeProfile: false, liveMatch: false });
     const defaultPreset = v101PresetApplyPlan(fresh({ totalDays: 50, soundVolume: 0.2 }), BUILT_IN_CUSTOM_SETTINGS_PRESETS[0].settings, { includeProfile: false, liveMatch: false });
-    const ok = json(plain.changedKeys.sort()) === json(['totalDays', 'winCondition']) && plain.changedCount === 2 && json(plain.skippedProfileKeys.sort()) === json(['soundEnabled', 'visualMode']) && !('soundEnabled' in plain.patch) && plain.message.includes('This changes 2 settings') && plain.message.includes('2 look, sound or accessibility settings are left')
+    const withState = { ...fresh({ smartSettingsProfile: { ...fresh().smartSettingsProfile, interfaceLevel: 'expert' } }), guidedLearning: { lessons: { travel: 2 } } } as unknown as GameSettingsState;
+    const stateOpt = v101PresetApplyPlan(withState, BUILT_IN_CUSTOM_SETTINGS_PRESETS[0].settings, { includeProfile: true, liveMatch: true });
+    const stateDefault = v101PresetApplyPlan(withState, BUILT_IN_CUSTOM_SETTINGS_PRESETS[0].settings, { includeProfile: false, liveMatch: true });
+    const stateOk = !stateOpt.changedKeys.includes('guidedLearning') && stateOpt.changedKeys.includes('smartSettingsProfile') && !stateDefault.changedKeys.includes('smartSettingsProfile') && stateDefault.skippedProfileKeys.includes('smartSettingsProfile') && stateDefault.matchKeys.length === 0 && !stateDefault.message.includes('You are in a match');
+    const ok = stateOk && json(plain.changedKeys.sort()) === json(['totalDays', 'winCondition']) && plain.changedCount === 2 && json(plain.skippedProfileKeys.sort()) === json(['soundEnabled', 'visualMode']) && !('soundEnabled' in plain.patch) && plain.message.includes('This changes 2 settings') && plain.message.includes('2 look, sound or accessibility settings are left')
       && withProfile.changedCount === 4 && json(withProfile.matchKeys.sort()) === json(['totalDays', 'winCondition']) && 'soundEnabled' in withProfile.patch
       && live.message.includes('You are in a match: 2 of these change how it plays') && live.message.includes('wait for your next match') && liveOld.message.includes('You are in a match') && !liveOld.message.includes('wait for your next match') && !plain.message.includes('You are in a match')
       && profileOnly.changedCount === 0 && profileOnly.message.includes('Nothing to change') && json(profileOnly.patch) === '{}'
       && defaultPreset.changedKeys.includes('totalDays') && !defaultPreset.changedKeys.includes('soundVolume') && defaultPreset.skippedProfileKeys.includes('soundVolume');
-    return ok || json({ plain, withProfile, live: live.message, profileOnly, defaultPreset: [defaultPreset.changedKeys, defaultPreset.skippedProfileKeys] });
+    return ok || json({ stateOk, stateOpt: stateOpt.changedKeys, stateDefault: stateDefault.message, plain, withProfile, live: live.message, profileOnly, defaultPreset: [defaultPreset.changedKeys, defaultPreset.skippedProfileKeys] });
   });
   check('v101st_18_preset_cards_say_what_they_change', 'Each built-in preset\'s description names what it really sets (a table of the keys each sets), and the card\'s count line is the real number of changes from where you are now', () => {
     const want: Record<string, string[]> = {
@@ -245317,7 +245333,7 @@ function dispatchGameSettingsChange(
           action: () => {
             if (actionLimitReached) {
               showConfirmation(
-                overridesRemaining > 0 ? 'actionOverride' : 'actionLimitNotice',   // V9.9 (SECTION 20AU): was 'endDay'
+                overridesRemaining > 0 ? 'actionOverride' : 'actionLimitNotice',   // V9.9 (SECTION 20AU): was 'endDay' // V10.1 (SECTION 20BG): the limit shown is the real budget key (playerActionsPerDay); the legacy twin could show another number
                 'Action Limit Reached',
                 overridesRemaining > 0
                   ? `You have reached your action limit (${gameSettings.playerActionsPerDay}). Pay ${fmtMoney(overrideCost)} to continue? (${overridesRemaining} override${overridesRemaining === 1 ? '' : 's'} left today)`
@@ -253453,6 +253469,12 @@ function dispatchGameSettingsChange(
                     ))}
                   </div>
                 </div>
+              </SettingsSection>
+              <SettingsSection id="interface.firstRun" tab="interfaceAcc" title="🎓 Guided First Match" chips={['On for new players']} fieldKeys={['guidedFirstRunEnabled']}>{/* V10.1 (SECTION 20BG): this section was in the search index but never drawn, so a search for "tutorial" listed it and Jump scrolled to nothing. It uses the same handler as the Simple view (which keeps the "off is permanent for this browser" rule). */}
+                <label id="settings-field-guidedFirstRunEnabled" data-setting-key="guidedFirstRunEnabled" className="flex items-start gap-3 text-sm">
+                  <input type="checkbox" className="mt-1" checked={gameSettings.guidedFirstRunEnabled !== false} onChange={e => wp8SimpleSettingChange('guidedFirstRunEnabled', e.target.checked)} />
+                  <span><span className="font-semibold">Guided first match</span><span className="block opacity-75">Start new players in the guided tutorial. Turning it off is permanent for this browser.</span></span>
+                </label>
               </SettingsSection>
               <SettingsSection id="interface.uxAssist" tab="interfaceAcc" title="UX Assist Features" onReset={settingsResetHandlers.interfaceSettings.fn} resetLabel={settingsResetHandlers.interfaceSettings.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'interface.uxAssist')!.fieldKeys}>
                 <div className="space-y-3">
