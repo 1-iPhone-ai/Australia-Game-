@@ -14955,16 +14955,16 @@ const AI_STRATEGY_LAB_PRESETS_V63: Record<AiStrategyLabPreset, Partial<Record<Ai
 
 // V10.1 (SECTION 20BJ): `v101Points` (true in a V10.1 match: isV101Match) scores every challenge by challengePointsFor — the 32
 // legacy ones as before, and also the authored, follow-up, generated and territory challenges, which each paid 1 point here. Off = as before.
-const computeActorChallengeScore = (actor: any, v101Points: boolean = false): number => {
+const computeActorChallengeScore = (actor: { challengesCompleted?: unknown } | null | undefined, v101Points: boolean = false): number => {
   if (!actor) return 0;
   const names: string[] = Array.isArray(actor.challengesCompleted)
-    ? actor.challengesCompleted
+    ? (actor.challengesCompleted as string[])
     : [];
   if (v101Points) return names.reduce((sum, name) => sum + challengePointsFor(name), 0);
   return names.reduce((sum, name) => sum + (ALL_CHALLENGE_DIFFICULTIES[name] || 1), 0);
 };
 
-const computeTeamChallengeScore = (teamId: string, teamActorsList?: any[], v101Points: boolean = false): number => {
+const computeTeamChallengeScore = (teamId: string, teamActorsList?: ReadonlyArray<{ challengesCompleted?: unknown }>, v101Points: boolean = false): number => {
   const actors = Array.isArray(teamActorsList) ? teamActorsList : [];
   return actors.reduce((sum, actor) => sum + computeActorChallengeScore(actor, v101Points), 0);
 };
@@ -205139,7 +205139,7 @@ export const V99MatchJournalMenuCardView: React.FC<MatchJournalMenuCardViewProps
         {/* W4A (f1-11): why it is disabled, outside the dimmed button (it was white at 45% on green) */}
         {!view.replay && <div className="text-[11px] opacity-80" data-testid="v99-journal-replay-none">No finished match with a seed yet.</div>}
         <button type="button" disabled={!view.daily} onClick={() => { if (view.daily) onStart(view.daily.start); }} className={`${startButton} bg-sky-700 hover:bg-sky-600`} data-testid="v99-journal-daily"
-          title={view.daily?.pinned ? 'The same rules and seed for everyone who plays that day: the character, length, win goal and rival are fixed, not your own settings. Your own settings come back afterwards.' : 'One match per day, the same for everyone who plays that day. Played with the character selected above and your current settings.'}>
+          title={view.daily?.pinned ? 'The same rules and seed for everyone who plays that day: the character, length, win goal and rival are fixed, not your own settings. Your own settings and character come back afterwards.' : 'One match per day, the same for everyone who plays that day. Played with the character selected above and your current settings.'}>
           📅 Daily seed{view.daily ? ` — ${view.daily.dateKey}` : ''}
           <span className="block text-[11px] font-normal opacity-90" data-testid="v99-journal-daily-status">{view.daily ? `${view.daily.label}${selectedCharacter && !view.daily.pinned ? ` · as ${selectedCharacter}` : ''} · ${view.daily.status}` : 'Not available.'}</span>
         </button>
@@ -209146,7 +209146,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
 
 // ---- 1. Territory-aware region data -------------------------------------------------------------------------------------------
 /**
- * The region record for a code, territories included: the mainland table first (the very same object as before), then the
+ * V10.1 (SECTION 20BJ): The region record for a code, territories included: the mainland table first (the very same object as before), then the
  * territory table (Lord Howe, Antarctica...), then a generic stand-in with no challenges. It never answers Queensland for a
  * region that is not Queensland.
  */
@@ -209156,6 +209156,30 @@ export function v101RegionDataFor(code: unknown, settings?: GameSettingsState | 
   const found = key ? getRegionData(key, settings ?? undefined) : undefined;
   if (found) return found;
   return { name: key || 'Unknown Region', description: '', funFact: '', challenges: [] };
+}
+
+/**
+ * V10.1 (SECTION 20BJ): the region record the PLAY side (the human's challenge list, the challenge text lookup, the quick-action
+ * count) uses. A V10.1 match (isV101Match) gets the territory-aware record; any other match (V10.0, unstamped, classic rules)
+ * gets exactly what it always got: the mainland table, then Queensland, then a generic stand-in. This keeps an older match
+ * playing move for move as before while it stands in Lord Howe or Antarctica.
+ */
+export function v101PlayRegionData(gameState: unknown, code: unknown, settings?: GameSettingsState | null): (typeof REGIONS)[string] {
+  if (isV101Match(gameState)) return v101RegionDataFor(code, settings);
+  const key = typeof code === 'string' ? code : '';
+  const mainland = key && Object.prototype.hasOwnProperty.call(REGIONS, key) ? REGIONS[key] : undefined;
+  return mainland || REGIONS['QLD'] || { name: key || 'Unknown Region', description: '', funFact: '', challenges: [] };
+}
+
+/**
+ * V10.1 (SECTION 20BJ): the challenges an actor can take where it stands, for the automation, Co-Pilot and team-advice paths. A V10.1
+ * match sees a territory's own list (the same list the human sees); an older match keeps `REGIONS[code]?.challenges || []`
+ * (nothing in a territory).
+ */
+export function v101ActorChallengesAt(gameState: unknown, code: unknown, settings?: GameSettingsState | null): LegacyChallengeShape[] {
+  if (isV101Match(gameState)) return v101RegionDataFor(code, settings).challenges || [];
+  const key = typeof code === 'string' ? code : '';
+  return (key && Object.prototype.hasOwnProperty.call(REGIONS, key) ? REGIONS[key]?.challenges : undefined) || [];
 }
 
 // ---- 2. Challenge points ---------------------------------------------------------------------------------------------------------
@@ -209174,7 +209198,7 @@ function v101TerritoryChallengeDifficulty(name: string): number | null {
 }
 
 /**
- * What a won challenge adds to "Most challenge points": the points table (the 32 legacy challenges and the finale), else the
+ * V10.1 (SECTION 20BJ): What a won challenge adds to "Most challenge points": the points table (the 32 legacy challenges and the finale), else the
  * difficulty of the registered definition (authored, follow-up, generated), else a territory challenge's difficulty, else the
  * difficulty the caller holds, else 1. A generated challenge exists only in the lazy registry (it is registered when its board
  * is built), so a name the registry has never seen scores the caller's fallback or 1.
@@ -209193,7 +209217,7 @@ export function challengePointsFor(name: unknown, fallbackDifficulty?: unknown):
 
 // ---- 3. Objectives: the content tag of a challenge --------------------------------------------------------------------------------
 /**
- * The content tag of a challenge the play code holds ("cultural", "culinary", "adventure"), which the legacy shape hides behind
+ * V10.1 (SECTION 20BJ): The content tag of a challenge the play code holds ("cultural", "culinary", "adventure"), which the legacy shape hides behind
  * a legacy type. Read from the shape's own tag, else from the registered definition. Undefined when it has none.
  */
 export function v101ChallengeTagOf(challenge: { tag?: unknown; challengeId?: unknown; name?: unknown } | null | undefined): string | undefined {
@@ -209204,7 +209228,7 @@ export function v101ChallengeTagOf(challenge: { tag?: unknown; challengeId?: unk
 }
 
 // ---- 4. Story decisions ----------------------------------------------------------------------------------------------------------
-/** "Standing: NT +15 · SA +15" for a story choice's standing change; null when it has none. */
+/** V10.1 (SECTION 20BJ): "Standing: NT +15 · SA +15" for a story choice's standing change; null when it has none. */
 export function v101StandingSummary(standingDelta: Record<string, number> | undefined | null): string | null {
   if (!standingDelta || typeof standingDelta !== 'object') return null;
   const parts = Object.entries(standingDelta).filter(([, d]) => typeof d === 'number' && Number.isFinite(d) && d !== 0).map(([region, d]) => `${region} ${d > 0 ? '+' : '−'}${Math.abs(Math.round(d))}`);
@@ -209212,7 +209236,7 @@ export function v101StandingSummary(standingDelta: Record<string, number> | unde
 }
 
 /**
- * What a story choice does to the player in this match. A V10.1 match pays and charges the money the button shows (a delta:
+ * V10.1 (SECTION 20BJ): What a story choice does to the player in this match. A V10.1 match pays and charges the money the button shows (a delta:
  * the player reducer keeps cash at 0 or more) and moves the standing map play reads (standingPerActor, -100..100). A match
  * started before V10.1 gets nothing from here (it played with the player part of the result thrown away).
  */
@@ -209235,11 +209259,11 @@ export function v101StoryChoiceEffects(gameState: unknown, consequences: StoryCh
 export const V101_CHALLENGE_HINT_STORAGE_KEY = 'aussie.v101.challengeHint';
 export type V101ChallengeVarietyKey = 'challengeApproachesEnabled' | 'expandedChallengeContentEnabled' | 'proceduralChallengesEnabled';
 export const V101_CHALLENGE_VARIETY_KEYS: readonly V101ChallengeVarietyKey[] = ['challengeApproachesEnabled', 'expandedChallengeContentEnabled', 'proceduralChallengesEnabled'];
-/** The three existing switches the hint's button turns on. */
+/** V10.1 (SECTION 20BJ): The three existing switches the hint's button turns on. */
 export function v101ChallengeVarietyPatch(): Record<V101ChallengeVarietyKey, true> {
   return { challengeApproachesEnabled: true, expandedChallengeContentEnabled: true, proceduralChallengesEnabled: true };
 }
-/** True when the hint is worth showing: at least one of the three switches is off and the player has not dismissed it. */
+/** V10.1 (SECTION 20BJ): True when the hint is worth showing: at least one of the three switches is off and the player has not dismissed it. */
 export function v101ShouldShowChallengeHint(settings: { readonly [K in V101ChallengeVarietyKey]?: boolean } | null | undefined, dismissed: boolean): boolean {
   return !dismissed && V101_CHALLENGE_VARIETY_KEYS.some(key => settings?.[key] !== true);
 }
@@ -209247,13 +209271,13 @@ export function v101ChallengeHintDismissed(storage: V99StorageLike | null): bool
   const raw = v99ReadJson(storage, V101_CHALLENGE_HINT_STORAGE_KEY);
   return Boolean(raw && typeof raw === 'object' && (raw as { dismissed?: unknown }).dismissed === true);
 }
-/** Remembers the dismissal on this device. False (never throws) when storage is blocked. */
+/** V10.1 (SECTION 20BJ): Remembers the dismissal on this device. False (never throws) when storage is blocked. */
 export function v101DismissChallengeHint(storage: V99StorageLike | null): boolean {
   return v99WriteJson(storage, V101_CHALLENGE_HINT_STORAGE_KEY, { dismissed: true });
 }
 
 export interface V101ChallengeVarietyHintViewProps { onEnable: () => void; onDismiss: () => void; className?: string }
-/** The hint line itself (no hooks: a test can call it). */
+/** V10.1 (SECTION 20BJ): The hint line itself (no hooks: a test can call it). */
 export const V101ChallengeVarietyHintView: React.FC<V101ChallengeVarietyHintViewProps> = ({ onEnable, onDismiss, className }) => (
   <div className={`mt-3 shrink-0 flex flex-wrap items-center justify-between gap-2 text-xs border-t border-current border-opacity-10 pt-2 ${className || ''}`} data-testid="v101-challenge-hint">
     <span>💡 More challenge variety is available.</span>
@@ -209264,7 +209288,7 @@ export const V101ChallengeVarietyHintView: React.FC<V101ChallengeVarietyHintView
   </div>
 );
 
-/** The hint in the Challenges window's footer: shown while any of the three variety switches is off and it has not been dismissed. */
+/** V10.1 (SECTION 20BJ): The hint in the Challenges window's footer: shown while any of the three variety switches is off and it has not been dismissed. */
 export const V101ChallengeVarietyHint: React.FC<{ settings: { readonly [K in V101ChallengeVarietyKey]?: boolean }; onEnable: () => void; className?: string }> = ({ settings, onEnable, className }) => {
   const [dismissed, setDismissed] = useState<boolean>(() => v101ChallengeHintDismissed(v99BrowserStorage()));
   if (!v101ShouldShowChallengeHint(settings, dismissed)) return null;
@@ -209272,43 +209296,43 @@ export const V101ChallengeVarietyHint: React.FC<{ settings: { readonly [K in V10
 };
 
 // ---- 6. The Daily Challenge with fixed rules -----------------------------------------------------------------------------------------
-/** Game lengths a Daily may be pinned to (days; the match plays matchLengthInDays of them). */
+/** V10.1 (SECTION 20BJ): Game lengths a Daily may be pinned to (days; the match plays matchLengthInDays of them). */
 export const V101_DAILY_LENGTHS: readonly number[] = [20, 30, 40];
-/** Win goals a Daily may be pinned to: all four the game has. */
+/** V10.1 (SECTION 20BJ): Win goals a Daily may be pinned to: all four the game has. */
 export const V101_DAILY_GOALS: readonly WinMetric[] = ['money', 'netWorth', 'regions', 'challenges'];
-/** Rivals a Daily may be pinned to (Medium twice: it is the usual one). */
+/** V10.1 (SECTION 20BJ): Rivals a Daily may be pinned to (Medium twice: it is the usual one). */
 export const V101_DAILY_DIFFICULTIES: readonly string[] = ['easy', 'medium', 'medium', 'hard'];
-/** Actions per day a Daily may be pinned to (3 is the game's own). */
+/** V10.1 (SECTION 20BJ): Actions per day a Daily may be pinned to (3 is the game's own). */
 export const V101_DAILY_ACTIONS: readonly number[] = [3, 3, 4, 5];
 
 export interface V101DailyRules {
   dateKey: string;
-  /** dailySeedForDateKey(dateKey): the same seed the plain Daily Seed uses. */
+  /** V10.1 (SECTION 20BJ): dailySeedForDateKey(dateKey): the same seed the plain Daily Seed uses. */
   seed: number;
   character: string;
   totalDays: number;
   winCondition: WinMetric;
   difficulty: string;
   actionsPerDay: number;
-  /** Always V101_RULES_VERSION: the match is stamped 1010 whatever the classic switch says. */
+  /** V10.1 (SECTION 20BJ): Always V101_RULES_VERSION: the match is stamped 1010 whatever the classic switch says. */
   rulesVersion: number;
-  /** AUS-YYYYMMDD-XXXX: a stable hash of the date and the rules above (no RNG). */
+  /** V10.1 (SECTION 20BJ): AUS-YYYYMMDD-XXXX: a stable hash of the date and the rules above (no RNG). */
   code: string;
 }
 
-/** A 32-bit finaliser (murmur3's): the FNV hash alone leaves its low bits barely mixed, and a small modulus reads exactly those. */
+/** V10.1 (SECTION 20BJ): A 32-bit finaliser (murmur3's): the FNV hash alone leaves its low bits barely mixed, and a small modulus reads exactly those. */
 function v101MixHash(h: number): number {
   let x = h >>> 0;
   x ^= x >>> 16; x = Math.imul(x, 0x85ebca6b) >>> 0; x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35) >>> 0; x ^= x >>> 16;
   return x >>> 0;
 }
-/** True for a code of the form AUS-YYYYMMDD-XXXX (X: 0-9 or A-Z). */
+/** V10.1 (SECTION 20BJ): True for a code of the form AUS-YYYYMMDD-XXXX (X: 0-9 or A-Z). */
 export function isV101DailyCode(value: unknown): value is string {
   return typeof value === 'string' && /^AUS-\d{8}-[0-9A-Z]{4}$/.test(value);
 }
 
 /**
- * The fixed rules of the Daily Challenge for a date key: a pure function of the date (never of the player's settings, the
+ * V10.1 (SECTION 20BJ): The fixed rules of the Daily Challenge for a date key: a pure function of the date (never of the player's settings, the
  * clock or an RNG stream). Two players on the same date get the same rules, the same seed and the same code. Null for a string
  * that is not a real 'YYYY-MM-DD' date.
  */
@@ -209326,24 +209350,24 @@ export function dailyRulesForDate(dateKey: unknown): V101DailyRules | null {
   return { dateKey, seed, character, totalDays, winCondition, difficulty, actionsPerDay, rulesVersion: V101_RULES_VERSION, code };
 }
 
-/** "Daily rules: Tourist · 30 days · Most Money · Medium rival" (the card line; the code is added by the caller). */
+/** V10.1 (SECTION 20BJ): "Daily rules: Tourist · 30 days · Most Money · Medium rival" (the card line; the code is added by the caller). */
 export function describeV101DailyRules(rules: Pick<V101DailyRules, 'character' | 'totalDays' | 'winCondition' | 'difficulty'> & { actionsPerDay?: number }): string {
   const goal = WIN_METRIC_LABELS[rules.winCondition] || String(rules.winCondition);
   const actions = typeof rules.actionsPerDay === 'number' && rules.actionsPerDay !== 3 ? ` · ${rules.actionsPerDay} actions a day` : '';
   return `Daily rules: ${rules.character} · ${rules.totalDays} days · ${goal} · ${matchJournalDifficultyLabel(rules.difficulty)} rival${actions}`;
 }
 
-/** The start the menu's Daily button runs on the fixed rules. */
+/** V10.1 (SECTION 20BJ): The start the menu's Daily button runs on the fixed rules. */
 export function v101DailyStartFor(rules: V101DailyRules): MatchJournalStart {
   return { mode: MATCH_JOURNAL_DAILY_MODE, difficulty: rules.difficulty, seed: rules.seed, character: rules.character, dailyRules: rules };
 }
 
-/** What a match remembers about the Daily it was started as (gameState.dailyChallenge): enough to file the result and to show the rules. */
+/** V10.1 (SECTION 20BJ): What a match remembers about the Daily it was started as (gameState.dailyChallenge): enough to file the result and to show the rules. */
 export interface V101DailyChallengeRecord { dateKey: string; code: string; character: string; totalDays: number; winCondition: WinMetric; difficulty: string; actionsPerDay: number }
 export function v101DailyChallengeRecordOf(rules: V101DailyRules): V101DailyChallengeRecord {
   return { dateKey: rules.dateKey, code: rules.code, character: rules.character, totalDays: rules.totalDays, winCondition: rules.winCondition, difficulty: rules.difficulty, actionsPerDay: rules.actionsPerDay };
 }
-/** A well-formed Daily record from anything (a save, a hand-edited file), or null. Out-of-range numbers and unknown names are rejected, not repaired. */
+/** V10.1 (SECTION 20BJ): A well-formed Daily record from anything (a save, a hand-edited file), or null. Out-of-range numbers and unknown names are rejected, not repaired. */
 export function sanitizeV101DailyChallenge(raw: unknown): V101DailyChallengeRecord | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const r = raw as { readonly [key: string]: unknown };
@@ -209355,14 +209379,14 @@ export function sanitizeV101DailyChallenge(raw: unknown): V101DailyChallengeReco
   if (!isMatchJournalDateKey(r.dateKey) || !isV101DailyCode(r.code) || r.code.slice(4, 12) !== r.dateKey.replace(/-/g, '') || !winCondition || !character || totalDays === null || actionsPerDay === null || difficulty === null) return null;
   return { dateKey: r.dateKey, code: r.code, character, totalDays, winCondition, difficulty, actionsPerDay };
 }
-/** The Daily the match in `gameState` was started as, or null (an ordinary match, a pre-V10.1 save). */
+/** V10.1 (SECTION 20BJ): The Daily the match in `gameState` was started as, or null (an ordinary match, a pre-V10.1 save). */
 export function readV101DailyChallenge(gameState: unknown): V101DailyChallengeRecord | null {
   return gameState && typeof gameState === 'object' ? sanitizeV101DailyChallenge((gameState as { dailyChallenge?: unknown }).dailyChallenge) : null;
 }
 
-/** The settings keys the Daily pins (and gives back afterwards). */
+/** V10.1 (SECTION 20BJ): The settings keys the Daily pins (and gives back afterwards). */
 export const V101_DAILY_PINNED_KEYS: readonly string[] = ['totalDays', 'winCondition', 'playerActionsPerDay', 'actionLimitsEnabled', 'classicRulesV100', 'classicRivalV99', 'challengeApproachesEnabled', 'expandedChallengeContentEnabled', 'proceduralChallengesEnabled'];
-/** The settings the Daily pins for its match (the classic switches off, so the match is stamped 1010; the content switches off, so the board is the same for everyone). */
+/** V10.1 (SECTION 20BJ): The settings the Daily pins for its match (the classic switches off, so the match is stamped 1010; the content switches off, so the board is the same for everyone). */
 export function v101DailyPinnedSettings(rules: V101DailyRules): Partial<GameSettingsState> {
   return {
     totalDays: rules.totalDays, winCondition: rules.winCondition, playerActionsPerDay: rules.actionsPerDay, actionLimitsEnabled: true,
@@ -209370,14 +209394,14 @@ export function v101DailyPinnedSettings(rules: V101DailyRules): Partial<GameSett
     challengeApproachesEnabled: false, expandedChallengeContentEnabled: false, proceduralChallengesEnabled: false
   };
 }
-/** The player's own values of the keys a patch pins (what comes back when the Daily is over). */
+/** V10.1 (SECTION 20BJ): The player's own values of the keys a patch pins (what comes back when the Daily is over). */
 export function v101DailyOwnValues(settings: GameSettingsState, patch: Partial<GameSettingsState>): Partial<GameSettingsState> {
   const out: Record<string, unknown> = {};
   (Object.keys(patch) as Array<keyof GameSettingsState>).forEach(key => { out[key] = settings[key]; });
   return out as Partial<GameSettingsState>;
 }
 export const V101_DAILY_RESTORE_STORAGE_KEY = 'aussie.v101.dailyRestore';
-/** The pinned keys' own values remembered on this device, or null. Only keys the Daily pins are ever read back. */
+/** V10.1 (SECTION 20BJ): The pinned keys' own values remembered on this device, or null. Only keys the Daily pins are ever read back. */
 export function readV101DailyRestore(storage: V99StorageLike | null): Partial<GameSettingsState> | null {
   const raw = v99ReadJson(storage, V101_DAILY_RESTORE_STORAGE_KEY);
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
@@ -209402,7 +209426,7 @@ export function runV101ContentSelfTests(): V9SelfTestResult[] {
   const json = (v: unknown) => JSON.stringify(v);
   const V101_STAMP = { rulesVersion: V101_RULES_VERSION };
   const V100_STAMP = { rulesVersion: V100_RULES_VERSION };
-  /** The text of an element tree: function components are called with their props (the card views have no hooks). */
+  /** V10.1 (SECTION 20BJ): The text of an element tree: function components are called with their props (the card views have no hooks). */
   const nodeText = (node: unknown): string => {
     if (node === null || node === undefined || typeof node === 'boolean') return '';
     if (typeof node === 'string' || typeof node === 'number') return String(node);
@@ -209444,6 +209468,16 @@ export function runV101ContentSelfTests(): V9SelfTestResult[] {
     const oldPoints = all.filter(c => scoreOf([c.name], V100_STAMP) !== 1).map(c => c.name);
     return (board.slots.length === 0 && isExternalTerritory('LHI') && isExternalTerritory('AAT') && !isExternalTerritory('QLD') && badType.length === 0 && wrongPoints.length === 0 && oldPoints.length === 0 && all.some(c => c.difficulty >= 4))
       || json({ slots: board.slots.length, badType, wrongPoints: wrongPoints.slice(0, 3), oldPoints: oldPoints.slice(0, 3) });
+  });
+
+  check('v101ct_28_old_matches_keep_the_old_territory_lists', 'A match without the V10.1 stamp (unstamped or V10.0) standing in a territory keeps the old behaviour (Queensland record on the play screen, no challenges for the quick action and automation); a V10.1 match gets the territory list', () => {
+    const lhi = EXTERNAL_TERRITORIES.LHI.challenges.length;
+    const stamps: unknown[] = [undefined, {}, V100_STAMP];
+    const oldPlay = stamps.every(g => v101PlayRegionData(g, 'LHI', settingsOn) === REGIONS.QLD && v101PlayRegionData(g, 'NSW', settingsOn) === REGIONS.NSW);
+    const oldActor = stamps.every(g => v101ActorChallengesAt(g, 'LHI', settingsOn).length === 0 && v101ActorChallengesAt(g, 'QLD', settingsOn) === REGIONS.QLD.challenges);
+    const newPlay = v101PlayRegionData(V101_STAMP, 'LHI', settingsOn).challenges.length === lhi && v101PlayRegionData(V101_STAMP, 'LHI', settingsOn).name === EXTERNAL_TERRITORIES.LHI.name;
+    const newActor = v101ActorChallengesAt(V101_STAMP, 'LHI', settingsOn).length === lhi && v101ActorChallengesAt(V101_STAMP, 'NSW', settingsOn) === REGIONS.NSW.challenges;
+    return (lhi > 0 && oldPlay && oldActor && newPlay && newActor) || json({ lhi, oldPlay, oldActor, newPlay, newActor });
   });
 
   // ---- Points -----------------------------------------------------------------------------------------------------------------------
@@ -222212,7 +222246,7 @@ function dispatchGameSettingsChange(
       }
     });
 
-    const currentChallenges = (REGIONS[actor.currentRegion]?.challenges || []).filter((challenge: any) =>
+    const currentChallenges = v101ActorChallengesAt(gameState, actor.currentRegion, gameSettings) /* V10.1 (SECTION 20BJ): a V10.1 match sees the territory's own list here too */.filter((challenge: any) =>
       !(actor.completedThisSeason || []).includes(challenge.name)
     );
     currentChallenges.forEach((challenge: any) => {
@@ -223451,11 +223485,15 @@ function dispatchGameSettingsChange(
   const [wpMjJournal, setWpMjJournal] = useState<MatchJournalRecord | null>(null);
   const [wpMjScenarioCount, setWpMjScenarioCount] = useState(0);
   const [wpMjFiled, setWpMjFiled] = useState<MatchJournalFiledMark | null>(null);
+  const v101DailyCharacterRef = useRef<number | null>(null); // V10.1 (SECTION 20BJ): the player's own selected character while the fixed-rules Daily runs (put back at the menu)
   const v101DailyRestoreRef = useRef<{ values: Partial<GameSettingsState>; armed: boolean } | null>(null); // V10.1 (SECTION 20BJ): the player's own rules while the fixed-rules Daily runs
   const wpMjFiledRef = useRef<MatchJournalFiledMark | null>(null);
   const wpMjLiveEpochRef = useRef(-1);
   const [wpMjPendingStart, setWpMjPendingStart] = useState<{ mode: GameModeSelection; difficulty: string; seed: number; dailyRules?: V101DailyRules } | null>(null); // V10.1 (SECTION 20BJ): dailyRules = the fixed-rules Daily
   const wpMjOnMenu = gameState.gameMode === 'menu';
+  // V10.1 (SECTION 20BJ): today's fixed-rules Daily, computed once per date key (the clock is read here, in the UI layer, only), not rebuilt on every menu render.
+  const v101DailyDateKey = matchJournalDateKeyOf(new Date());
+  const v101DailyRulesToday = useMemo(() => (gameSettings.dailyFixedRulesEnabled === true ? dailyRulesForDate(v101DailyDateKey) : null), [gameSettings.dailyFixedRulesEnabled, v101DailyDateKey]);
   // The journal is read when the setting is switched on and each time the menu is reached (it shows the card).
   useEffect(() => {
     if (!wpMjEnabled) { setWpMjJournal(null); return; }
@@ -223503,6 +223541,8 @@ function dispatchGameSettingsChange(
   const wpMjStart = useCallback((start: MatchJournalStart | null) => {
     const resolved = resolveMatchJournalStart(start);
     if (!resolved) return;
+    // V10.1 (SECTION 20BJ): a Daily with fixed rules remembers the player's own character once, so the menu can put it back.
+    if (resolved.dailyRules && resolved.characterIndex !== null && v101DailyCharacterRef.current === null) v101DailyCharacterRef.current = uiState.selectedCharacter;
     if (resolved.characterIndex !== null && resolved.characterIndex !== uiState.selectedCharacter) updateUiState({ selectedCharacter: resolved.characterIndex });
     if (gameState.gameMode !== 'menu') { handleRestartGame(); dispatchGameState({ type: 'SET_GAME_MODE', payload: 'menu' }); }
     setWpMjPendingStart({ mode: resolved.mode, difficulty: resolved.difficulty, seed: resolved.seed, ...(resolved.dailyRules ? { dailyRules: resolved.dailyRules } : {}) });
@@ -223537,6 +223577,7 @@ function dispatchGameSettingsChange(
     if (!values) return;
     v101DailyRestoreRef.current = null;
     clearV101DailyRestore(store);
+    if (v101DailyCharacterRef.current !== null) { const own = v101DailyCharacterRef.current; v101DailyCharacterRef.current = null; updateUiState({ selectedCharacter: own }); } // V10.1 (SECTION 20BJ): the player's own character comes back with their rules
     trackedSetGameSettings('direct_player_change', 'Daily Challenge rules (restored)', prev => ({ ...prev, ...values }));
   }, [gameState.gameMode]); // eslint-disable-line react-hooks/exhaustive-deps
   const wpMjClear = useCallback(() => {
@@ -228026,8 +228067,8 @@ function dispatchGameSettingsChange(
     const takeChallenge = useCallback((challengeInput: any, wager: any, approachPlan?: ChallengeApproachPlan | null, v99AbilityOverride?: string | null) => {
       if (v96BlockHumanAction('Challenge')) return;
     const challengeName = typeof challengeInput === 'object' ? challengeInput.name : challengeInput;
-    // V10.1 (SECTION 20BJ): a challenge named by text is looked up in the territory-aware region data (a territory's own list), not the mainland table alone.
-    const challenge = typeof challengeInput === 'object' ? challengeInput : (v101RegionDataFor(player.currentRegion, gameSettings).challenges || []).find((c: any) => c.name === challengeName) || { name: challengeName, difficulty: 1, reward: 1.5 };
+    // V10.1 (SECTION 20BJ): in a V10.1 match a challenge named by text is looked up in the territory-aware region data (a territory's own list); an older match keeps the mainland-table lookup.
+    const challenge = typeof challengeInput === 'object' ? challengeInput : (v101PlayRegionData(gameState, player.currentRegion, gameSettings).challenges || []).find((c: { name: string }) => c.name === challengeName) || { name: challengeName, difficulty: 1, reward: 1.5 };
 
     // V9.6 (SECTION 20AH): an approach brings its own odds (abilities below still apply).
     let successChance = approachPlan ? approachPlan.successChance : calculateSuccessChance(challenge);
@@ -228252,7 +228293,7 @@ function dispatchGameSettingsChange(
     } else {
       confirmChallenge();
     }
-  }, [player, gameSettings, calculateSuccessChance, addNotification, showConfirmation, requestActionOverrideForAction, updatePersonalRecords, activeSpecialAbility, getUnderdogBonus, getWealthState, applyGrandTourChallengeProgress, gameSettings.aiReplayRecordingEnabled, gameState.day, appendReplayCheckpoint, usedFreeChallengeThisTurn]);
+  }, [player, gameSettings, calculateSuccessChance, addNotification, showConfirmation, requestActionOverrideForAction, updatePersonalRecords, activeSpecialAbility, getUnderdogBonus, getWealthState, applyGrandTourChallengeProgress, gameSettings.aiReplayRecordingEnabled, gameState.day, gameState.rulesVersion, appendReplayCheckpoint, usedFreeChallengeThisTurn]);
 
   // Calculate regional demand bonus for selling resources
   const calculateRegionalBonus = useCallback((resource: string, region: string) => {
@@ -233999,7 +234040,7 @@ function dispatchGameSettingsChange(
       actor.character?.specialAbility
     ) {
       const abilityName = actor.character.specialAbility.name;
-      const currentRegionChallenges = (REGIONS[actor.currentRegion]?.challenges || []).filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
+      const currentRegionChallenges = v101ActorChallengesAt(gameState, actor.currentRegion, gameSettings) /* V10.1 (SECTION 20BJ): a V10.1 match sees the territory's own list here too */.filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
       let abilityScore = 0;
       switch (abilityName) {
         case 'Tourist Luck':
@@ -234051,7 +234092,7 @@ function dispatchGameSettingsChange(
       }
     }
 
-    const currentRegionChallenges = (REGIONS[actor.currentRegion]?.challenges || []).filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
+    const currentRegionChallenges = v101ActorChallengesAt(gameState, actor.currentRegion, gameSettings) /* V10.1 (SECTION 20BJ): a V10.1 match sees the territory's own list here too */.filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
     currentRegionChallenges.forEach((challenge: any) => {
       if (hasReservationConflict('challenge', challenge.name)) return;
       // V6.8 Phase D: category-specific challenge expertise applied at ranking time too — fixes
@@ -237674,7 +237715,7 @@ function dispatchGameSettingsChange(
     // Tier 3 — the actor's own highest-success-chance available challenge, only if it clears the
     // configured minimum probability. Category expertise is already folded into
     // calculateActorChallengeSuccessChance by takeChallengeForActor itself (V6.8 Phase D, D4).
-    const availableChallenges = (REGIONS[actor.currentRegion]?.challenges || []).filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
+    const availableChallenges = v101ActorChallengesAt(gameState, actor.currentRegion, gameSettings) /* V10.1 (SECTION 20BJ): a V10.1 match sees the territory's own list here too */.filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
     if (availableChallenges.length > 0 && actor.money >= MINIMUM_WAGER) {
       const ranked = availableChallenges
         .map((challenge: any) => ({
@@ -237793,7 +237834,7 @@ function dispatchGameSettingsChange(
 
     // Tier 6 — a low-cost, safe recovery challenge (same call evaluateGuaranteedRecoveryAction's
     // own Tier 3 makes).
-    const availableChallenges = (REGIONS[actor.currentRegion]?.challenges || []).filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
+    const availableChallenges = v101ActorChallengesAt(gameState, actor.currentRegion, gameSettings) /* V10.1 (SECTION 20BJ): a V10.1 match sees the territory's own list here too */.filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
     if (availableChallenges.length > 0 && actor.money >= MINIMUM_WAGER) {
       const rankedChallenges = availableChallenges
         .map((challenge: any) => ({ challenge, chance: calculateActorChallengeSuccessChance(challenge, actor, getChallengeCategoryExpertiseBonus(actor, challenge.type, gameSettings)) }))
@@ -239408,8 +239449,8 @@ function dispatchGameSettingsChange(
     }
 
     // Available challenges
-    // V10.1 (SECTION 20BJ): territory-aware, so the quick action counts the territory's own challenges (it read the mainland table: 0 in a territory).
-    const currentChallenges = v101RegionDataFor(player.currentRegion, gameSettings).challenges || [];
+    // V10.1 (SECTION 20BJ): in a V10.1 match the quick action counts the territory's own challenges (it read the mainland table: 0 in a territory); an older match keeps the old count.
+    const currentChallenges = (isV101Match(gameState) ? v101RegionDataFor(player.currentRegion, gameSettings).challenges : REGIONS[player.currentRegion]?.challenges) || [];
     const availableChallenges = currentChallenges.filter(
       (c: any) => !(player.completedThisSeason || []).includes(c.name)
     );
@@ -249156,7 +249197,7 @@ function dispatchGameSettingsChange(
                   </div>
                   {([
                     ['expandedChallengeContentEnabled', 'Expanded Challenge Content (V9.6)', '128 more hand-written challenges on a rotating 4-slot board per region (scout the next rotation for 1 AP). Your V9.3 themes and opening choose the active pools.'],
-                    ['proceduralChallengesEnabled', 'Procedural Challenges (V9.6)', 'Deterministic template-generated challenges top up a board once its hand-written ones are used up this season.']
+                    ['proceduralChallengesEnabled', 'Procedural Challenges (V9.6)', 'Deterministic template-generated challenges top up a board once its hand-written ones are used up this season. In a V10.1 match their challenge points can differ after you save and load, until that region\'s board is built again.']
                   ] as Array<['expandedChallengeContentEnabled' | 'proceduralChallengesEnabled', string, string]>).map(([key, label, desc]) => (
                     <div key={key} className="flex items-center justify-between" data-testid={`setting-${key}`}>
                       <div>
@@ -259608,7 +259649,7 @@ function dispatchGameSettingsChange(
 
           {/* V9.9 (SECTION 20AW): the Match Journal card — record, last results, bests and the seed starts (only while the journal is on). */}
           {wpMjEnabled && wpMjJournal && (
-            <V99MatchJournalMenuCard record={wpMjJournal} isDark={isDark} todayKey={matchJournalDateKeyOf(new Date())} winMetric={gameSettings.winCondition} scenarioCompletions={wpMjScenarioCount} dailyRules={gameSettings.dailyFixedRulesEnabled === true ? dailyRulesForDate(matchJournalDateKeyOf(new Date())) : null}
+            <V99MatchJournalMenuCard record={wpMjJournal} isDark={isDark} todayKey={matchJournalDateKeyOf(new Date())} winMetric={gameSettings.winCondition} scenarioCompletions={wpMjScenarioCount} dailyRules={v101DailyRulesToday}
               selectedCharacter={String(CHARACTERS[uiState.selectedCharacter]?.name || '')} onStart={wpMjStart} onClear={wpMjClear} />
           )}
         </div>
@@ -259877,7 +259918,8 @@ function dispatchGameSettingsChange(
     }
     // V10.1 (SECTION 20BJ): a player in an external territory (Lord Howe, Antarctica...) saw Queensland here — header, description and
     // challenge list. The territory-aware lookup finds the territory's own data; the generic fallback replaces the silent QLD one.
-    const currentRegion = v101RegionDataFor(player.currentRegion, gameSettings);
+    // Only a V10.1 match (isV101Match) gets it: an older match keeps the Queensland fallback and the empty rotating board in a territory.
+    const currentRegion = v101PlayRegionData(gameState, player.currentRegion, gameSettings);
     const adjacentRegions = (ADJACENT_REGIONS as Record<string, string[]>)[player.currentRegion] || [];
     const isPlayerTurn = isHumanPlayerTurn(gameState, player);
     const isShopRegion = EQUIPMENT_SHOP_REGIONS.includes(player.currentRegion);
@@ -260052,8 +260094,8 @@ function dispatchGameSettingsChange(
     const wp3Region = String(player.currentRegion || '');
     const wp3Day = Number(gameState.day) || 1;
     const wp3BoardCtx: ChallengeBoardContext = { settings: gameSettings, seed: resolveEffectiveMatchSeed(gameState, Number(gameSettings.worldRngSeed) || 1) /* V9.9 (SECTION 20AS): the match's seed */, seasonNames: player.completedThisSeason || [], completedNames: player.challengesCompleted || [], unlockedIds: sanitizeUnlockedChallengeIds(player.unlockedChallengeIds), themesOverride: wp3LiveThemesRef.current || undefined };
-    // V10.1 (SECTION 20BJ): the rotating board is mainland-only (its pool holds no territory challenge); a territory shows its own list below.
-    const wp3Board = isChallengeBoardActive(gameSettings) && !isExternalTerritory(wp3Region) ? computeChallengeBoard(wp3Region, challengeBoardRotationIndex(wp3Day), wp3BoardCtx) : null;
+    // V10.1 (SECTION 20BJ): in a V10.1 match the rotating board is mainland-only (its pool holds no territory challenge) and a territory shows its own list below; an older match keeps the old (empty) board there.
+    const wp3Board = isChallengeBoardActive(gameSettings) && !(isV101Match(gameState) && isExternalTerritory(wp3Region)) ? computeChallengeBoard(wp3Region, challengeBoardRotationIndex(wp3Day), wp3BoardCtx) : null;
     const wp3Preview = wp3Board && hasScoutedNextRotation(player.scoutedChallengeBoards, wp3Region, wp3Day) ? computeChallengeBoard(wp3Region, wp3Board.rotation + 1, wp3BoardCtx) : null;
     const wp23ChallengeList: LegacyChallengeShape[] = wp3Board
       ? [...[...wp3Board.slots, ...wp3Board.pinned].map(toLegacyChallenge), ...(grandTourChallenges.includes(GRAND_TOUR_FINAL_CHALLENGE) ? [GRAND_TOUR_FINAL_CHALLENGE] : [])]
