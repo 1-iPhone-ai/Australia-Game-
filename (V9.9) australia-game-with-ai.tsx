@@ -195187,7 +195187,7 @@ export function runV99MatchFlowSelfTests(): V9SelfTestResult[] {
       teamsById: { [TEAM_PLAYER_ID]: { name: "Matilda's Team", actorIds: ['player', ALLY_AI_ID] }, [TEAM_OPPONENT_ID]: { name: 'Rose Team', actorIds: ['ai', ENEMY_SUPPORT_AI_ID] } }, outcome: { ...metricWin, playerValue: 9100, aiValue: 3000 }
     });
     const lines = r.facts ? r.facts.lines : [];
-    const lost = buildMatchDebriefReport({ gameState: { selectedMode: 'team_human_ai_vs_ai_ai', day: 5, netWorthHistory: winHistory, matchEnd: { cause: 'player_bankrupt', winner: 'opponent', day: 4 } }, gameSettings: DEFAULT_GAME_SETTINGS, teamsById: { [TEAM_OPPONENT_ID]: { name: 'Rose Team', actorIds: ['ai'] } }, outcome: metricLoss });
+    const lost = buildMatchDebriefReport({ gameState: { selectedMode: 'team_human_ai_vs_ai_ai', rulesVersion: 1010 /* V10.1 (SECTION 20BD): a V10.1 team match tests plain cash, so its end line says "cash"; an older team match says "cash after loans" (v101ru_12) */, day: 5, netWorthHistory: winHistory, matchEnd: { cause: 'player_bankrupt', winner: 'opponent', day: 4 } }, gameSettings: DEFAULT_GAME_SETTINGS, teamsById: { [TEAM_OPPONENT_ID]: { name: 'Rose Team', actorIds: ['ai'] } }, outcome: metricLoss });
     return (lines.includes("Your team won: $9,100 against Rose Team's $3,000 on most money.") && lines.includes('Challenges won: your team 5, Rose Team 2.') && lines.some(l => l.startsWith('Your team was ahead on net worth')) && lines.some(l => l.startsWith("Your team's net worth grew"))
       && r.facts?.data.governance === false && (r.facts?.notes.governance || '').includes('Game Activity Ledger') && lost.facts?.endLine === 'Ended early on day 4: your team went bankrupt (cash under $50 at 3 day-ends in a row).' && lost.overallGrade === 'F'
       && (lost.facts?.lines || []).includes('Scores when it ended (most money): your team $1,000, Rose Team $9,000.')) || json({ lines, lost: lost.facts?.lines });
@@ -209109,6 +209109,11 @@ export function v101GuardRuleEdits(prev: GameSettingsState, next: GameSettingsSt
   return out as unknown as GameSettingsState;
 }
 
+/** The write guard as the settings dispatcher calls it: an edit from an exempt source (a loaded save, a scenario, a replay) goes through; any other is checked against the lock. */
+export function v101GuardSettingsWrite(prev: GameSettingsState, next: GameSettingsState, source: string): GameSettingsState {
+  return V101_RULE_LOCK_EXEMPT_SOURCES.includes(source) ? next : v101GuardRuleEdits(prev, next, v101LiveRuleLockActive());
+}
+
 /** Applies next-match deferrals (`edits`, default: the ones `settings` holds) to `settings` and removes them from its list. The same object when there are none. */
 export function v101ApplyRuleEdits(settings: GameSettingsState, edits?: readonly DeferredTransactionItem[]): GameSettingsState {
   const todo = edits ?? v101PendingRuleEdits(settings);
@@ -209226,6 +209231,11 @@ export function v101TeamBankruptcyCash(gameState: unknown, teamGrossCash: number
   return isV101Match(gameState) ? teamGrossCash : teamNetCash;
 }
 
+/** The streak after one day-end: one more when the tested team cash is under the threshold, else back to 0. advanceDay and the tests both call this. */
+export function v101TeamBankruptcyStreak(gameState: unknown, teamGrossCash: number, teamNetCash: number, previousStreak: number): number {
+  return v101TeamBankruptcyCash(gameState, teamGrossCash, teamNetCash) < BANKRUPTCY_THRESHOLD ? Math.max(0, Math.floor(Number(previousStreak) || 0)) + 1 : 0;
+}
+
 /** The two warnings before a team bankruptcy (streak 1 and 2), for either side. Older matches say what they test: cash after loans. */
 export function v101TeamBankruptcyNotice(gameState: unknown, side: 'player' | 'rival', streak: 1 | 2, testedCash: number): string {
   if (isV101Match(gameState)) {
@@ -209276,6 +209286,262 @@ export function v101DebtIsCleared(gameState: unknown, actor: { loans?: unknown; 
 // ---- Self-tests (v101ru) ----------------------------------------------------------------------------------------------------------
 export function runV101MatchRulesSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  const base = (): GameSettingsState => createDefaultGameSettings();
+  /** The lock flag is module state: every test that sets it puts it back. */
+  const withLock = <T,>(active: boolean, fn: () => T): T => {
+    const before = v101LiveRuleLockActive();
+    v101SetLiveRuleLock(active);
+    try { return fn(); } finally { v101SetLiveRuleLock(before); }
+  };
+  /** Runs the settings write the dispatcher runs (v101GuardSettingsWrite around the edit) against a plain object standing in for the React state. */
+  const writeSettings = (settings: GameSettingsState, updater: (prev: GameSettingsState) => GameSettingsState, source: string): GameSettingsState => v101GuardSettingsWrite(settings, updater(settings), source);
+  const elementsOf = (node: unknown, found: Array<{ props: Record<string, unknown> }> = []): Array<{ props: Record<string, unknown> }> => {
+    if (Array.isArray(node)) { node.forEach(child => elementsOf(child, found)); return found; }
+    if (!node || typeof node !== 'object') return found;
+    const props = (node as { props?: Record<string, unknown> }).props;
+    if (props) { found.push({ props }); elementsOf(props.children, found); }
+    return found;
+  };
+  const textOf = (node: unknown): string => {
+    if (node === null || node === undefined || typeof node === 'boolean') return '';
+    if (typeof node === 'string' || typeof node === 'number') return String(node);
+    if (Array.isArray(node)) return node.map(textOf).join('');
+    const props = (node as { props?: { children?: unknown } }).props;
+    return props ? textOf(props.children) : '';
+  };
+
+  // ---- 1. the lock: ONE predicate -------------------------------------------------------------------------------------------------
+  check('v101ru_01_lock_predicate_table', 'Victory Goal, Game Length and Difficulty are locked only in a RUNNING V10.1 match: menu, end screen, V10.0, unstamped and Classic matches stay free; other keys are never locked', () => {
+    const keys = ['winCondition', 'totalDays', 'aiDifficulty', 'playerActionsPerDay', 'soundEnabled', 'classicRulesV100'];
+    const states: Array<[string, Record<string, unknown>, boolean]> = [
+      ['game+1010', { gameMode: 'game', rulesVersion: 1010 }, true], ['game+1200', { gameMode: 'game', rulesVersion: 1200 }, true],
+      ['game+1000 (V10.0 or Classic)', { gameMode: 'game', rulesVersion: 1000 }, false], ['game unstamped', { gameMode: 'game' }, false],
+      ['menu+1010', { gameMode: 'menu', rulesVersion: 1010 }, false], ['end+1010', { gameMode: 'end', rulesVersion: 1010 }, false],
+      ['start_screen+1010', { gameMode: 'start_screen', rulesVersion: 1010 }, false], ['menu unstamped', { gameMode: 'menu' }, false]
+    ];
+    const wrong: string[] = [];
+    states.forEach(([label, gs, live]) => keys.forEach(key => {
+      const want = live && ['winCondition', 'totalDays', 'aiDifficulty'].includes(key);
+      if (v101MatchRuleLocked(gs, key) !== want) wrong.push(`${label}/${key}`);
+    }));
+    [null, undefined, 'x', 7].forEach(junk => { if (v101MatchRuleLocked(junk, 'winCondition')) wrong.push(`junk ${String(junk)}`); });
+    return wrong.length === 0 || wrong.join(', ');
+  });
+  check('v101ru_02_lock_reason_one_line', 'Every locked control says the same one line; an editable control says nothing', () => {
+    const live = { gameMode: 'game', rulesVersion: 1010 };
+    return (v101RuleLockReason(live, 'totalDays') === 'Locked while a match is running. Changes apply to your next match.' && V101_RULE_LOCK_REASON === v101RuleLockReason(live, 'winCondition')
+      && v101RuleLockReason({ gameMode: 'game', rulesVersion: 1000 }, 'totalDays') === null && v101RuleLockReason(live, 'soundEnabled') === null
+      && withLock(true, () => v101LiveRuleLockReason('totalDays') === V101_RULE_LOCK_REASON && v101LiveRuleLockReason('soundEnabled') === null)
+      && withLock(false, () => v101LiveRuleLockReason('totalDays') === null)) || 'reason lines differ';
+  });
+  check('v101ru_03_write_guard_holds_back_the_rules', 'The settings write guard (the one dispatchGameSettingsChange runs) keeps Victory Goal and Game Length in a running V10.1 match, queues them for the next match, and lets every other setting through', () => {
+    const start = { ...base(), winCondition: 'money' as WinMetric, totalDays: 30 };
+    const after = withLock(true, () => writeSettings(start, prev => ({ ...prev, winCondition: 'netWorth', totalDays: 12, soundEnabled: !prev.soundEnabled }), 'direct_player_change'));
+    const waiting = v101PendingRuleEdits(after);
+    return (after.winCondition === 'money' && after.totalDays === 30 && after.soundEnabled === !start.soundEnabled && waiting.length === 2
+      && v101PendingRuleValue(after, 'winCondition') === 'netWorth' && v101PendingRuleValue(after, 'totalDays') === 12 && waiting.every(w => w.deferralScope === 'next_match')
+      && start.totalDays === 30 && start.winCondition === 'money') || json({ win: after.winCondition, days: after.totalDays, waiting: waiting.map(w => w.settingKey) });
+  });
+  check('v101ru_04_write_guard_every_entry_point', 'A preset, an import, a reset or a patch cannot get past the guard either; a save load, a scenario start and a replay still write the rules', () => {
+    const start = { ...base(), winCondition: 'money' as WinMetric, totalDays: 30 };
+    const sources = ['direct_player_change', 'settings_preset_apply', 'imported_configuration', 'full_reset', 'section_reset', 'ui_reset', 'dependency_autofix'];
+    const held = withLock(true, () => sources.filter(src => { const out = writeSettings(start, prev => ({ ...prev, totalDays: 55, winCondition: 'regions' }), src); return out.totalDays !== 30 || out.winCondition !== 'money'; }));
+    const exempt = withLock(true, () => V101_RULE_LOCK_EXEMPT_SOURCES.filter(src => { const out = writeSettings(start, prev => ({ ...prev, totalDays: 55, winCondition: 'regions' }), src); return out.totalDays !== 55 || out.winCondition !== 'regions'; }));
+    return (held.length === 0 && exempt.length === 0 && ['save_loader', 'scenario_start', 'replay'].every(src => V101_RULE_LOCK_EXEMPT_SOURCES.includes(src))) || json({ gotThrough: held, exemptBlocked: exempt });
+  });
+  check('v101ru_05_unlocked_is_the_old_freedom', 'With no V10.1 match running (menu, end screen, V10.0, unstamped, Classic) the same writes change the rules exactly as before, and nothing is queued', () => {
+    const start = { ...base(), winCondition: 'money' as WinMetric, totalDays: 30 };
+    const after = withLock(false, () => writeSettings(start, prev => ({ ...prev, winCondition: 'netWorth', totalDays: 45 }), 'direct_player_change'));
+    const same = v101GuardRuleEdits(start, start, false) === start && v101GuardRuleEdits(start, start, true) === start;
+    return (after.winCondition === 'netWorth' && after.totalDays === 45 && v101PendingRuleEdits(after).length === 0 && same) || json({ win: after.winCondition, days: after.totalDays });
+  });
+  check('v101ru_06_queued_edits_apply_after_the_match', 'Edits held back during the match apply when it ends (and to the next match); a second edit replaces the first; a newer choice after the match beats a waiting one', () => {
+    const start = { ...base(), winCondition: 'money' as WinMetric, totalDays: 30 };
+    const held = v101GuardRuleEdits(start, { ...start, totalDays: 12, winCondition: 'regions' }, true);
+    const applied = v101ApplyRuleEdits(held);
+    const replaced = v101GuardRuleEdits(held, { ...held, totalDays: 20 }, true);
+    const newer = v101GuardRuleEdits(held, { ...held, totalDays: 77 }, false);
+    const dropped = v101DropRuleEdits(held);
+    return (applied.totalDays === 12 && applied.winCondition === 'regions' && v101PendingRuleEdits(applied).length === 0 && v101PendingRuleValue(replaced, 'totalDays') === 20 && v101PendingRuleEdits(replaced).length === 2 && replaced.totalDays === 30 && v101PendingRuleValue(replaced, 'winCondition') === 'regions'
+      && newer.totalDays === 77 && v101PendingRuleValue(newer, 'totalDays') === undefined && dropped.totalDays === 30 && v101PendingRuleEdits(dropped).length === 0 && v101ApplyRuleEdits(start) === start)
+      || json({ applied: [applied.totalDays, applied.winCondition], replaced: v101PendingRuleEdits(replaced).length, newer: newer.totalDays });
+  });
+  check('v101ru_07_difficulty_lock_in_the_reducer', 'The match reducer keeps the Difficulty of a running V10.1 match, and still changes it on the menu, on the end screen and in a V10.0 or unstamped match', () => {
+    const table: Array<[string, Record<string, unknown>, string]> = [['game+1010', { gameMode: 'game', rulesVersion: 1010 }, 'medium'], ['game+1000', { gameMode: 'game', rulesVersion: 1000 }, 'hard'], ['game unstamped', { gameMode: 'game' }, 'hard'],
+      ['menu+1010', { gameMode: 'menu', rulesVersion: 1010 }, 'hard'], ['end+1010', { gameMode: 'end', rulesVersion: 1010 }, 'hard']];
+    const wrong = table.filter(([, gs, want]) => gameStateReducer({ ...initialGameState, ...gs, aiDifficulty: 'medium' }, { type: 'SET_AI_DIFFICULTY', payload: 'hard' }).aiDifficulty !== want).map(([label]) => label);
+    return wrong.length === 0 || wrong.join(', ');
+  });
+  check('v101ru_08_simple_view_locks_and_says_why', 'The real Simple settings panel disables Game length and How to win with the one-line reason while a V10.1 match runs, and leaves them editable otherwise', () => {
+    const render = (locked: boolean) => withLock(locked, () => {
+      const tree = (SimpleSettingsPanel as unknown as { type: (props: { settings: GameSettingsState; onChange: () => void; onShowAll: () => void; isDark: boolean }) => unknown }).type({ settings: base(), onChange: () => undefined, onShowAll: () => undefined, isDark: true });
+      const inputs = elementsOf(tree).filter(el => typeof el.props.id === 'string' && (el.props.id === 'simple-setting-totalDays-input' || el.props.id === 'simple-setting-winCondition-input' || el.props.id === 'simple-setting-playerActionsPerDay-input'));
+      return { disabled: inputs.map(el => el.props.disabled === true), text: textOf(tree) };
+    });
+    const on = render(true), off = render(false);
+    return (on.disabled.join() === 'true,true,false' && off.disabled.join() === 'false,false,false' && on.text.includes(V101_RULE_LOCK_REASON) && !off.text.includes(V101_RULE_LOCK_REASON)) || json({ on: on.disabled, off: off.disabled });
+  });
+  check('v101ru_09_lock_note_text', 'The note under a locked control states the reason and the choice waiting for the next match; it renders nothing when editable', () => {
+    const waiting = v101GuardRuleEdits(base(), { ...base(), totalDays: 40 }, true);
+    const shown = withLock(true, () => V101RuleLockNote({ ruleKey: 'totalDays', settings: waiting }));
+    const hidden = withLock(false, () => V101RuleLockNote({ ruleKey: 'totalDays', settings: waiting }));
+    const other = withLock(true, () => V101RuleLockNote({ ruleKey: 'soundEnabled', settings: waiting }));
+    return (textOf(shown).includes(V101_RULE_LOCK_REASON) && textOf(shown).includes('Waiting for your next match: 40 days') && hidden === null && other === null && v101RuleLockHint(base(), 'winCondition') === V101_RULE_LOCK_REASON) || textOf(shown);
+  });
+  check('v101ru_10_preset_and_import_notice', 'A preset or import is told it touches the frozen rules only when it really changes them', () => {
+    const live = { ...base(), totalDays: 30, winCondition: 'money' as WinMetric };
+    return (v101EditsTouchLockedRules(live, { totalDays: 45 }) && v101EditsTouchLockedRules(live, { winCondition: 'regions' }) && !v101EditsTouchLockedRules(live, { totalDays: 30, winCondition: 'money' })
+      && !v101EditsTouchLockedRules(live, { soundEnabled: false }) && !v101EditsTouchLockedRules(live, null) && !v101EditsTouchLockedRules(null, { totalDays: 5 })) || 'wrong';
+  });
+
+  // ---- 2. team rules ----------------------------------------------------------------------------------------------------------------
+  check('v101ru_11_team_bankruptcy_basis_table', 'A V10.1 team match counts the team cash its messages name ($300 with a $500 loan is safe); an older match keeps cash minus loans; the net figure is untouched', () => {
+    const v101 = { rulesVersion: 1010 }, v100 = { rulesVersion: 1000 }, none = {};
+    // [state, gross cash, net cash (cash minus loans), streak so far, streak after one day-end]
+    const table: Array<[string, unknown, number, number, number, number]> = [
+      ['V10.1 $300 with a $500 loan', v101, 300, -200, 1, 0], ['V10.0 same finances (old rule)', v100, 300, -200, 1, 2], ['unstamped same finances', none, 300, -200, 0, 1],
+      ['V10.1 really broke', v101, 20, -480, 1, 2], ['V10.1 exactly the threshold', v101, 50, -450, 2, 0], ['V10.1 one under', v101, 49, 49, 2, 3],
+      ['V10.1 rich cash, heavy loans', v101, 3000, -2800, 2, 0], ['V10.0 rich cash, heavy loans (old rule)', v100, 3000, -2800, 2, 3]];
+    const wrong = table.filter(([, gs, gross, net, prev, want]) => v101TeamBankruptcyStreak(gs, gross, net, prev) !== want).map(([label]) => label);
+    const metricNet = v101TeamBankruptcyCash(none, 300, -200) === -200 && v101TeamBankruptcyCash(v101, 300, -200) === 300;
+    return (wrong.length === 0 && metricNet) || wrong.join(', ');
+  });
+  check('v101ru_12_team_bankruptcy_words', 'The warnings and the end line say what is counted: V10.1 keeps the "cash under $50" words; an older team match says "cash after loans"; one-on-one wording is unchanged', () => {
+    const v101 = { rulesVersion: 1010 }, old = { rulesVersion: 1000 };
+    const names: MatchEndNames = { rivalSide: 'Rose Team', metricLabel: 'Most Money', regionsGoal: false, teamMode: true };
+    const record: MatchEndRecord = { cause: 'player_bankrupt', winner: 'opponent', day: 7 };
+    const plain = describeMatchEnd(record, names);
+    const after = describeMatchEnd(record, { ...names, cashAfterLoans: v101BankruptcyCashAfterLoans(old, true) });
+    const same = describeMatchEnd(record, { ...names, cashAfterLoans: v101BankruptcyCashAfterLoans(v101, true) });
+    const solo = describeMatchEnd(record, { ...names, teamMode: false, cashAfterLoans: v101BankruptcyCashAfterLoans(old, false) });
+    return (v101TeamBankruptcyNotice(v101, 'player', 1, 300).includes('Three days under $50') && v101TeamBankruptcyNotice(v101, 'player', 2, 300).includes('Improve cash above $50')
+      && v101TeamBankruptcyNotice(old, 'player', 1, -200).includes('after loans') && v101TeamBankruptcyNotice(old, 'player', 1, -200).includes('$200')
+      && plain.includes('(cash under $50 at 3 day-ends in a row)') && same === plain && after.includes('cash after loans under $50') && solo === describeMatchEnd(record, { ...names, teamMode: false }) && !solo.includes('after loans')) || json({ plain, after });
+  });
+
+  // ---- 3. a debuff of N days costs N of the target's own turns ----------------------------------------------------------------------
+  /**
+   * Plays rounds with the real tickDebuffs / upsertDebuff / hasActiveDebuff, the real v101SabotageDuration and the real
+   * v101HumanEndTurnTicksDebuffs, and counts the turns `target` plays under the debuff. Where the engine ticks is the same
+   * in every row: the human's End Turn (unless the V10.1 team rule skips it), and the day rollover (every actor in a team
+   * match, the rival only in a one-on-one match).
+   */
+  const turnsUnderDebuff = (gs: Record<string, unknown>, caster: string, target: string, days: number): number => {
+    const order = gs.turnOrder as string[];
+    const team = isTeamModeSelection(gs.selectedMode as string);
+    const debuffs: Record<string, Debuff[]> = {};
+    order.forEach(id => { debuffs[id] = []; });
+    let turns = 0;
+    for (let round = 1; round <= 9; round++) {
+      for (const actor of order) {
+        if (round === 1 && actor === caster) debuffs[target] = upsertDebuff(debuffs[target], 'market_panic', v101SabotageDuration(gs, caster, target, days));
+        if (actor === target && hasActiveDebuff(debuffs[actor], 'market_panic')) turns += 1;
+        if (actor === 'player' && v101HumanEndTurnTicksDebuffs(gs, team)) debuffs[actor] = tickDebuffs(debuffs[actor]);
+      }
+      order.forEach(id => { if (team || id !== 'player') debuffs[id] = tickDebuffs(debuffs[id]); }); // the rollover
+    }
+    return turns;
+  };
+  const SOLO_ORDER = ['player', 'ai'], TEAM_ORDER = ['player', 'ai', 'ally', 'esup'];
+  check('v101ru_13_debuff_cost_table_v101', 'In a V10.1 match a debuff of N days costs its target exactly N of its own turns: 1, 2 and 3 days, every caster/target pair, one-on-one and team', () => {
+    const rows: Array<[string, Record<string, unknown>, string, string]> = [
+      ['solo ai->human', { selectedMode: 'ai', turnOrder: SOLO_ORDER, rulesVersion: 1010 }, 'ai', 'player'], ['solo human->ai', { selectedMode: 'ai', turnOrder: SOLO_ORDER, rulesVersion: 1010 }, 'player', 'ai'],
+      ['team ai->human', { selectedMode: 'team_human_ai_vs_ai_ai', turnOrder: TEAM_ORDER, rulesVersion: 1010 }, 'ai', 'player'], ['team esup->human', { selectedMode: 'team_human_ai_vs_ai_ai', turnOrder: TEAM_ORDER, rulesVersion: 1010 }, 'esup', 'player'],
+      ['team human->ai', { selectedMode: 'team_human_ai_vs_ai_ai', turnOrder: TEAM_ORDER, rulesVersion: 1010 }, 'player', 'ai'], ['team human->esup', { selectedMode: 'team_human_ai_vs_ai_ai', turnOrder: TEAM_ORDER, rulesVersion: 1010 }, 'player', 'esup'],
+      ['team ally->ai (target already played)', { selectedMode: 'team_human_ai_vs_ai_ai', turnOrder: TEAM_ORDER, rulesVersion: 1010 }, 'ally', 'ai'], ['team esup->ally', { selectedMode: 'team_human_ai_vs_ai_ai', turnOrder: TEAM_ORDER, rulesVersion: 1010 }, 'esup', 'ally']];
+    const wrong: string[] = [];
+    rows.forEach(([label, gs, caster, target]) => [1, 2, 3].forEach(days => { const got = turnsUnderDebuff(gs, caster, target, days); if (got !== days) wrong.push(`${label} ${days}d -> ${got}`); }));
+    return wrong.length === 0 || wrong.join('; ');
+  });
+  check('v101ru_14_debuff_cost_table_old_rules', 'Regression guard: a V10.0-stamped or unstamped TEAM match keeps the old double tick (1 day = 0 turns, 2 = 1, 3 = 1, 4 = 2 for the human); a one-on-one match was always N', () => {
+    const team = (rulesVersion: number | null) => ({ selectedMode: 'team_human_ai_vs_ai_ai', turnOrder: TEAM_ORDER, ...(rulesVersion === null ? {} : { rulesVersion }) });
+    const got = [1, 2, 3, 4].map(days => [turnsUnderDebuff(team(1000), 'ai', 'player', days), turnsUnderDebuff(team(null), 'ai', 'player', days)]);
+    const solo = [1, 2, 3].map(days => turnsUnderDebuff({ selectedMode: 'ai', turnOrder: SOLO_ORDER, rulesVersion: 1000 }, 'ai', 'player', days));
+    return (json(got) === json([[0, 0], [1, 1], [1, 1], [2, 2]]) && json(solo) === json([1, 2, 3])) || json({ got, solo });
+  });
+  check('v101ru_15_debuff_helpers', 'The cast adds a day only for a target that has already played this round in a V10.1 team match; the human End Turn tick is skipped only there', () => {
+    const t = { selectedMode: 'team_human_ai_vs_ai_ai', turnOrder: TEAM_ORDER, rulesVersion: 1010 };
+    const got = [v101SabotageDuration(t, 'ai', 'player', 1), v101SabotageDuration(t, 'player', 'ai', 1), v101SabotageDuration(t, 'ally', 'ai', 2), v101SabotageDuration({ ...t, rulesVersion: 1000 }, 'ai', 'player', 1),
+      v101SabotageDuration({ selectedMode: 'ai', turnOrder: SOLO_ORDER, rulesVersion: 1010 }, 'ai', 'player', 1), v101SabotageDuration(t, 'ai', 'ghost', 1), v101SabotageDuration(null, 'ai', 'player', 1)];
+    const ticks = [v101HumanEndTurnTicksDebuffs(t, true), v101HumanEndTurnTicksDebuffs({ ...t, rulesVersion: 1000 }, true), v101HumanEndTurnTicksDebuffs({ rulesVersion: 1010 }, false), v101HumanEndTurnTicksDebuffs({}, true)];
+    return (json(got) === json([2, 1, 3, 1, 1, 1, 1]) && json(ticks) === json([false, true, true, true])) || json({ got, ticks });
+  });
+
+  // ---- 4. truth on screen -----------------------------------------------------------------------------------------------------------
+  check('v101ru_16_game_length_labels', 'Game Length says what happens: "30 days (you play 29)"; the setting text says the match ends when day N would begin; the stored length is untouched', () => {
+    const description = SETTINGS_HUB_FIELD_META.totalDays.description;
+    return (v101GameLengthLabel(30) === 'Game Length: 30 days (you play 29)' && v101GameLengthLabel(10) === 'Game Length: 10 days (you play 9)' && v101TotalDaysLabel(30) === 'Total Days: 30 (you play 29)'
+      && v101GameLengthLabel(NaN) === 'Game Length: NaN days' && description.includes('N-1') && description.includes('30 = 29 days played') && matchLengthInDays(30) === 29 && isFinalPlayableDay(29, 30)) || json({ description });
+  });
+  check('v101ru_17_header_names_the_last_day', 'The match header still reads "Day 6 / 30" and now carries the last day played (29), on every match', () => {
+    const mid = resolveV9GameplayCohesion(createV9CohesionFixture()).header;
+    const short = resolveV9GameplayCohesion(createV9CohesionFixture({ day: 9, totalDays: 10 })).header;
+    const team = resolveV9GameplayCohesion(createV9CohesionFixture({ teamMode: true })).header;
+    return (mid.dayLabel === 'Day 6 / 30' && mid.lastDay === 29 && short.lastDay === 9 && team.lastDay === 29 && team.dayLabel === 'Day 6 / 30 · Round 6') || json([mid.dayLabel, mid.lastDay, short.lastDay, team.lastDay]);
+  });
+  check('v101ru_18_solo_run_complete', 'A finished Single Player run in a V10.1 match is headed RUN COMPLETE with its grade; older matches, bankruptcies and rival matches keep their banner', () => {
+    const v101 = { rulesVersion: 1010 };
+    const dRun = v101SoloRunResult(v101, true, 'day_limit', 'D');
+    const sRun = v101SoloRunResult(v101, true, null, 'S');
+    const noGrade = v101SoloRunResult(v101, true, 'day_limit', null);
+    const untouched = [v101SoloRunResult({ rulesVersion: 1000 }, true, 'day_limit', 'D'), v101SoloRunResult({}, true, 'day_limit', 'D'), v101SoloRunResult(v101, false, 'day_limit', 'D'), v101SoloRunResult(v101, true, 'player_bankrupt', 'F')];
+    const hero = (extra: { headline?: string; reason: string }) => textOf(V94OutcomeHero({ won: true, winLabel: 'Most Money', metricLabel: 'Most Money', you: '$900', rival: '$0', rivalName: 'Rival', turningPoints: [], lesson: null, solo: true, endLine: 'The match ran its full length: 29 days played.', ...extra }));
+    const newHero = hero({ headline: dRun?.headline, reason: dRun?.line ?? '' });
+    const oldHero = hero({ reason: 'Solo mode completed.' });
+    return (dRun?.headline === 'RUN COMPLETE' && dRun.line.includes('Run grade D') && dRun.line.includes('below where you started') && sRun?.line.includes('Run grade S') && (noGrade?.line.length ?? 0) > 10 && untouched.every(x => x === null)
+      && newHero.includes('RUN COMPLETE') && !newHero.includes('VICTORY') && newHero.includes('Run grade D') && oldHero.includes('VICTORY') && !oldHero.includes('RUN COMPLETE')) || json({ dRun, newHero, oldHero });
+  });
+  check('v101ru_19_tie_rule_in_the_help', 'The Win Conditions help says what a tie does (tie-breakers, then the win goes to you; no overtime) and keeps the early-end and last-day text', () => {
+    const win = MECHANICS_DIRECTORY_ENTRIES.find(entry => entry.id === 'win');
+    const body = win ? win.body : '';
+    return (body.includes('tie-breakers you set decide it') && body.includes('there is no overtime and no draw') && body.includes('day 29 of 30') && body.includes('mercy rule') && body.includes('started before V10.1')) || body;
+  });
+
+  // ---- 5. scenarios and journal -----------------------------------------------------------------------------------------------------
+  check('v101ru_20_scenario_promises', 'Red Dust Harvest starts in debt and its "clear all debt" objective counts advanced loans, and Hyper-Inflation raises prices for both sides: V10.1 only (Classic and old matches get neither)', () => {
+    const on = { classicRulesV100: false }, classic = { classicRulesV100: true };
+    const debt = v101ScenarioStartingLoans('red_dust_harvest', on);
+    const objective = { id: 'o', label: 'x', description: 'x', targetType: 'debt_cleared' as const, targetValue: 1, isPrimary: true };
+    const evalDebt = (stamp: Record<string, unknown>, player: Record<string, unknown>) => evaluateScenarioObjective(objective as ScenarioObjective, { player, aiPlayer: {}, gameState: { day: 5, ...stamp } as unknown as GameStateSnapshot, gameSettings: base() }).currentValue;
+    const debtPlayer = { loans: debt, advancedLoans: [] }, advancedOnly = { loans: [], advancedLoans: [{ amount: 300 }] };
+    return (debt.length === 2 && debt.every(l => l.amount === LOAN_AMOUNT) && v101ScenarioStartingLoans('red_dust_harvest', classic).length === 0 && v101ScenarioStartingLoans('outback_siege', on).length === 0
+      && v101ScenarioInflationPct('hyper_inflation_survival', on) === 0.25 && v101ScenarioInflationPct('hyper_inflation_survival', classic) === 0 && v101ScenarioInflationPct('red_dust_harvest', on) === 0
+      && evalDebt({ rulesVersion: 1010 }, debtPlayer) === 0 && evalDebt({ rulesVersion: 1010 }, advancedOnly) === 0 && evalDebt({ rulesVersion: 1010 }, { loans: [], advancedLoans: [] }) === 1
+      && evalDebt({ rulesVersion: 1000 }, advancedOnly) === 1 && evalDebt({}, { loans: [] }) === 1) || json({ debt, a: evalDebt({ rulesVersion: 1010 }, advancedOnly), b: evalDebt({ rulesVersion: 1000 }, advancedOnly) });
+  });
+  check('v101ru_21_scenario_text_is_honest', 'The two scenario cards say what V10.1 now does, the records keep their ids, and no other scenario changed its starting loans', () => {
+    const find = (id: string) => PRESET_GAME_SCENARIOS.find(sc => sc.id === id);
+    const rd = find('red_dust_harvest'), hi = find('hyper_inflation_survival'), cc = find('v93_cash_crisis');
+    return (!!rd && !!hi && !!cc && /two loans/.test(rd.description) && !/massive debt/.test(rd.description) && /25% higher/.test(hi.description) && rd.startingLoans === undefined && cc.startingLoans?.length === 2
+      && rd.objectives.some(o => o.targetType === 'debt_cleared')) || 'cards';
+  });
+  check('v101ru_22_journal_bests_keep_actions_apart', 'Personal bests no longer mix a 2-action and a 10-action match; an entry without the figure keeps its old key, and the figure survives a round trip', () => {
+    const entry = { mode: 'ai' as GameModeSelection, difficulty: 'medium', character: 'Tourist', winMetric: 'money' as MatchJournalMetric, matchLength: 29, outcome: 'win' as MatchJournalOutcome };
+    const old = matchJournalBestKey(entry), two = matchJournalBestKey({ ...entry, actionsPerDay: 2 }), ten = matchJournalBestKey({ ...entry, actionsPerDay: 10 });
+    const filed = { id: 1, at: null, experienceMode: null, seed: 5, playerScore: 10, rivalScore: 4, endCause: null, daysPlayed: 29, scenarioId: null, scenarioTitle: null, dailyKey: null, campaign: false, ...entry };
+    const withActions = sanitizeMatchJournalEntry({ ...filed, actionsPerDay: 4 }), without = sanitizeMatchJournalEntry(filed), junk = sanitizeMatchJournalEntry({ ...filed, actionsPerDay: 'lots' });
+    return (old === 'ai|medium|Tourist|money|29' && two !== ten && two !== old && withActions?.actionsPerDay === 4 && without !== null && !('actionsPerDay' in without) && junk !== null && !('actionsPerDay' in junk)
+      && json(without) === json(sanitizeMatchJournalEntry(without))) || json({ old, two, ten });
+  });
+  check('v101ru_23_v101_default_off_nothing_new_persisted', 'This package adds no persisted match state and no settings key: the lock queue lives in the existing, never-saved deferredTransactions list', () => {
+    const queued = v101GuardRuleEdits(base(), { ...base(), totalDays: 44 }, true);
+    return (V101_ADDED_STATE_KEYS.length === 0 || !V101_ADDED_STATE_KEYS.some(key => /rule|lock|debuff|bankrupt/i.test(key))) && V99_PROFILE_KEYS_NOT_PERSISTED.includes('deferredTransactions') && v101PendingRuleEdits(queued).every(w => w.id.startsWith(V101_RULE_DEFER_ID_PREFIX))
+      ? true : 'new state found';
+  });
+  check('v101ru_24_debrief_end_line_by_rules', 'The real debrief names what a team bankruptcy counted: "cash" in a V10.1 match, "cash after loans" in an older team match, plain "cash" in one-on-one matches of every age', () => {
+    const lost = (selectedMode: string, rulesVersion: number | null) => buildMatchDebriefReport({
+      gameState: { selectedMode, ...(rulesVersion === null ? {} : { rulesVersion }), day: 5, netWorthHistory: [], matchEnd: { cause: 'player_bankrupt', winner: 'opponent', day: 4 } },
+      gameSettings: DEFAULT_GAME_SETTINGS, teamsById: { [TEAM_OPPONENT_ID]: { name: 'Rose Team', actorIds: ['ai'] } }, outcome: { playerWon: false, reason: 'x', playerValue: 1000, aiValue: 9000, decidingMetric: 'money' }
+    }).facts?.endLine ?? '';
+    const team = 'team_human_ai_vs_ai_ai';
+    return (lost(team, 1010).includes('(cash under $50 at 3 day-ends in a row)') && lost(team, 1000).includes('(cash after loans under $50 at 3 day-ends in a row)') && lost(team, null).includes('(cash after loans under $50')
+      && lost('ai', null).includes('(cash under $50 at 3 day-ends in a row)') && lost('ai', 1000).includes('(cash under $50 at 3 day-ends in a row)')) || json([lost(team, 1010), lost(team, null), lost('ai', null)]);
+  });
   return results;
 }
 // <<V101-SLOT RULES end>>
@@ -211435,8 +211701,7 @@ function dispatchGameSettingsChange(
   // V10.1 (SECTION 20BD): the ONE guard at the settings write. While a V10.1 match is running, Victory Goal and Game Length
   // (every screen, a preset, an import, a reset) wait for the next match instead of changing the rules of the match being
   // played; loading a save, starting a scenario and replays still write them. Off in a V10.0, an unstamped or a Classic match.
-  const v101RuleSource = V101_RULE_LOCK_EXEMPT_SOURCES.includes(source);
-  const computeNextState = (prev: GameSettingsState): GameSettingsState => v101RuleSource ? computeNextStateRaw(prev) : v101GuardRuleEdits(prev, computeNextStateRaw(prev), v101LiveRuleLockActive());
+  const computeNextState = (prev: GameSettingsState): GameSettingsState => v101GuardSettingsWrite(prev, computeNextStateRaw(prev), source);
   // SH3: Unified state updater helper function to compute next state cleanly across all patch types
   const computeNextStateRaw = (prev: GameSettingsState): GameSettingsState => {
     if (typeof keyOrPatch === 'string') {
@@ -229344,10 +229609,12 @@ function dispatchGameSettingsChange(
 
       // V10.1 (SECTION 20BD): a V10.1 team match tests the team's cash (the figure every message names), not cash minus loans; the net
       // figure above stays for the cash win metric and the loan-exploit guard. Older matches keep the net test.
-      const wpRuPlayerTestCash = v101TeamBankruptcyCash(gameState, projectedActorList.filter(actor => actor.teamId === TEAM_PLAYER_ID).reduce((sum, actor) => sum + actor.money, 0), projectedPlayerTeamCash);
-      const wpRuOpponentTestCash = v101TeamBankruptcyCash(gameState, projectedActorList.filter(actor => actor.teamId === TEAM_OPPONENT_ID).reduce((sum, actor) => sum + actor.money, 0), projectedOpponentTeamCash);
-      const playerStreak = wpRuPlayerTestCash < BANKRUPTCY_THRESHOLD ? gameState.bankruptcyTracker.player + 1 : 0;
-      const aiStreak = wpRuOpponentTestCash < BANKRUPTCY_THRESHOLD ? gameState.bankruptcyTracker.ai + 1 : 0;
+      const wpRuPlayerGross = projectedActorList.filter(actor => actor.teamId === TEAM_PLAYER_ID).reduce((sum, actor) => sum + actor.money, 0);
+      const wpRuOpponentGross = projectedActorList.filter(actor => actor.teamId === TEAM_OPPONENT_ID).reduce((sum, actor) => sum + actor.money, 0);
+      const wpRuPlayerTestCash = v101TeamBankruptcyCash(gameState, wpRuPlayerGross, projectedPlayerTeamCash);
+      const wpRuOpponentTestCash = v101TeamBankruptcyCash(gameState, wpRuOpponentGross, projectedOpponentTeamCash);
+      const playerStreak = v101TeamBankruptcyStreak(gameState, wpRuPlayerGross, projectedPlayerTeamCash, gameState.bankruptcyTracker.player);
+      const aiStreak = v101TeamBankruptcyStreak(gameState, wpRuOpponentGross, projectedOpponentTeamCash, gameState.bankruptcyTracker.ai);
       dispatchGameState({ type: 'SET_BANKRUPTCY_TRACKER', payload: { player: playerStreak, ai: aiStreak } });
 
       if (playerStreak === 1) {
