@@ -3969,7 +3969,8 @@ const KEYBOARD_SHORTCUTS = {
 
 export const VERSION_CONSTANTS = {
   // V9.9 (SECTION 20AQ): bumped from 9.6.0 (V9.6–V9.8 all stamped 9.6.0). The schema versions below are unchanged.
-  GAME_VERSION: "9.9.0",
+  // V10.0 (SECTION 20AY): bumped from 9.9.0. The schema versions stay; V10.0 adds only optional save fields.
+  GAME_VERSION: "10.0.0",
   SCHEMA_VERSION: "7.1",
   SAVE_SCHEMA_VERSION: "7.1",
   SETTINGS_SCHEMA_VERSION: "7.1",
@@ -4056,9 +4057,10 @@ const V613_CHANGELOG = [
   "Compact status card plus a full 10-tab Auditor Dashboard for reviewing and acting on incidents",
   "Off by default and Team Mode-only"
 ];
-// V9.9 (SECTION 20AQ): the current release's entry; it leads the "What's New" list in Settings → Interface.
+// V9.9 (SECTION 20AQ): the V9.9 release's entry. V10.0 (SECTION 20AY): V100_CHANGELOG now leads "What's New" and this
+// entry follows it, so its label is written out (it used to follow GAME_VERSION_LABEL, which now reads V10.0).
 export const V99_CHANGELOG = [
-  `${GAME_VERSION_LABEL} - A more solid, more replayable game`,
+  'V9.9 - A more solid, more replayable game',
   "Every match is a different match: new weather, markets, dice and rival play each time (World RNG: Deterministic still replays one seed)",
   "The Recommended Action's Do It does exactly what its card says, and the advice now recommends challenges with the real odds, wager and payout",
   "Honest endings: a FINAL DAY chip, a mercy rule that is announced, and a debrief built from what happened",
@@ -14074,6 +14076,10 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   classicPlayScreenLayout: false,
   /** V9.9 (SECTION 20AT, W4A): the browser's "leave site?" question before a reload mid-match — off by default. */
   warnBeforeUnloadEnabled: false,
+  /** V10.0 (SECTION 20AZ): Rival Races — a new feature, off by default (match rule). */
+  rivalRacesEnabled: false,
+  /** V10.0 (SECTION 20AY): on = the rival plays exactly as in V9.9 (match rule; off = the V10.0 rival in a V10.0 match). */
+  classicRivalV99: false,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -15204,6 +15210,9 @@ export function sanitizeGameSettings(input: unknown): GameSettingsState {
     classicStickyToasts: typeof src.classicStickyToasts === 'boolean' ? src.classicStickyToasts : defaults.classicStickyToasts,
     classicPlayScreenLayout: typeof src.classicPlayScreenLayout === 'boolean' ? src.classicPlayScreenLayout : defaults.classicPlayScreenLayout,
     warnBeforeUnloadEnabled: typeof src.warnBeforeUnloadEnabled === 'boolean' ? src.warnBeforeUnloadEnabled : defaults.warnBeforeUnloadEnabled, // V9.9 (SECTION 20AT, W4A)
+    // V10.0 (SECTIONS 20AY/20AZ): only a real boolean switches Rival Races or the classic rival on.
+    rivalRacesEnabled: typeof src.rivalRacesEnabled === 'boolean' ? src.rivalRacesEnabled : defaults.rivalRacesEnabled,
+    classicRivalV99: typeof src.classicRivalV99 === 'boolean' ? src.classicRivalV99 : defaults.classicRivalV99,
     rememberCategoryNavigationState: typeof src.rememberCategoryNavigationState === 'boolean' ? src.rememberCategoryNavigationState : defaults.rememberCategoryNavigationState,
     rememberCategoryNavigationMode: typeof src.rememberCategoryNavigationMode === 'boolean' ? src.rememberCategoryNavigationMode : defaults.rememberCategoryNavigationMode,
     autoCollapseCategoriesOnNarrow: typeof src.autoCollapseCategoriesOnNarrow === 'boolean' ? src.autoCollapseCategoriesOnNarrow : defaults.autoCollapseCategoriesOnNarrow,
@@ -18376,6 +18385,30 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     validate: (v: unknown) => typeof v === 'boolean',
     isLiveSafe: true,
     affectsFairness: false,
+  },
+  // V10.0 (SECTIONS 20AY/20AZ): Rival Races (new, off by default) and the classic-rival switch. Labels and descriptions are
+  // the ones the hub shows (V100_FEATURE_TOGGLE_ROWS / V100_CLASSIC_TOGGLE_ROWS; pinned by v100fx).
+  {
+    key: 'rivalRacesEnabled',
+    category: 'fairness',
+    label: 'Rival Races',
+    description: 'Every few days a public race opens — first to win a challenge in a named state, take control of a region, set foot somewhere new, win a run of challenges or earn a sum. The winner takes the prize, and the rival races too. AI Opponent mode.',
+    valueType: 'boolean',
+    defaultValue: false,
+    validate: (v: unknown) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: true,
+  },
+  {
+    key: 'classicRivalV99',
+    category: 'rival_ai',
+    label: 'Classic rival (V9.9)',
+    description: 'On = the rival plays as it did in V9.9: it often picks one of its lesser moves at random, a mistake costs it a whole action, and it gets no win-streak bonus. Matches started before V10.0 always keep that rival.',
+    valueType: 'boolean',
+    defaultValue: false,
+    validate: (v: unknown) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: true,
   },
   {
     key: 'canonicalActionRoutingV97',
@@ -26835,6 +26868,12 @@ export type GameSettingsState = {
   /** V9.9 (SECTION 20AT, W4A): true = the browser asks before a reload or a closed tab throws away turns played since the last
    *  save. Off (default) = the page closes without asking, as in V9.8. Profile-scoped. */
   warnBeforeUnloadEnabled?: boolean;
+  /** V10.0 Rival Races (SECTION 20AZ): head-to-head races against the rival for a prize, AI Opponent mode. Off (default) =
+   *  nothing is built, shown, saved or paid and the rival chooses as before. Match-scoped. */
+  rivalRacesEnabled?: boolean;
+  /** V10.0 (SECTION 20AY): true = in a match started on V10.0 the rival plays exactly as V9.9's did (random lesser picks,
+   *  wasted "thinking" actions, no win-streak bonus). Matches started before V10.0 always do. Match-scoped. */
+  classicRivalV99?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -48406,7 +48445,10 @@ export function chooseAction(
   };
   const profile = AI_DIFFICULTY_PROFILES[ctx.difficultyKey] || AI_DIFFICULTY_PROFILES.expert;
   // V9.9 (SECTION 20AS): the roll is always drawn; only the live rival's paid-for action (live.suppressMistake) ignores it.
-  if (rng.next() < (Number(profile.mistakeChance) || 0) && options?.live?.suppressMistake !== true) {
+  // V10.0 (SECTION 20AY, F1): with the V10.0 policy a mistake is carried into the pick (a lesser move) instead of "thinking".
+  const v100Policy = options?.live?.v100Policy === true;
+  const mistakeRolled = rng.next() < (Number(profile.mistakeChance) || 0) && options?.live?.suppressMistake !== true;
+  if (mistakeRolled && !v100Policy) {
     return {
       type: 'think',
       description: 'Contemplating strategy...',
@@ -48449,7 +48491,15 @@ export function chooseAction(
         ]
       )
   });
-  const ranked = [...memoryInfluenced].sort((a, b) => (b.score || 0) - (a.score || 0));
+  // V10.0 (SECTION 20AZ): the post-scoring hook (an open Rival Race); without it the list is exactly what V9.9 ranked.
+  const rescoreHook = options?.live?.rescore;
+  const rejectHook = options?.live?.isRejected;
+  const rescored = rescoreHook ? rescoreHook(memoryInfluenced) : memoryInfluenced;
+  const finalList = rescoreHook && rejectHook ? rescored.filter(candidate => !rejectHook(candidate)) : rescored;
+  if (!finalList.length) return null;
+  const ranked = [...finalList].sort((a, b) => (b.score || 0) - (a.score || 0));
+  // V10.0 (SECTION 20AY, F1): the V10.0 rival plays its best move at its difficulty's rate; without the flag, V9.9's pick.
+  if (v100Policy) return pickV100RivalDecision(ranked, rng, ctx.difficultyKey, mistakeRolled);
   return pickClassicDecision(ranked, rng, ctx.difficultyKey);
 }
 
@@ -64840,6 +64890,8 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'gameplay.scenarioMode', tab: 'gameplay', title: '📜 Scenario Mode & Presets', tags: ['Scenario', 'Gameplay'], fieldKeys: ['scenarioModeEnabled', 'selectedScenarioId', 'scenarioEngineV73Enabled', 'customScenarioBuilderEnabled', 'campaignEngineEnabled', 'campaignModeEnabled', 'narrativeEngineEnabled', 'dynamicCrisisChainsEnabled', 'dynamicCrisesEnabled', 'publicStabilityEnabled', 'nationalEventsEnabled', 'careerProgressionEnabled', 'achievementsEnabled', 'fogOfWarEnabled', 'aiRivalryEnabled'], keywords: 'scenario mode presets forced seed objectives outback siege mining tycoon diplomatic blitz hyper inflation coastal supremacy career progression achievements fog of war rivalry' },
   { id: 'gameplay.rivalryCampaign', tab: 'gameplay', title: '🗺️ The Long Rivalry (Campaign)', tags: ['Gameplay', 'Scenario'], chips: ['Off by default'], fieldKeys: ['rivalryCampaignEnabled'], keywords: 'campaign mode long rivalry chapters rival story eight chapters continue new' },
   // V9.9 (SECTION 20AQ): the three new features, the rival turn pace and the two "classic" presentation switches.
+  // V10.0 (SECTIONS 20AY/20AZ): the V10.0 switches — Rival Races (new, off by default) and the classic rival.
+  { id: 'gameplay.v100', tab: 'gameplay', title: '✨ New in V10.0', tags: ['Gameplay', 'AI'], chips: ['Off by default'], fieldKeys: ['rivalRacesEnabled', 'classicRivalV99'], keywords: 'new in v10 v10.0 rival races race head to head prize bounty first to win challenge region control stake new ground visit regions sprint cash earn classic rival old rival v9.9 difficulty easier opponent ai plays better best move mistakes streak bonus' },
   { id: 'gameplay.v99', tab: 'gameplay', title: '✨ New in V9.9', tags: ['Gameplay', 'UX'], chips: ['Off by default'], fieldKeys: ['matchRecoveryEnabled', 'matchJournalEnabled', 'turnDigestEnabled', 'warnBeforeUnloadEnabled', 'rivalTurnPace', 'classicStickyToasts', 'classicPlayScreenLayout'], keywords: 'new in v9.9 warn before closing tab reload leave site unsaved scenario ticks completed autosave auto save auto-save resume recovery recover crash continue match backup journal history records results personal bests rematch replay seed daily seed digest recap summary since your last turn what happened speed pace fast faster instant skip rival turn opponent animation wait toasts notifications sticky popups dismiss layout classic old way turn pill quick actions bar floating' },
   // SH2: Added 4 uncovered keys to advancedSystems.replaySafety
   { id: 'advancedSystems.replaySafety', tab: 'replayDiag', title: 'Replay Safety & Compatibility', tags: ['Replay', 'Advanced'], fieldKeys: ['randomnessMode', 'aiDeterministic', 'worldRngMode', 'aiReplayRecordingEnabled', 'aiReplayMaxEvents', 'aiDeterministicSeed', 'worldRngSeed', 'replayComparisonEnabled', 'replayComparisonToleranceThreshold', 'replayComparisonIgnoreMinorTiming', 'deterministicRngActive', 'whatIfTimelinesEnabled', 'canonicalActionRoutingV97'] },
@@ -106116,6 +106168,11 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   } else if (/\b(teammate|partner|ally)\b/.test(normalized) && !memoryish) {
     primary = 'teammate_status';
     addSupport('history');
+  } else if (v100IsFocusQuestion(normalized)) {
+    // V10.0 (SECTION 20AY, F4): "Why is <goal> my focus?" asks about the objective. It used to fall into the diagnosis
+    // branch below ("why … my …"), which read "money" in the goal's name as a cash problem: "Why your cash is tight".
+    primary = 'objective_status';
+    addSupport('action_recommendation', 'conflict_check');
   } else if (needs.diagnosis && !hasContract && !(hasProject && /\b(build|fund|this)\b/.test(normalized))) {
     const economic = /\b(money|cash|broke|economy|economic|finance|income|spending|running out|debt|loan|afford)\b/.test(normalized);
     primary = hasTeammate ? 'teammate_status' : (economic ? 'economy_diagnosis' : 'strategic_diagnosis');
@@ -106160,6 +106217,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   // ---- GI 2.1: weighted capability scoring (cascade prior + semantic frame evidence) ----
   const cascadePrimary = primary;
   const locked = ['control', 'control_explain', 'comparison', 'simulation', 'settings_lookup'].includes(primary) || targetsReference
+    || (primary === 'objective_status' && v100IsFocusQuestion(normalized)) // V10.0 (SECTION 20AY, F4): the semantic scores cannot turn it back into a cash diagnosis
     || (primary === 'ask_engine' && delegatedMemoryIntents.includes(ask.intent) && ask.confidence >= 0.5)
     || (primary === 'rival_assessment' && needs.prediction);
   const scores: Partial<Record<GICapability, number>> = { ...frame.capabilityScores };
@@ -129845,7 +129903,7 @@ export const LEARNING_CONCEPTS: LearningConceptDefinition[] = [
     lesson: c => ({ headline: 'You have resources worth selling', lines: [`${c.inventoryCount} items, worth about ${glMoney(c.inventoryValue)} at today's prices. Prices move daily — selling now gives cash; holding may pay more or less.`], action: { label: 'Open Market', nav: navAction('market', 'Open Market') }, surface: 'inline' }) },
   { id: 'win_condition', title: 'How you win', category: 'basics', tier: 'core', priority: 3, minLevel: 1, requires: ['current_focus'], directoryId: 'win', askPrompt: 'How do I win this match?', related: ['cash_vs_networth'],
     relevant: c => (c.turn >= 2 ? `turn ${c.turn}: the win condition shapes every choice` : null),
-    lesson: c => ({ headline: 'How you win', lines: [`This match is decided by ${c.winLabel} after ${c.totalDays} days (${c.daysLeft} left).`, c.leading === null ? 'The header shows the standing.' : c.leading ? 'You are currently ahead.' : `${c.rivalName} is currently ahead — there is time to change that.`], surface: 'inline' }) },
+    lesson: c => ({ headline: 'How you win', lines: [/* V10.0 (SECTION 20AY): the day the match really ends, in V9.9's own wording (it said "after 30 days" for a 29-day match) */ `This match is decided by ${c.winLabel} when day ${matchLengthInDays(c.totalDays)} ends (${c.daysLeft} days to play, today included).`, c.leading === null ? 'The header shows the standing.' : c.leading ? 'You are currently ahead.' : `${c.rivalName} is currently ahead — there is time to change that.`], surface: 'inline' }) },
   { id: 'ask_game', title: 'Ask the game', category: 'basics', tier: 'core', priority: 5, minLevel: 2, requires: ['current_focus'], directoryId: 'focus', askPrompt: 'How do I make money?', related: [],
     relevant: c => (c.turn >= 2 ? 'teach the universal help early' : null),
     lesson: () => ({ headline: 'You can ask the game', lines: ['Ask questions in plain language — the answers come from your live match.'], asks: ['What should I do?', 'How do I make money?', 'How do I control a region?'], surface: 'inline' }) },
@@ -130190,7 +130248,7 @@ export const MechanicsDirectoryEntries: React.FC<{ theme: any; focusId: string |
 
 const GuidedWelcomeCardView: React.FC<{ theme: any; onStart: () => void; onBasics: () => void; onSkip: () => void }> = ({ theme, onStart, onBasics, onSkip }) => (
   <section aria-labelledby="gl-welcome-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow}`} data-testid="gl-welcome">
-    <h2 id="gl-welcome-h" className="text-lg font-extrabold">Welcome to Australia Game</h2>
+    <h2 id="gl-welcome-h" className="text-lg font-extrabold">Welcome to {V100_GAME_NAME}</h2>{/* V10.0 (SECTION 20AY, F4): the game's own name (it said "Australia Game") */}
     <p className="text-sm opacity-90">Build your position across Australia, outplay your rivals, and complete the match objective. I'll explain mechanics when they become relevant.</p>
     <div className="flex flex-wrap gap-2 mt-3">
       <button type="button" className={`${theme.button} px-4 py-1.5 rounded-lg text-sm font-bold`} onClick={onStart} data-testid="gl-start">Start Playing</button>
@@ -133824,7 +133882,9 @@ export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'experienceMode', 'challengeApproachesEnabled', 'expandedChallengeContentEnabled', 'proceduralChallengesEnabled', 'opponentPersonalityEnabled',
   'matchShapeEnabled', 'matchObjectiveWeight', 'comebackStrength', 'comebackFullGap', 'finalStretchPct',
   // V9.7 (SECTION 20AO): routing shapes the match's outcomes, so a save carries it.
-  'canonicalActionRoutingV97'
+  'canonicalActionRoutingV97',
+  // V10.0 (SECTIONS 20AY/20AZ): both shape the match (the rival's play, the races), so a save carries them.
+  'rivalRacesEnabled', 'classicRivalV99'
 ] as const;
 
 /**
@@ -134212,6 +134272,10 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         ...(stateData.matchSeed !== undefined ? { matchSeed: sanitizeMatchSeed(stateData.matchSeed) ?? undefined } : {}),
         // V9.9 (SECTION 20AS): how the match ended (optional; absent in live matches and in saves made before V9.9).
         ...(stateData.matchEnd !== undefined ? { matchEnd: sanitizeMatchEndRecord(stateData.matchEnd) ?? undefined } : {}),
+        // V10.0 (SECTION 20AY): the rules the match started with (optional; absent in saves made before V10.0 = their rules).
+        ...(stateData.rulesVersion !== undefined ? { rulesVersion: sanitizeRulesVersion(stateData.rulesVersion) ?? undefined } : {}),
+        // V10.0 (SECTION 20AZ): Rival Races (optional; absent when the feature never ran, and in saves made before V10.0).
+        ...(stateData.rivalRaces !== undefined ? { rivalRaces: sanitizeRivalRacesState(stateData.rivalRaces) ?? undefined } : {}),
         persistentMemorySnapshot: sanitizePersistentSnapshot(stateData.persistentMemorySnapshot || raw.persistentMemorySnapshot || raw.gameState?.persistentMemorySnapshot),
         aiCommunication: migrateCommunicationState(stateData.aiCommunication || raw.aiCommunication || raw.gameState?.aiCommunication),
         teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(stateData.teamStrategicPlansByTeam || raw.teamStrategicPlansByTeam || raw.gameState?.teamStrategicPlansByTeam),
@@ -136323,6 +136387,9 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v99mr', label: 'V9.9 Match Recovery', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV99MatchRecoverySelfTests()) },
   { id: 'v99mj', label: 'V9.9 Match Journal & Daily Seed', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV99MatchJournalSelfTests()) },
   { id: 'v99td', label: 'V9.9 Turn Digest', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV99TurnDigestSelfTests()) },
+  // V10.0 (SECTIONS 20AY–20AZ): one suite per V10.0 section.
+  { id: 'v100fx', label: 'V10.0 Foundations & Fixes', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV100FoundationsSelfTests()) },
+  { id: 'v100rr', label: 'V10.0 Rival Races', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV100RivalRacesSelfTests()) },
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
@@ -136433,7 +136500,7 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
   const fixture = () => JSON.parse(JSON.stringify(createV95SaveFixture()));
 
   // ---- Version consistency
-  check('v_game_version', 'GAME_VERSION reports the V9.9 build', () => GAME_VERSION === '9.9.0' || `GAME_VERSION=${GAME_VERSION}`); // V9.9 (SECTION 20AQ): pin moved with the version bump
+  check('v_game_version', 'GAME_VERSION reports the V10.0 build', () => GAME_VERSION === '10.0.0' || `GAME_VERSION=${GAME_VERSION}`); // V10.0 (SECTION 20AY): pin moved with the version bump (V9.9 moved it from 9.6.0)
   check('v_schema_labels', 'Save / replay schema labels agree with their numeric forms', () =>
     (VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1' && Number.parseInt(VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION, 10) === REPLAY_SCHEMA_VERSION) || `${VERSION_CONSTANTS.SAVE_SCHEMA_VERSION}/${VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION}/${REPLAY_SCHEMA_VERSION}`);
 
@@ -181360,8 +181427,8 @@ export function runV96ExperienceModesSelfTests(): V9SelfTestResult[] {
     return (m1.migrated && m1.sourceVersion === '9.5.0' && m1.data.gameSettings.experienceMode === 'full' && !m2.migrated && m1.data.metadata.gameVersion === VERSION_CONSTANTS.GAME_VERSION && !current.migrated) || `m1=${m1.migrated}/${String(m1.data.gameSettings.experienceMode)} m2=${m2.migrated} current=${current.migrated}`;
   });
   // V9.9 (SECTION 20AQ): pin moved with the version bump (was 9.6.0).
-  check('em34_version_bumped', 'GAME_VERSION is 9.9.0 and new saves stamp it', () =>
-    (GAME_VERSION === '9.9.0' && createV95SaveFixture().metadata.gameVersion === '9.9.0') || `GAME_VERSION=${GAME_VERSION}`);
+  check('em34_version_bumped', 'GAME_VERSION is 10.0.0 and new saves stamp it', () => // V10.0 (SECTION 20AY): pin moved with the version bump
+    (GAME_VERSION === '10.0.0' && createV95SaveFixture().metadata.gameVersion === '10.0.0') || `GAME_VERSION=${GAME_VERSION}`);
   check('em35_sanitize_game_settings', 'sanitizeGameSettings: valid kept, missing → full, invalid → full, DEFAULT → explorer', () =>
     (sanitizeGameSettings({ experienceMode: 'nation' }).experienceMode === 'nation' && sanitizeGameSettings({}).experienceMode === 'full' && sanitizeGameSettings({ experienceMode: 'x' }).experienceMode === 'full' && sanitizeGameSettings(DEFAULT_GAME_SETTINGS).experienceMode === 'explorer') || 'sanitize wrong');
   check('em36_confirmation_rule', 'Mode switch: same mode → noop; start screen / game over → apply at once; live match → confirm', () =>
@@ -186588,6 +186655,8 @@ export interface FirstRunView {
   nextLabel: string | null;
   /** V9.9 (SECTION 20AR): tools that exist in the game but are switched off in this match (so they are not shown as unlocked). */
   note?: string | null;
+  /** V10.0 (SECTION 20AY, F3): set once the goal is met while the tour carries on (v100FirstRunGoalMetLine). */
+  goalMetLine?: string | null;
 }
 // V9.9 (SECTION 20AR): `availability` names the concepts that are switched off in this match. They get no chip, are
 // not the "new" concept and are not announced as next; one honest line lists them instead. Omitted = all available.
@@ -186611,7 +186680,9 @@ export const FirstRunPanel = React.memo(function FirstRunPanel({ view, onSkip, t
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id="first-run-h" className="font-bold text-base">🎓 Your first match — {view.goalText}</h2>
-          <div className="text-xs opacity-80">Day {view.day} of {view.byDay} · new tools unlock as they become useful, one at a time.</div>
+          {view.goalMetLine
+            ? <div className="text-xs font-semibold text-emerald-500" data-testid="first-run-goal-met">{view.goalMetLine}</div>
+            : <div className="text-xs opacity-80">Day {view.day} of {view.byDay} · new tools unlock as they become useful, one at a time.</div>}
         </div>
         <button type="button" onClick={onSkip} className="px-5 py-3 rounded-lg font-bold text-base bg-sky-600 hover:bg-sky-500 text-white shadow" data-testid="first-run-skip">Skip tutorial — open the full game</button>
       </div>
@@ -186702,6 +186773,8 @@ export const SimpleSettingsPanel = React.memo(function SimpleSettingsPanel({ set
           })}
         </section>
       ))}
+      {/* V10.0 (SECTION 20AY): the V10.0 switches and release notes, ahead of V9.9's. */}
+      <V100SimpleNewCard settings={settings} onChange={onChange} boxClassName={box} />
       {/* V9.9 (SECTION 20AT, W4A — f1-03): the V9.9 switches and release notes, findable from the view Settings opens on. */}
       <V99SimpleNewCard settings={settings} onChange={onChange} boxClassName={box} selectClassName={v99Simple.select} />
     </div>
@@ -187397,8 +187470,8 @@ export function runV97CorrectnessSweepSelfTests(): V9SelfTestResult[] {
     return swing?.id === 'tp_swing_big' || JSON.stringify(swing);
   });
   // V9.9 (SECTION 20AQ): GAME_VERSION moved to 9.9.0 with the V9.9 bump; what WP-A pinned for the save schema still holds.
-  check('v97cs36_version_unchanged', 'GAME_VERSION is 9.9.0 (bumped in V9.9) and SAVE_SCHEMA_VERSION stays 7.1', () =>
-    (VERSION_CONSTANTS.GAME_VERSION === '9.9.0' && VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1') || `${VERSION_CONSTANTS.GAME_VERSION} / ${VERSION_CONSTANTS.SAVE_SCHEMA_VERSION}`);
+  check('v97cs36_version_unchanged', 'GAME_VERSION is 10.0.0 (bumped in V10.0) and SAVE_SCHEMA_VERSION stays 7.1', () => // V10.0 (SECTION 20AY): pin moved with the version bump
+    (VERSION_CONSTANTS.GAME_VERSION === '10.0.0' && VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1') || `${VERSION_CONSTANTS.GAME_VERSION} / ${VERSION_CONSTANTS.SAVE_SCHEMA_VERSION}`);
   check('v97cs37_crisis_slices', "Crisis slices: flag off keeps V9.6's default-80 working copy; flag on uses the live stability and chains", () => {
     const a: GameAction = { type: 'mitigateCrisis', actorId: 'player', price: 120, parameters: { cost: 120, crisisId: 'crisis_cyber_grid_blackout' } };
     const offRes = act(fixture(false), a), onRes = act(fixture(true), a);
@@ -188744,6 +188817,12 @@ export function runSaveMigrationLadder(data: SaveGameData, sourceVersion: string
     current = step.data;
     changed = changed || step.changed;
   }
+  // V10.0 (SECTION 20AY): a save written before V10.0 keeps the rules it was started with (migrateSaveTo1000).
+  if (compareSemVer(sourceVersion, '10.0.0') < 0) {
+    const step = migrateSaveTo1000(current);
+    current = step.data;
+    changed = changed || step.changed;
+  }
   return { data: current, changed };
 }
 
@@ -188806,13 +188885,15 @@ export function runV99FoundationsSelfTests(): V9SelfTestResult[] {
   const booleanKeys: readonly V99BooleanSettingKey[] = [...V99_FEATURE_TOGGLE_ROWS, ...V99_CLASSIC_TOGGLE_ROWS].map(r => r.key);
 
   // ---- Version ----------------------------------------------------------------------------------------------------------
-  check('v99fx_01_version', 'GAME_VERSION is 9.9.0, the label reads V9.9 and a new save stamps it', () =>
-    (GAME_VERSION === '9.9.0' && VERSION_CONSTANTS.GAME_VERSION === '9.9.0' && GAME_VERSION_LABEL === 'V9.9' && createV95SaveFixture().metadata.gameVersion === '9.9.0') || `${GAME_VERSION} / ${GAME_VERSION_LABEL}`);
+  // V10.0 (SECTION 20AY): pin moved with the version bump — the label still derives from GAME_VERSION.
+  check('v99fx_01_version', 'GAME_VERSION is 10.0.0, the label reads V10.0 and a new save stamps it', () =>
+    (GAME_VERSION === '10.0.0' && VERSION_CONSTANTS.GAME_VERSION === '10.0.0' && GAME_VERSION_LABEL === 'V10.0' && createV95SaveFixture().metadata.gameVersion === '10.0.0') || `${GAME_VERSION} / ${GAME_VERSION_LABEL}`);
   check('v99fx_02_schemas_unchanged', 'The bump leaves every schema version where it was', () =>
     (VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.SETTINGS_SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION === '4.0'
       && VERSION_CONSTANTS.RNG_SCHEMA_VERSION === '1.0' && VERSION_CONSTANTS.CHECKPOINT_SCHEMA_VERSION === '1.0') || json(VERSION_CONSTANTS));
-  check('v99fx_03_whats_new', "What's New leads with the V9.9 entry", () =>
-    (V99_CHANGELOG.length >= 8 && V99_CHANGELOG.length <= 14 && V99_CHANGELOG[0].startsWith(`${GAME_VERSION_LABEL} - `)
+  // V10.0 (SECTION 20AY): the V9.9 entry now follows V10.0's, so its label is written out ('V9.9 - ').
+  check('v99fx_03_whats_new', "What's New keeps the V9.9 entry", () =>
+    (V99_CHANGELOG.length >= 8 && V99_CHANGELOG.length <= 14 && V99_CHANGELOG[0].startsWith('V9.9 - ')
       && new Set(V99_CHANGELOG).size === V99_CHANGELOG.length && V99_CHANGELOG.every(line => typeof line === 'string' && line.length >= 20 && line.length <= 170)
       // the three new features are named and said to be off by default; both "classic" settings are named
       && V99_CHANGELOG.some(line => line.includes('off by default') && line.includes('Autosave & Resume') && line.includes('Match Journal') && line.includes('Turn Digest'))
@@ -188822,7 +188903,7 @@ export function runV99FoundationsSelfTests(): V9SelfTestResult[] {
   check('v99fx_04_old_save_loads_silently', 'A 9.6.0-stamped save loads through the transaction; only the stamp changes, so no upgrade message is due', () => {
     const tx = prepareSaveLoadTransaction(json(stamped('9.6.0')));
     const r = tx.report;
-    return (tx.ok && tx.data !== null && r.sourceVersion === '9.6.0' && r.targetVersion === '9.9.0' && r.migrationRequired && r.migrationIdempotent && r.migrationChangedData === false
+    return (tx.ok && tx.data !== null && r.sourceVersion === '9.6.0' && r.targetVersion === GAME_VERSION && r.migrationRequired && r.migrationIdempotent && r.migrationChangedData === false
       && !saveUpgradeNoticeDue(r.migrationRequired, r.migrationChangedData, r.sourceVersion) && r.fatalErrors.length === 0) || json({ ok: tx.ok, req: r.migrationRequired, idem: r.migrationIdempotent, changed: r.migrationChangedData, fatal: r.fatalErrors });
   });
   check('v99fx_05_only_metadata_differs', 'Migrating a validated 9.6.0 save changes nothing but the version stamp', () => {
@@ -188830,7 +188911,7 @@ export function runV99FoundationsSelfTests(): V9SelfTestResult[] {
     const m = v95MigrateSaveForLoad(clone(clean));
     const strip = (d: SaveGameData) => { const meta: Record<string, unknown> = { ...d.metadata }; SAVE_VERSION_STAMP_KEYS.forEach(k => { delete meta[k]; }); return v99StableStringify({ ...d, metadata: meta }); };
     const again = v95MigrateSaveForLoad(clone(m.data));
-    return (m.migrated && m.sourceVersion === '9.6.0' && m.changed === false && m.data.metadata.gameVersion === '9.9.0' && strip(m.data) === strip(clean)
+    return (m.migrated && m.sourceVersion === '9.6.0' && m.changed === false && m.data.metadata.gameVersion === GAME_VERSION && strip(m.data) === strip(clean)
       && Object.keys(settingsOf(m.data)).length === Object.keys(settingsOf(clean)).length && !again.migrated && !again.changed) || json({ migrated: m.migrated, changed: m.changed, again: again.migrated });
   });
   check('v99fx_06_step_idempotent', 'migrateSaveTo990 is pure and idempotent: twice equals once, the input is not mutated, nothing is reported changed', () => {
@@ -188859,10 +188940,10 @@ export function runV99FoundationsSelfTests(): V9SelfTestResult[] {
       && newer.ok && !newer.report.migrationRequired && newer.report.migrationChangedData === false && newer.report.warnings.some(w => w.includes('newer version') && w.includes('99.0.0'))
       && !direct.migrated && !direct.changed && direct.data.metadata.gameVersion === '99.0.0') || json({ current: current.report.migrationRequired, newer: newer.ok, warnings: newer.report.warnings });
   });
-  check('v99fx_09_very_old_save', 'A 6.9.0-stamped save still climbs the whole ladder and is stamped 9.9.0', () => {
+  check('v99fx_09_very_old_save', 'A 6.9.0-stamped save still climbs the whole ladder and is stamped with the current version', () => {
     const tx = prepareSaveLoadTransaction(json(stamped('6.9.0')));
     const m = v95MigrateSaveForLoad(validateSaveDataCore(stamped('6.9.0')));
-    return (tx.ok && tx.report.migrationRequired && tx.report.migrationIdempotent && m.migrated && m.sourceVersion === '6.9.0' && m.data.metadata.gameVersion === '9.9.0'
+    return (tx.ok && tx.report.migrationRequired && tx.report.migrationIdempotent && m.migrated && m.sourceVersion === '6.9.0' && m.data.metadata.gameVersion === GAME_VERSION
       && m.data.metadata.saveSchemaVersion === VERSION_CONSTANTS.SAVE_SCHEMA_VERSION) || json({ ok: tx.ok, req: tx.report.migrationRequired, idem: tx.report.migrationIdempotent });
   });
   check('v99fx_10_change_detection', 'The upgrade notice follows real changes: the stamp and key order do not count, a changed or added value does', () => {
@@ -194369,6 +194450,9 @@ export function buildMatchDebriefReport(params: DebriefAssemblyParams): DebriefA
     lines.push('The match was too short to record a day-by-day history, so there are no turning points to show.');
   }
   lines.push(hasRival ? `Challenges won: ${who} ${recap.playerChallengeWins}, ${rivalSide} ${recap.rivalChallengeWins}.` : `Challenges won: ${recap.playerChallengeWins}.`);
+  // V10.0 (SECTION 20AZ): the match's Rival Races, when any ran (no line otherwise).
+  const v100RaceLine = rivalRaceDebriefLine(gs.rivalRaces, rivalSide);
+  if (v100RaceLine) lines.push(v100RaceLine);
 
   const data: DebriefDataAvailability = {
     history: recap.daysRecorded >= 2, swingPoints: swingPoints.length > 0, growth: changeDays > 0,
@@ -195688,6 +195772,17 @@ export interface ClassicAiLiveHooks {
   refine?: (candidates: Array<AIAction & { score: number }>) => Array<AIAction & { score: number }>;
   /** R2: the mistake roll is drawn as always but cannot turn this decision into "thinking" (a paid-for action). */
   suppressMistake?: boolean;
+  /**
+   * V10.0 (SECTION 20AY, F1): a match started on V10.0 (classic rival off). The rival plays its best move at its
+   * difficulty's rate (pickV100RivalDecision) and a mistake is a lesser move, never a wasted "thinking" action.
+   */
+  v100Policy?: boolean;
+  /**
+   * V10.0 (SECTION 20AZ): reshapes the candidates AFTER scoring, the strategy overlays and memory influence — right before
+   * they are ranked — so a preference stated here (an open Rival Race) is weighed against the final scores. A candidate
+   * it adds is still checked against isRejected. No hook = the ranking is exactly V9.9's.
+   */
+  rescore?: (candidates: Array<AIAction & { score: number }>) => Array<AIAction & { score: number }>;
 }
 /** The candidates the chooser may still propose. No hook = the list itself (same array, same order). */
 export function classicAiProposable<T extends AIAction & { score: number }>(candidates: T[], live: ClassicAiLiveHooks | null | undefined): T[] {
@@ -196058,10 +196153,23 @@ export function rivalLiveHooksFor(input: { options: RivalDecisionOptions | null 
     ? { actor: input.aiState, gameState: input.gameState, settings: input.settings, difficultyKey: input.difficultyKey, ownerKey: RIVAL_OWNER_KEY } : null;
   const isRejected = input.options?.isRejected;
   if (!discipline) return undefined; // W4A (F4-01): no match seed = V9.8's chooser, also after a refused move (it re-proposed it once, then re-decided)
-  return buildRivalLiveHooks(isRejected || (() => false), {
+  const hooks = buildRivalLiveHooks(isRejected || (() => false), {
     sabotageEnabled: input.settings.sabotageEnabled === true, opponentDebuffs: v99IsRecord(input.playerState) ? input.playerState.debuffs : undefined,
     discipline, paidSlot: input.options?.paidSlot === true, onRuleError: input.onRuleError
   });
+  // V10.0 (SECTION 20AY, F1): a match started on V10.0 gets the V10.0 pick unless the classic (V9.9) rival was chosen.
+  // (Its stakes stay the R2 rules' Kelly-sized ones: a smaller early stake was tried and slowed the rival's opening.)
+  if (v100RivalPolicyActive(input.gameState, input.settings)) hooks.v100Policy = true;
+  // V10.0 (SECTION 20AZ): while a Rival Race is open the rival favours the moves that advance it — weighed against the
+  // FINAL scores (after scoring, overlays and memory), which is where its preference can actually win.
+  const raceContext = v100RivalRaceChooserContext(input.gameState, input.aiState, input.settings);
+  if (raceContext) {
+    hooks.rescore = candidates => {
+      try { return rivalRaceRefine(candidates, raceContext); }
+      catch (error) { try { input.onRuleError?.(error); } catch { /* reporting must not break the decision */ } return candidates; }
+    };
+  }
+  return hooks;
 }
 /** What the live game does with a failure inside the R2 rules: it is logged; the decision went on with the V9.8 list. */
 export function reportRivalRuleError(error: unknown): void {
@@ -198260,7 +198368,7 @@ export function V99SimpleNewCard({ settings, onChange, boxClassName, selectClass
       selectClassName={selectClassName}
     />
     <details className="text-xs" data-testid="v99-simple-whats-new">
-      <summary className="cursor-pointer font-semibold">What's new in {GAME_VERSION_LABEL}</summary>
+      <summary className="cursor-pointer font-semibold">What's new in V9.9</summary>{/* V10.0 (SECTION 20AY): written out — GAME_VERSION_LABEL now reads V10.0 */}
       <ul className="list-disc pl-5 mt-1 space-y-0.5 opacity-90">{V99_CHANGELOG.slice(1).map(line => <li key={line}>{line}</li>)}</ul>
     </details>
   </section>
@@ -198275,12 +198383,13 @@ export const V99_SIMPLE_NEW_CARD_SELECTOR = '[data-testid="v99-simple-new"]';
 export function V99SimpleNewJump(): React.ReactElement {
   const jump = () => {
     if (typeof document === 'undefined') return;
-    const card = document.querySelector(V99_SIMPLE_NEW_CARD_SELECTOR);
+    // V10.0 (SECTION 20AY): the V10.0 card sits just above V9.9's at the end of the page; the jump lands on it first.
+    const card = document.querySelector('[data-testid="v100-simple-new"]') || document.querySelector(V99_SIMPLE_NEW_CARD_SELECTOR);
     if (card instanceof HTMLElement) { card.scrollIntoView({ block: 'start' }); card.focus({ preventScroll: true }); }
   };
   return (
     <button type="button" onClick={jump} className="w-full text-left text-xs rounded-lg border border-sky-500 px-3 py-2" data-testid="v99-simple-new-jump">
-      <span className="font-semibold">{V99_SETTINGS_HUB_SECTION_TITLE}</span> — autosave, match journal, turn digest, rival speed and the classic look are at the end of this page ↓
+      <span className="font-semibold">{V100_SETTINGS_HUB_SECTION_TITLE}</span> — Rival Races and the classic rival, then V9.9's autosave, match journal, turn digest, rival speed and classic look, are at the end of this page ↓
     </button>
   );
 }
@@ -207062,6 +207171,1480 @@ export function runV99TurnDigestSelfTests(): V9SelfTestResult[] {
 
 
 // ============================================================================
+// SECTION 20AY: V10.0 FOUNDATIONS & FIXES — A RIVAL THAT PLAYS, A WORLD THAT MOVES, SCREENS THAT TELL THE TRUTH
+// ----------------------------------------------------------------------------
+// What a V10.0 lead-developer review of V9.9 found and fixed. Every rule change is tied to the MATCH, never to the
+// build: a match started on V10.0 carries gameState.rulesVersion = V100_RULES_VERSION (optional field; missing = a
+// match started before V10.0, which keeps playing by the rules it started with, move for move — saves and replays
+// included). Helpers live here; the fixes are made in place and marked `// V10.0 (SECTION 20AY): …`.
+//
+// F1 A rival that plays. pickClassicDecision made Medium choose at random among its top THREE options on every
+//    action (Easy four; Hard took its best only 74% of the time, Expert 90%), and a "mistake" spent a whole action on
+//    "Contemplating strategy…". A player who only pressed the Recommended Action's "Do It" beat Medium 4:1 and Expert
+//    2.5:1 with the lead never changing hands. In a V10.0 match the rival plays its best move at the rate the difficulty
+//    screen promises (V100_RIVAL_BEST_MOVE_RATE = the profiles' "Decision" 40/70/90/95%, else the runner-up), a mistake
+//    is a lesser move instead of a wasted one, a won challenge pays the rival the same win-streak bonus it always paid
+//    the player (STREAK_BONUSES). Its stakes stay the R2 rules' Kelly-sized ones.
+//    Setting: classicRivalV99 (match rule, default off) = the rival exactly as V9.9 played it.
+// F2 A world that moves. gameState.roundNumber only advances when Team mode's turn order wraps; in AI Opponent, Grand
+//    Tour, Scenario and Single Player it stayed 1 all match, so every round-timed system — Living Regions, Regional
+//    Factions, World Reaction windows ("Window: until day 2" on day 6), diplomacy deal deadlines, the after-action
+//    chain — believed time never passed. In a V10.0 one-on-one match the round those systems read is the day
+//    (v100EffectiveRound). Team mode is unchanged (its rounds always advanced).
+// F3 A first match that teaches. The guided first match's goal is met on day 1 with three "Do It" presses; the tour
+//    then ended and every tool appeared at once. In a V10.0 match an early goal is celebrated and the tour carries on —
+//    one new tool a day, as designed — until every tool is on screen (or the player skips).
+// F4 Screens that tell the truth: a cancelled risky challenge no longer leaves "What you did: Take …" behind; the
+//    Current Focus "Why?" answers the question asked (it answered "Why your cash is tight" whenever the goal mentioned
+//    money); the welcome card has the game's name and steps aside once the player has started playing (while it was
+//    up every other guided hint was held back).
+// F5 The rival's moves stay in History: its challenge results, trips and sales were short-lived notices deleted after
+//    five seconds, so History showed "turn begins / ended their turn" and nothing between. They now leave the toast
+//    lane exactly as before but stay in History.
+// Nothing here draws from a gameplay RNG stream or reads a clock, except pickV100RivalDecision, which draws from the
+// rng the rival chooser hands it (its own seeded stream), the same number of times on every path.
+// Suite v100fx (runV100FoundationsSelfTests).
+// ============================================================================
+
+// ---- The match's rules stamp ------------------------------------------------------------------------------------------
+/** The rules a match started on V10.0 plays by. Recorded as gameState.rulesVersion when a match starts. */
+export const V100_RULES_VERSION = 1000;
+/** Largest rules version a save may carry (anything else is not a stamp). */
+export const RULES_VERSION_MAX = 1000000;
+
+/** A usable rules stamp (a whole number from 1 to RULES_VERSION_MAX), or null. */
+export function sanitizeRulesVersion(raw: unknown): number | null {
+  return typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 1 && raw <= RULES_VERSION_MAX ? raw : null;
+}
+
+/** The rules stamp of the match in `gameState`, or null for a match started before V10.0. */
+export function readRulesVersion(gameState: unknown): number | null {
+  if (!gameState || typeof gameState !== 'object') return null;
+  return sanitizeRulesVersion((gameState as { rulesVersion?: unknown }).rulesVersion);
+}
+
+/** True for a match started on V10.0 or later. */
+export function isV100Match(gameState: unknown): boolean {
+  const version = readRulesVersion(gameState);
+  return version !== null && version >= V100_RULES_VERSION;
+}
+
+// ---- F1: a rival that plays -------------------------------------------------------------------------------------------
+export type V100RivalDifficulty = 'easy' | 'medium' | 'hard' | 'expert';
+
+/**
+ * How often the rival plays the move it rates best — exactly the "Decision" figure the difficulty screen shows
+ * (AI_DIFFICULTY_PROFILES[…].decisionQuality: 40 / 70 / 90 / 95%). The rest of the time it plays its runner-up (Easy:
+ * one of the next three). V9.9's pick did not match the screen: Medium chose at random among its top three every time.
+ */
+export const V100_RIVAL_BEST_MOVE_RATE: Readonly<Record<V100RivalDifficulty, number>> = { easy: 0.4, medium: 0.7, hard: 0.9, expert: 0.95 };
+
+/** A difficulty key as the rival reads it; anything unknown is Medium (makeAiDecision's own fallback). */
+export function v100RivalDifficulty(key: unknown): V100RivalDifficulty {
+  const k = String(key || '').toLowerCase();
+  return k === 'easy' || k === 'hard' || k === 'expert' ? k : 'medium';
+}
+
+/** The V10.0 rival policy is on in a V10.0 match unless the player chose the classic (V9.9) rival. */
+export function v100RivalPolicyActive(gameState: unknown, settings: { classicRivalV99?: unknown } | null | undefined): boolean {
+  return isV100Match(gameState) && settings?.classicRivalV99 !== true;
+}
+
+/**
+ * The V10.0 pick from a list ranked best first. One draw decides best vs runner-up (Easy draws once more to choose
+ * among its next three); a mistake that hit means a lesser move — the runner-up, or for Easy one of the next three —
+ * never an action spent on "thinking". Always draws the same number of values for a given list and difficulty.
+ */
+export function pickV100RivalDecision<T>(ranked: readonly T[], rng: { next: () => number }, difficultyKey: unknown, mistake: boolean): T | null {
+  if (!ranked.length) return null;
+  const difficulty = v100RivalDifficulty(difficultyKey);
+  const roll = rng.next();
+  const lesser = (): T => {
+    if (ranked.length === 1) return ranked[0];
+    if (difficulty !== 'easy') return ranked[1];
+    const pool = Math.min(3, ranked.length - 1);
+    return ranked[1 + Math.min(pool - 1, Math.floor(rng.next() * pool))];
+  };
+  if (mistake) return lesser();
+  return roll < V100_RIVAL_BEST_MOVE_RATE[difficulty] ? ranked[0] : lesser();
+}
+
+/** The win-streak share STREAK_BONUSES pays on a win that brings the streak to consecutiveWinsBefore + 1 (0 = none). */
+export function v100StreakRewardShare(consecutiveWinsBefore: unknown, hasLuckyStreak: boolean): number {
+  // computeChallengeRewardCore's rule: Lucky Streak and the streak tiers do not stack.
+  if (hasLuckyStreak) return 0;
+  const streak = Math.max(0, Math.floor(Number(consecutiveWinsBefore) || 0)) + 1;
+  const table: Readonly<Record<number, { rewardBonus: number }>> = STREAK_BONUSES;
+  const tiers = Object.keys(table).map(Number).sort((a, b) => b - a);
+  for (const tier of tiers) if (streak >= tier) return Number(table[tier].rewardBonus) || 0;
+  return 0;
+}
+
+/** A rival challenge payout with the streak share applied (whole dollars, never below the payout it was given). */
+export function v100RivalRewardWithStreak(reward: number, share: number): number {
+  const base = Math.max(0, Math.floor(Number(reward) || 0));
+  return share > 0 ? Math.max(base, Math.floor(base * (1 + share))) : base;
+}
+
+// ---- F2: a world that moves -------------------------------------------------------------------------------------------
+/**
+ * The round the round-timed systems read (World Reaction, diplomacy, Living Regions, Regional Factions, guided
+ * learning, the after-action chain). Team mode and every match started before V10.0: gameState.roundNumber, exactly
+ * as before. A V10.0 one-on-one match: the day (roundNumber never advances there).
+ */
+export function v100EffectiveRound(gameState: unknown): number {
+  const gs = gameState && typeof gameState === 'object' ? gameState as { roundNumber?: unknown; day?: unknown; selectedMode?: unknown } : {};
+  const round = Math.max(1, Math.floor(Number(gs.roundNumber) || 1));
+  if (!isV100Match(gameState)) return round;
+  const mode = typeof gs.selectedMode === 'string' ? gs.selectedMode : null;
+  if (isTeamModeSelection(mode)) return round;
+  const day = Math.max(1, Math.floor(Number(gs.day) || 1));
+  return Math.max(round, day);
+}
+
+// ---- F3: a first match that teaches -----------------------------------------------------------------------------------
+export type V100FirstRunStep =
+  | { kind: 'none' }
+  | { kind: 'celebrate' }
+  | { kind: 'unlock'; concept: FirstRunConcept }
+  | { kind: 'finish'; outcome: FirstRunOutcome };
+
+/** True once every concept of the unlock order is on screen. */
+export function v100FirstRunAllUnlocked(state: FirstRunState): boolean {
+  return FIRST_RUN_UNLOCK_ORDER.every(c => state.unlocked.includes(c));
+}
+
+/**
+ * What the guided first match does next in a V10.0 match. An early goal is celebrated once (state.outcome becomes
+ * 'goal_met' while the tour stays active) and the tour goes on unlocking one concept a day; it finishes when every
+ * concept is on screen. A missed deadline (no goal by day 8) finishes it as before.
+ */
+export function v100FirstRunStep(state: FirstRunState | null, signals: FirstRunSignals): V100FirstRunStep {
+  if (!state || !state.active) return { kind: 'none' };
+  const celebrated = state.outcome === 'goal_met';
+  const allUnlocked = v100FirstRunAllUnlocked(state);
+  if (celebrated) {
+    if (allUnlocked) return { kind: 'finish', outcome: 'goal_met' };
+  } else {
+    const goal = evaluateFirstRunGoal(state, signals);
+    if (goal === 'deadline') return { kind: 'finish', outcome: 'deadline' };
+    if (goal === 'goal_met') return allUnlocked ? { kind: 'finish', outcome: 'goal_met' } : { kind: 'celebrate' };
+  }
+  const next = nextFirstRunUnlock(state, signals);
+  return next ? { kind: 'unlock', concept: next } : { kind: 'none' };
+}
+
+/** The first-run state with the goal recorded as met while the tour carries on (applied through the 'init' patch). */
+export function v100CelebrateFirstRunGoal(state: FirstRunState): FirstRunState {
+  return { ...state, outcome: 'goal_met' };
+}
+
+/**
+ * Whether the guided first match still keeps Autosave & Resume from writing a copy. It did for the whole tour because
+ * the tour restarted by itself at every launch; once the goal is met the first run is recorded as completed (so it no
+ * longer restarts) and the match can be resumed like any other.
+ */
+export function v100FirstRunBlocksRecovery(state: FirstRunState | null | undefined): boolean {
+  return Boolean(state && state.active) && state!.outcome !== 'goal_met';
+}
+
+/** The notice raised when the goal is met before the tour is over. */
+export function v100FirstRunGoalMetNotice(day: number, nextLabel: string | null): string {
+  const next = nextLabel ? ` (next: ${nextLabel})` : '';
+  return `🎓 Goal met on day ${Math.max(1, Math.floor(Number(day) || 1))} — well played! The tour carries on with one new tool a day${next}. "Skip tutorial" opens everything now.`;
+}
+
+/** The tutorial panel's second line once the goal is met while the tour carries on (null before the goal is met). */
+export function v100FirstRunGoalMetLine(state: FirstRunState | null, nextLabel: string | null): string | null {
+  if (!state || !state.active || state.outcome !== 'goal_met') return null;
+  return nextLabel ? `✓ Goal met — the tour carries on: one new tool a day (next: ${nextLabel}).` : '✓ Goal met — every tool is on screen; the tour ends with this day.';
+}
+
+/** The tutorial panel's view: buildFirstRunView plus the goal-met line (only ever set in a V10.0 match, where the tour can outlive the goal). */
+export function v100FirstRunPanelView(state: FirstRunState, signals: FirstRunSignals, availability?: Partial<Record<FirstRunConcept, boolean>> | null): FirstRunView {
+  const view = buildFirstRunView(state, signals, availability);
+  const line = v100FirstRunGoalMetLine(state, view.nextLabel);
+  return line ? { ...view, goalMetLine: line } : view;
+}
+
+// ---- F4: screens that tell the truth ----------------------------------------------------------------------------------
+/**
+ * The teaching card after a challenge's confirmation was closed WITHOUT taking it: a card about that challenge goes
+ * (it said "What you did" about a move that was never made); any other card stays.
+ */
+export function v100TeachingAfterCancel<T extends { whatHappened?: unknown }>(teaching: T | null | undefined, cancelledChallengeName: string | null | undefined): T | null {
+  if (!teaching) return null;
+  if (!cancelledChallengeName) return teaching;
+  return v99TeachingChallengeName(teaching.whatHappened) === cancelledChallengeName ? null : teaching;
+}
+
+/** The challenge a closed confirmation was about, when it was a challenge's "Risky Challenge" question. */
+export function v100ConfirmationChallengeName(dialog: { type?: unknown; data?: unknown } | null | undefined): string | null {
+  if (!dialog || dialog.type !== 'challenge' || !dialog.data || typeof dialog.data !== 'object') return null;
+  const challenge = (dialog.data as { challenge?: unknown }).challenge;
+  const name = challenge && typeof challenge === 'object' ? (challenge as { name?: unknown }).name : null;
+  return typeof name === 'string' && name ? name : null;
+}
+
+/**
+ * "Why is <goal> my focus?" (the Current Focus card's own Why?) and "why is that my goal / what is my objective" ask
+ * about the current objective. The question router read "why … my … money" as a cash diagnosis and answered "Why
+ * your cash is tight" whenever the goal mentioned money.
+ */
+export function v100IsFocusQuestion(normalized: unknown): boolean {
+  const q = String(normalized || '').toLowerCase().trim().replace(/[?.!\s]+$/, '');
+  // "What is my goal?" / "Explain my current objective" — the question is the objective itself.
+  if (/^(what('s| is) my|explain my) (current )?(focus|goal|objective)$/.test(q)) return true;
+  // "Why is <something> my focus/goal?" — but not a question that only mentions the goal ("why is the rival ahead of me on my goal").
+  const m = /^why is (.{1,90}?) (?:still )?my (current )?(focus|goal|objective)$/.exec(q);
+  if (!m) return false;
+  return !/\b(rival|opponent|ahead|behind|losing|winning|beating|me|i)\b/.test(m[1]);
+}
+
+/** The game's name, as the main menu writes it. */
+export const V100_GAME_NAME = 'Aussie Adventure';
+
+/**
+ * The guided-learning welcome card has done its job once the player has started playing — an action taken, or the
+ * first day over. It stayed until clicked (seen on day 6), and while it was up every other guided hint was held back.
+ */
+export function v100WelcomeCardDone(input: { welcome: unknown; day: unknown; actionsUsed: unknown }): boolean {
+  if (input.welcome !== 'pending') return false;
+  return (Math.floor(Number(input.day) || 1) > 1) || (Math.floor(Number(input.actionsUsed) || 0) > 0);
+}
+
+// ---- F5: the rival's moves stay in History ------------------------------------------------------------------------------
+/**
+ * Notifications the History keeps after their toast leaves although they are not "persistent": the rival's moves
+ * ('ai' notices — challenge results, trips, sales, purchases). A persistent notice is already kept.
+ */
+export function v100KeepsInHistory(n: { type?: unknown; persistent?: unknown } | null | undefined): boolean {
+  if (!n) return false;
+  return n.persistent !== true && n.type === 'ai';
+}
+
+/**
+ * The toast lifetime with F5 applied: a kept notice leaves the lane at the same moment, hidden instead of deleted.
+ * Classic sticky toasts (the V9.8 presentation) keep V9.8's rule exactly: there a short-lived notice is deleted.
+ */
+export function v100ToastLifetime(n: V99ToastLike | null | undefined, dismissSeconds: number | null | undefined, classicSticky: boolean): V99ToastLifetime {
+  const base = resolveToastLifetime(n, dismissSeconds, classicSticky);
+  return !classicSticky && base.mode === 'delete' && v100KeepsInHistory(n) ? { mode: 'hide', seconds: base.seconds } : base;
+}
+
+/** What a toast's ✕ does with F5 applied: a kept notice is hidden (it stays in History), as a persistent one is. */
+export function v100ToastDismissMode(n: V99ToastLike | null | undefined, classicSticky: boolean): 'delete' | 'hide' {
+  const base = v99ToastDismissMode(n, classicSticky);
+  return base === 'delete' && !classicSticky && v100KeepsInHistory(n) ? 'hide' : base;
+}
+
+/** Feedback that only describes the turn it was raised in ("No actions left · End your turn when you are ready"). */
+export const V100_TURN_BOUND_FEEDBACK_KINDS: readonly string[] = ['ap_exhausted'];
+/** The feedback queue once a new turn has begun: turn-bound items go (the same array comes back when none is queued). */
+export function v100DropStaleTurnFeedback<T extends { kind?: unknown }>(queue: T[]): T[] {
+  return queue.some(e => V100_TURN_BOUND_FEEDBACK_KINDS.includes(String(e.kind))) ? queue.filter(e => !V100_TURN_BOUND_FEEDBACK_KINDS.includes(String(e.kind))) : queue;
+}
+
+// ---- Save ladder rung ---------------------------------------------------------------------------------------------------
+/**
+ * Rung for saves stamped older than 10.0.0. V10.0 adds only optional fields (gameState.rulesVersion and
+ * gameState.rivalRaces; missing = the match plays as it did) and two match rules that the save sanitizer fills from
+ * the defaults (classicRivalV99, rivalRacesEnabled — both off). A save written before V10.0 cannot carry a rules
+ * stamp or a Rival Races record, so this rung removes them if it finds them (a hand-edited or mixed file): an old
+ * match never switches to V10.0 rules part-way. With nothing to remove the very same object comes back, changed: false.
+ */
+export function migrateSaveTo1000(data: SaveGameData): SaveMigrationStepResult {
+  const gs = data && data.gameState && typeof data.gameState === 'object' ? data.gameState as unknown as Record<string, unknown> : null;
+  if (!gs || (!Object.prototype.hasOwnProperty.call(gs, 'rulesVersion') && !Object.prototype.hasOwnProperty.call(gs, 'rivalRaces'))) return { data, changed: false };
+  const rest: Record<string, unknown> = {};
+  Object.keys(gs).forEach(key => { if (key !== 'rulesVersion' && key !== 'rivalRaces') rest[key] = gs[key]; });
+  return { data: { ...data, gameState: rest as unknown as SaveGameData['gameState'] }, changed: true };
+}
+
+// ---- Settings ---------------------------------------------------------------------------------------------------------------
+// Both are MATCH rules (V95_MATCH_SCOPED_SETTING_KEYS): a save carries them and a load restores them. Read with `=== true`.
+//   rivalRacesEnabled  boolean, false   NEW feature (SECTION 20AZ): head-to-head races against the rival
+//   classicRivalV99    boolean, false   true = the rival plays exactly as V9.9 did in a V10.0 match (F1 off)
+export type V100BooleanSettingKey = 'rivalRacesEnabled' | 'classicRivalV99';
+export const V100_SETTING_KEYS: readonly V100BooleanSettingKey[] = ['rivalRacesEnabled', 'classicRivalV99'];
+export const V100_SETTINGS_HUB_SECTION_ID = 'gameplay.v100';
+export const V100_SETTINGS_HUB_SECTION_TITLE = '✨ New in V10.0';
+
+export interface V100ToggleRow { key: V100BooleanSettingKey; label: string; description: string }
+
+/** The new feature. Off by default. */
+export const V100_FEATURE_TOGGLE_ROWS: readonly V100ToggleRow[] = [
+  { key: 'rivalRacesEnabled', label: 'Rival Races', description: 'Every few days a public race opens — first to win a challenge in a named state, take control of a region, set foot somewhere new, win a run of challenges or earn a sum. The winner takes the prize, and the rival races too. AI Opponent mode.' },
+];
+
+/** "Prefer the old way?" Off = the V10.0 rival; on = the rival exactly as V9.9 played it. */
+export const V100_CLASSIC_TOGGLE_ROWS: readonly V100ToggleRow[] = [
+  { key: 'classicRivalV99', label: 'Classic rival (V9.9)', description: 'On = the rival plays as it did in V9.9: it often picks one of its lesser moves at random, a mistake costs it a whole action, and it gets no win-streak bonus. Matches started before V10.0 always keep that rival.' },
+];
+
+/** True for the keys of the "New in V10.0" block (the Simple view's card may write exactly these). */
+export function isV100SettingKeyName(key: unknown): boolean {
+  return typeof key === 'string' && (V100_SETTING_KEYS as readonly string[]).includes(key);
+}
+
+/** What the hub body needs from the settings: the two keys, nothing else. GameSettingsState satisfies it. */
+export type V100SettingsView = { readonly [K in V100BooleanSettingKey]?: boolean };
+
+/** Body of the "✨ New in V10.0" settings section (hub and Simple view). Stateless; the caller writes through its tracked setter. */
+export function V100SettingsHubBody({ settings, onToggle, onClassName, offClassName }: { settings: V100SettingsView; onToggle: (key: V100BooleanSettingKey) => void; onClassName: string; offClassName: string }): React.ReactElement {
+  const toggleRow = (row: V100ToggleRow) => {
+    const on = settings[row.key] === true;
+    return (
+      <div key={row.key} className="flex items-center justify-between gap-3" data-testid={`v100-setting-row-${row.key}`}>
+        <div>
+          <div className="font-semibold">{row.label}</div>
+          <div className="text-sm opacity-75">{row.description}</div>
+        </div>
+        <button
+          type="button"
+          id={`v100-setting-${row.key}`}
+          data-testid={`v100-setting-${row.key}`}
+          aria-pressed={on}
+          aria-label={`${row.label}: ${on ? 'on' : 'off'}`}
+          onClick={() => onToggle(row.key)}
+          className={`px-4 py-2 rounded font-semibold shrink-0 ${on ? onClassName : offClassName}`}
+        >
+          {on ? 'ON' : 'OFF'}
+        </button>
+      </div>
+    );
+  };
+  return (
+    <div className="space-y-4" data-testid="v100-settings">
+      <div className="text-sm opacity-75">Rival Races is off until you switch it on. The rival plays better in every match started on V10.0; the classic switch below brings back the V9.9 rival.</div>
+      {V100_FEATURE_TOGGLE_ROWS.map(toggleRow)}
+      <div className="pt-3 border-t border-current border-opacity-10 space-y-4">
+        <div className="text-xs font-semibold uppercase tracking-wide opacity-75">Prefer the old way?</div>
+        {V100_CLASSIC_TOGGLE_ROWS.map(toggleRow)}
+      </div>
+    </div>
+  );
+}
+
+// ---- What's New ---------------------------------------------------------------------------------------------------------------
+// V10.0: the current release's entry; it leads the "What's New" list (Settings → Interface, and the Simple view's card).
+export const V100_CHANGELOG = [
+  `${GAME_VERSION_LABEL} - A rival worth beating, a world that moves`,
+  'The rival plays to win in matches started on V10.0: it makes its best move as often as the difficulty screen says, a slip is a weaker move instead of a wasted action, and it earns the win-streak bonus you do',
+  'Living regions and stakeholders now change day by day in one-on-one matches started on V10.0 (AI Opponent, Grand Tour, Scenario, Single Player) - they stood still outside Team mode',
+  'Opportunity windows show their real closing day, and AI diplomacy deals can expire again in one-on-one matches',
+  'Your first match keeps teaching after an early win: one new tool a day instead of everything at once',
+  'History keeps the rival\'s moves (its challenges, trips and sales) instead of only "turn begins" and "ended their turn"',
+  'Honest screens: cancelling a risky challenge no longer leaves "What you did" behind, and the focus card\'s Why? answers the question you asked',
+  'The welcome card uses the game\'s name and steps aside once you start playing, so the guided hints it was holding back can appear',
+  'Small fixes: "How you win" names the day the match really ends, "No actions left" clears when your next turn starts, and key caps are hidden on phone screens',
+  'New and off by default (Settings, New in V10.0): Rival Races - head-to-head races for a prize, each card says how to take part, and the rival races too',
+  'Prefer the old rival? Classic rival (V9.9) brings it back; matches started before V10.0 keep it automatically',
+];
+
+/** "✨ New in V10.0" in the Simple settings view: the same switches as the hub's section and the release notes. */
+export function V100SimpleNewCard({ settings, onChange, boxClassName }: { settings: V100SettingsView; onChange: (key: string, value: boolean | string | number) => void; boxClassName: string }) {
+  return (
+    <section className={`border rounded-xl p-3 space-y-3 ${boxClassName}`} aria-label="New in V10.0" data-testid="v100-simple-new" tabIndex={-1}>
+      <h4 className="font-semibold text-sm">{V100_SETTINGS_HUB_SECTION_TITLE}</h4>
+      <V100SettingsHubBody settings={settings} onToggle={key => onChange(key, settings[key] !== true)} onClassName="bg-emerald-600 text-white" offClassName="bg-slate-500/30" />
+      <details className="text-xs" data-testid="v100-simple-whats-new">
+        <summary className="cursor-pointer font-semibold">What's new in {GAME_VERSION_LABEL}</summary>
+        <ul className="list-disc pl-5 mt-1 space-y-0.5 opacity-90">{V100_CHANGELOG.slice(1).map(line => <li key={line}>{line}</li>)}</ul>
+      </details>
+    </section>
+  );
+}
+
+// ============================================================================
+// SECTION 20AZ: V10.0 RIVAL RACES — HEAD-TO-HEAD RACES FOR A PRIZE (new feature, off by default)
+// ----------------------------------------------------------------------------
+// Why: a match was two players playing solitaire side by side — nothing either side did changed what the other could
+// do, and one action (a challenge) out-earned everything else, so travel, region control and selling rarely mattered.
+// A race is a public, time-boxed objective both sides chase at once: the first to complete it takes the prize.
+//   • Kinds: win a challenge in a named state; take control of a named region; set foot in two regions you have never
+//     visited; win three challenges; grow your cash by a sum. Region, kind and numbers come from the match's seed and
+//     the race's number (a private hash — no gameplay RNG stream is drawn, so switching races on changes no dice).
+//   • One race at a time: the first opens on day 2, each runs for three days (never past the last day played), the
+//     next opens the day after one ends. Progress is read from what the match already records (the challenge log,
+//     region deposits, visited regions, cash) — nothing new is tracked per action.
+//   • The rival races too: while a race is open its chooser favours the moves that advance it (and may stake a race
+//     region even on a money goal). The prize is paid when the race is won; an unwon race simply closes.
+// Gating: rivalRacesEnabled (match rule, default OFF, read with `=== true`), AI Opponent mode only. Off: nothing is
+// built, shown, saved or paid, and the rival chooses exactly as it did.
+// Persistence: gameState.rivalRaces (optional; missing = no race has run — every save made before V10.0).
+// Suite v100rr (runV100RivalRacesSelfTests).
+// ============================================================================
+
+export type RivalRaceKind = 'region_challenge' | 'stake_region' | 'new_ground' | 'challenge_sprint' | 'cash_sprint';
+export type RivalRaceSide = 'player' | 'rival';
+export const RIVAL_RACE_KINDS: readonly RivalRaceKind[] = ['region_challenge', 'stake_region', 'new_ground', 'challenge_sprint', 'cash_sprint'];
+
+/** Where one side stood when the race opened (progress is measured from here). */
+export interface RivalRaceBaseline { challengesWon: number; visited: string[]; money: number }
+
+export interface RivalRace {
+  id: string;
+  index: number;
+  kind: RivalRaceKind;
+  title: string;
+  regionId: string | null;
+  /** 1 for a region race; the count for a sprint or new ground; dollars for a cash race. */
+  target: number;
+  prize: number;
+  openedDay: number;
+  /** The last day the race can be won (inclusive). */
+  closesDay: number;
+  baseline: { player: RivalRaceBaseline; rival: RivalRaceBaseline };
+}
+
+export interface RivalRaceResult { id: string; kind: RivalRaceKind; title: string; winner: RivalRaceSide | null; prize: number; day: number }
+
+export interface RivalRacesState {
+  version: 1;
+  /** How many races this match has opened. */
+  nextIndex: number;
+  /** The day the next race may open (when none is active). */
+  nextOpenDay: number;
+  active: RivalRace | null;
+  /** Finished races, newest last (bounded). */
+  results: RivalRaceResult[];
+}
+
+export const RIVAL_RACE_FIRST_DAY = 2;
+/** A race runs on the day it opens and the two after it. */
+export const RIVAL_RACE_DURATION_DAYS = 3;
+export const RIVAL_RACE_RESULTS_CAP = 12;
+export const RIVAL_RACE_NEW_GROUND_TARGET = 2;
+export const RIVAL_RACE_SPRINT_TARGET = 3;
+export const RIVAL_RACE_PRIZE_MIN = 300;
+export const RIVAL_RACE_PRIZE_MAX = 6000;
+export const RIVAL_RACE_CASH_MIN = 1500;
+export const RIVAL_RACE_CASH_MAX = 20000;
+const RIVAL_RACE_PRIZE_FACTOR: Readonly<Record<RivalRaceKind, number>> = { region_challenge: 1, stake_region: 1.3, new_ground: 1, challenge_sprint: 1.2, cash_sprint: 1 };
+/** A region race pays at least this multiple of the cheaper fare there (plus the stake for a stake race). */
+export const RIVAL_RACE_TRIP_PRIZE_FACTOR = 1.5;
+
+export function createRivalRacesState(): RivalRacesState {
+  return { version: 1, nextIndex: 0, nextOpenDay: RIVAL_RACE_FIRST_DAY, active: null, results: [] };
+}
+
+const rrIsRecord = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+const rrInt = (v: unknown, d: number, min: number, max: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.max(min, Math.min(max, Math.floor(v))) : d);
+const rrIsKind = (v: unknown): v is RivalRaceKind => typeof v === 'string' && (RIVAL_RACE_KINDS as readonly string[]).includes(v);
+const rrIsSide = (v: unknown): v is RivalRaceSide => v === 'player' || v === 'rival';
+const rrRegion = (v: unknown): string | null => (typeof v === 'string' && Object.prototype.hasOwnProperty.call(REGIONS, v) ? v : null);
+/** A region's name and how many challenges it lists, read without trusting REGIONS' loose typing. */
+function rrRegionInfo(code: string | null): { name: string; challengeCount: number } | null {
+  if (!code || !Object.prototype.hasOwnProperty.call(REGIONS, code)) return null;
+  const r: unknown = REGIONS[code];
+  if (!rrIsRecord(r)) return null;
+  return { name: typeof r.name === 'string' ? r.name : code, challengeCount: Array.isArray(r.challenges) ? r.challenges.length : 0 };
+}
+
+function rrBaseline(raw: unknown): RivalRaceBaseline {
+  const r = rrIsRecord(raw) ? raw : {};
+  const visited = Array.isArray(r.visited) ? r.visited.filter((x): x is string => typeof x === 'string' && Object.prototype.hasOwnProperty.call(REGIONS, x)).slice(0, 32) : [];
+  return { challengesWon: rrInt(r.challengesWon, 0, 0, 100000), visited: Array.from(new Set(visited)), money: typeof r.money === 'number' && Number.isFinite(r.money) ? Math.round(r.money) : 0 };
+}
+
+function rrRace(raw: unknown): RivalRace | null {
+  if (!rrIsRecord(raw) || !rrIsKind(raw.kind)) return null;
+  const kind = raw.kind;
+  const regionId = rrRegion(raw.regionId);
+  if ((kind === 'region_challenge' || kind === 'stake_region') && !regionId) return null;
+  const openedDay = rrInt(raw.openedDay, 1, 1, 100000);
+  const baseline = rrIsRecord(raw.baseline) ? raw.baseline : {};
+  return {
+    id: typeof raw.id === 'string' && raw.id ? raw.id.slice(0, 40) : `race_${rrInt(raw.index, 0, 0, 100000)}`,
+    index: rrInt(raw.index, 0, 0, 100000),
+    kind,
+    title: typeof raw.title === 'string' ? raw.title.slice(0, 160) : '',
+    regionId,
+    target: Math.max(1, rrInt(raw.target, 1, 1, 10000000)),
+    prize: rrInt(raw.prize, RIVAL_RACE_PRIZE_MIN, 0, RIVAL_RACE_PRIZE_MAX),
+    openedDay,
+    closesDay: Math.max(openedDay, rrInt(raw.closesDay, openedDay, 1, 100000)),
+    baseline: { player: rrBaseline(baseline.player), rival: rrBaseline(baseline.rival) }
+  };
+}
+
+/** Saves: absent before V10.0 (→ null). A malformed race is dropped; malformed results are skipped. */
+export function sanitizeRivalRacesState(raw: unknown): RivalRacesState | null {
+  if (!rrIsRecord(raw) || raw.version !== 1) return null;
+  const results: RivalRaceResult[] = (Array.isArray(raw.results) ? raw.results : []).filter(rrIsRecord).filter(r => rrIsKind(r.kind)).slice(-RIVAL_RACE_RESULTS_CAP).map(r => ({
+    id: typeof r.id === 'string' ? r.id.slice(0, 40) : 'race',
+    kind: r.kind as RivalRaceKind,
+    title: typeof r.title === 'string' ? r.title.slice(0, 160) : '',
+    winner: rrIsSide(r.winner) ? r.winner : null,
+    prize: rrInt(r.prize, 0, 0, RIVAL_RACE_PRIZE_MAX),
+    day: rrInt(r.day, 1, 1, 100000)
+  }));
+  return {
+    version: 1,
+    nextIndex: rrInt(raw.nextIndex, 0, 0, 100000),
+    nextOpenDay: rrInt(raw.nextOpenDay, RIVAL_RACE_FIRST_DAY, 1, 100000),
+    active: rrRace(raw.active),
+    results
+  };
+}
+
+// ---- What a race reads ----------------------------------------------------------------------------------------------------
+/** One side as the race sees it now. `debt` is what it owes on loans (a cash race counts cash net of it). */
+export interface RivalRaceSideSnapshot { id: string; name: string; money: number; region: string; visited: readonly string[]; debt?: number }
+
+/** Cash net of loans — what a cash race measures (borrowing is not "growing your cash"). */
+export function rivalRaceNetCash(s: { money: number; debt?: number }): number {
+  return Math.round((Number(s.money) || 0) - Math.max(0, Number(s.debt) || 0));
+}
+
+/** What an actor owes: every simple and advanced loan's outstanding amount. */
+export function rivalRaceDebtOf(actor: unknown): number {
+  if (!rrIsRecord(actor)) return 0;
+  const sum = (list: unknown) => (Array.isArray(list) ? list.reduce((t: number, l: unknown) => t + (rrIsRecord(l) && typeof l.amount === 'number' && Number.isFinite(l.amount) ? Math.max(0, l.amount) : 0), 0) : 0);
+  return Math.round(sum(actor.loans) + sum(actor.advancedLoans));
+}
+
+export interface RivalRaceInputs {
+  day: number;
+  /** The last day of the match that is played (matchLengthInDays). No race runs past it. */
+  lastDay: number;
+  /** The match's seed (resolveEffectiveMatchSeed): kinds, regions and numbers derive from it. */
+  seed: number;
+  player: RivalRaceSideSnapshot;
+  rival: RivalRaceSideSnapshot;
+  completions: ReadonlyArray<{ playerId?: unknown; region?: unknown; turn?: unknown }>;
+  deposits: Readonly<Record<string, Readonly<Record<string, number>>>>;
+  /** Whose turn it is: the side that just moved wins a tie (both sides cannot normally finish in the same turn). */
+  turnSide: RivalRaceSide;
+  /** False when the match refuses region deposits (negotiation mode): then no stake race is planned. Missing = true. */
+  staking?: boolean;
+}
+
+/** A number in [0, 1) from the seed, the race number and a purpose — the same every time, and no RNG stream is drawn. */
+export function rivalRaceHash(seed: number, index: number, salt: string): number {
+  const text = `race:${Math.floor(Number(seed) || 0)}:${Math.floor(Number(index) || 0)}:${salt}`;
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  h ^= h >>> 15; h = Math.imul(h, 2246822507) >>> 0; h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+}
+
+const rrRoundTo = (n: number, step: number) => Math.round(n / step) * step;
+const rrRegionName = (code: string | null) => rrRegionInfo(code)?.name || 'a region';
+
+/** Challenges a side has won so far, all match (the challenge log; the player logs as 'player', the rival as 'ai'). */
+export function rivalRaceChallengeCount(completions: RivalRaceInputs['completions'], actorId: string, fromDay: number, regionId: string | null = null): number {
+  return completions.filter(c => c && c.playerId === actorId && Number(c.turn) >= fromDay && (regionId === null || c.region === regionId)).length;
+}
+
+/** The region's controller ('player', 'ai', a team id) or null. */
+export function rivalRaceController(deposits: RivalRaceInputs['deposits'], regionId: string): string | null {
+  return getRegionControlSnapshot({ ...(deposits[regionId] || {}) }).controllerId;
+}
+
+/**
+ * The race to open as race number `index`, or null when fewer than two days are left to run one. Feasible kinds only:
+ * a region race needs a region neither side stands in (a stake race: one nobody controls); new ground needs two
+ * unvisited regions for each side. The previous race's kind is avoided when another one fits.
+ */
+export function planRivalRace(index: number, inputs: RivalRaceInputs, previousKind: RivalRaceKind | null = null): RivalRace | null {
+  const day = Math.max(1, Math.floor(inputs.day));
+  const closesDay = Math.min(day + RIVAL_RACE_DURATION_DAYS - 1, Math.floor(inputs.lastDay));
+  if (closesDay - day < 1) return null;
+  const codes = Object.keys(REGIONS).sort();
+  const standing = new Set([inputs.player.region, inputs.rival.region]);
+  const challengeRegions = codes.filter(c => !standing.has(c) && (rrRegionInfo(c)?.challengeCount || 0) > 0);
+  const freeRegions = codes.filter(c => !standing.has(c) && rivalRaceController(inputs.deposits, c) === null);
+  const unvisited = (s: RivalRaceSideSnapshot) => codes.filter(c => !s.visited.includes(c)).length;
+  const feasible = RIVAL_RACE_KINDS.filter(kind => {
+    if (kind === 'region_challenge') return challengeRegions.length > 0;
+    if (kind === 'stake_region') return inputs.staking !== false && freeRegions.length > 0;
+    if (kind === 'new_ground') return unvisited(inputs.player) >= RIVAL_RACE_NEW_GROUND_TARGET && unvisited(inputs.rival) >= RIVAL_RACE_NEW_GROUND_TARGET;
+    return true;
+  });
+  const choices = feasible.length > 1 && previousKind ? feasible.filter(k => k !== previousKind) : feasible;
+  const kind = choices[Math.min(choices.length - 1, Math.floor(rivalRaceHash(inputs.seed, index, 'kind') * choices.length))];
+  const pickRegion = (list: string[]) => list[Math.min(list.length - 1, Math.floor(rivalRaceHash(inputs.seed, index, 'region') * list.length))] || null;
+  const regionId = kind === 'region_challenge' ? pickRegion(challengeRegions) : kind === 'stake_region' ? pickRegion(freeRegions) : null;
+  const richer = Math.max(Number(inputs.player.money) || 0, Number(inputs.rival.money) || 0);
+  const average = ((Number(inputs.player.money) || 0) + (Number(inputs.rival.money) || 0)) / 2;
+  // A region race must be worth the trip: at least 1.5× the cheaper side's fare there (plus a stake's price for a stake race).
+  const fare = regionId ? Math.min(...[inputs.player.region, inputs.rival.region].map(from => computeTravelCostCore({ from, to: regionId }))) : 0;
+  const tripFloor = regionId ? (fare + (kind === 'stake_region' ? REGION_MIN_CONTROL_STAKE : 0)) * RIVAL_RACE_TRIP_PRIZE_FACTOR : 0;
+  const prize = Math.max(RIVAL_RACE_PRIZE_MIN, Math.min(RIVAL_RACE_PRIZE_MAX, rrRoundTo(Math.max(400, average * 0.15, tripFloor) * RIVAL_RACE_PRIZE_FACTOR[kind], 50)));
+  const target = kind === 'new_ground' ? RIVAL_RACE_NEW_GROUND_TARGET
+    : kind === 'challenge_sprint' ? RIVAL_RACE_SPRINT_TARGET
+      : kind === 'cash_sprint' ? Math.max(RIVAL_RACE_CASH_MIN, Math.min(RIVAL_RACE_CASH_MAX, rrRoundTo(richer * 0.3, 500)))
+        : 1;
+  const title = kind === 'region_challenge' ? `First to win a challenge in ${rrRegionName(regionId)}`
+    : kind === 'stake_region' ? `First to take control of ${rrRegionName(regionId)}`
+      : kind === 'new_ground' ? `First to set foot in ${target} regions they have never visited`
+        : kind === 'challenge_sprint' ? `First to win ${target} challenges`
+          : `First to grow their cash by ${fmtMoney(target)} (loans not counted)`;
+  const baseline = (s: RivalRaceSideSnapshot): RivalRaceBaseline => ({
+    challengesWon: rivalRaceChallengeCount(inputs.completions, s.id, 1),
+    visited: Array.from(new Set(s.visited.filter(c => Object.prototype.hasOwnProperty.call(REGIONS, c)))),
+    money: rivalRaceNetCash(s)
+  });
+  return {
+    id: `race_${index}`, index, kind, title, regionId, target, prize, openedDay: day, closesDay,
+    baseline: { player: baseline(inputs.player), rival: baseline(inputs.rival) }
+  };
+}
+
+/** How far one side has got in a race: `value` of `target`. */
+export interface RivalRaceProgress { value: number; target: number; done: boolean }
+
+export function rivalRaceProgress(race: RivalRace, side: RivalRaceSide, inputs: Pick<RivalRaceInputs, 'player' | 'rival' | 'completions' | 'deposits'>): RivalRaceProgress {
+  const snap = side === 'player' ? inputs.player : inputs.rival;
+  const base = race.baseline[side];
+  let value = 0;
+  if (race.kind === 'region_challenge') value = rivalRaceChallengeCount(inputs.completions, snap.id, race.openedDay, race.regionId) > 0 ? 1 : 0;
+  else if (race.kind === 'stake_region') value = race.regionId && rivalRaceController(inputs.deposits, race.regionId) === snap.id ? 1 : 0;
+  else if (race.kind === 'new_ground') value = snap.visited.filter(c => !base.visited.includes(c)).length;
+  else if (race.kind === 'challenge_sprint') value = rivalRaceChallengeCount(inputs.completions, snap.id, race.openedDay);
+  else value = Math.max(0, rivalRaceNetCash(snap) - base.money);
+  return { value, target: race.target, done: value >= race.target };
+}
+
+export type RivalRaceEvent =
+  | { kind: 'opened'; race: RivalRace }
+  | { kind: 'won'; race: RivalRace; winner: RivalRaceSide }
+  | { kind: 'closed'; race: RivalRace };
+
+/**
+ * One evaluation (pure): resolves the open race (a winner, or closed unwon after its last day), then opens the next one
+ * when its day has come. Returns the same state object when nothing changed.
+ */
+export function stepRivalRaces(stateIn: RivalRacesState | null, inputs: RivalRaceInputs): { state: RivalRacesState; events: RivalRaceEvent[] } {
+  const start = stateIn || createRivalRacesState();
+  let state = start;
+  const events: RivalRaceEvent[] = [];
+  const day = Math.max(1, Math.floor(inputs.day));
+  const active = state.active;
+  if (active && day > active.closesDay) {
+    // The race closed at the end of its last day: anything reached after it (overnight income on the next morning) is too late.
+    state = { ...state, active: null, nextOpenDay: day, results: [...state.results, { id: active.id, kind: active.kind, title: active.title, winner: null, prize: active.prize, day: active.closesDay }].slice(-RIVAL_RACE_RESULTS_CAP) };
+    events.push({ kind: 'closed', race: active });
+  } else if (active) {
+    const mine = rivalRaceProgress(active, 'player', inputs).done;
+    const theirs = rivalRaceProgress(active, 'rival', inputs).done;
+    if (mine || theirs) {
+      const winner: RivalRaceSide = mine && theirs ? inputs.turnSide : mine ? 'player' : 'rival';
+      state = { ...state, active: null, nextOpenDay: day + 1, results: [...state.results, { id: active.id, kind: active.kind, title: active.title, winner, prize: active.prize, day }].slice(-RIVAL_RACE_RESULTS_CAP) };
+      events.push({ kind: 'won', race: active, winner });
+    }
+  }
+  if (!state.active && day >= state.nextOpenDay) {
+    const previous = state.results.length ? state.results[state.results.length - 1].kind : null;
+    const race = planRivalRace(state.nextIndex, inputs, previous);
+    if (race) {
+      state = { ...state, active: race, nextIndex: state.nextIndex + 1 };
+      events.push({ kind: 'opened', race });
+    }
+  }
+  return { state: state === start && stateIn ? stateIn : state, events };
+}
+
+/** The line a race event is announced with. */
+export function rivalRaceEventMessage(event: RivalRaceEvent, names: { player: string; rival: string }): string {
+  if (event.kind === 'opened') return `🏁 Race on! ${event.race.title} — prize ${fmtMoney(event.race.prize)}, open until the end of day ${event.race.closesDay}. ${names.rival} is racing too.`;
+  if (event.kind === 'won') return event.winner === 'player'
+    ? `🏁 You won the race: ${event.race.title.replace(/^First to /, '')} — +${fmtMoney(event.race.prize)}!`
+    : `🏁 ${names.rival} won the race: ${event.race.title.replace(/^First to /, '')} (+${fmtMoney(event.race.prize)} to them).`;
+  return `🏁 Nobody finished the race in time: ${event.race.title.replace(/^First to /, '')}. The prize goes unclaimed.`;
+}
+
+/** A progress read-out for one side ("1/2", "+$600 of $1,500", "in control" / "not yet"). */
+export function rivalRaceProgressText(race: RivalRace, p: RivalRaceProgress): string {
+  if (race.kind === 'cash_sprint') return `+${fmtMoney(p.value)} of ${fmtMoney(p.target)}`;
+  if (race.kind === 'region_challenge') return p.done ? 'done' : 'not yet';
+  if (race.kind === 'stake_region') return p.done ? 'in control' : 'not yet';
+  return `${Math.min(p.value, p.target)}/${p.target}`;
+}
+
+// ---- The rival races too ------------------------------------------------------------------------------------------------
+export const RIVAL_RACE_TRAVEL_BOOST = 2;
+export const RIVAL_RACE_CHALLENGE_BOOST = 1.6;
+export const RIVAL_RACE_SPRINT_BOOST = 1.35;
+export const RIVAL_RACE_CASH_BOOST = 1.15;
+export const RIVAL_RACE_NEW_GROUND_BOOST = 1.8;
+
+export interface RivalRaceChooserContext {
+  race: RivalRace | null;
+  /** False when region deposits are refused (negotiation mode): no stake is offered. Missing = true. */
+  staking?: boolean;
+  ownerKey: string;
+  region: string;
+  money: number;
+  visited: readonly string[];
+  deposits: RivalRaceInputs['deposits'];
+}
+
+/**
+ * Reshapes the rival's candidates while a race is open: the moves that advance it score higher, and on a stake race
+ * the rival standing in the race region is offered the stake that takes control (when it keeps its safety buffer).
+ * No race (or a race it already holds) = the same array back, untouched.
+ */
+export function rivalRaceRefine<T extends { type?: unknown; data?: unknown; score: number }>(candidates: T[], ctx: RivalRaceChooserContext): T[] {
+  const race = ctx.race;
+  if (!race || !candidates.length) return candidates;
+  const dataOf = (c: T): Record<string, unknown> => (rrIsRecord(c.data) ? c.data : {});
+  const travelTo = (c: T) => (c.type === 'travel' ? String(dataOf(c).region || '') : '');
+  const boost = (c: T, factor: number): T => ({ ...c, score: (Number(c.score) || 0) * factor });
+  const top = candidates.reduce((best, c) => Math.max(best, Number(c.score) || 0), 0);
+  // The trip to a race region: doubled, and — when the prize is worth more than the fare (plus a stake's price) — at
+  // least as attractive as the best move it has, so the rival really sets off (a far region used to lose to any challenge).
+  const raceTrip = (c: T, extraCost: number): T => {
+    const fare = Math.max(0, Number(dataOf(c).cost) || 0);
+    const doubled = (Number(c.score) || 0) * RIVAL_RACE_TRAVEL_BOOST;
+    return { ...c, score: race.prize > fare + extraCost ? Math.max(doubled, top * 1.05 + 1) : doubled };
+  };
+  if (race.kind === 'region_challenge' && race.regionId) {
+    return candidates.map(c => (travelTo(c) === race.regionId ? raceTrip(c, 0) : c.type === 'challenge' && ctx.region === race.regionId ? boost(c, RIVAL_RACE_CHALLENGE_BOOST) : c));
+  }
+  if (race.kind === 'stake_region' && race.regionId) {
+    if (ctx.staking === false || rivalRaceController(ctx.deposits, race.regionId) === ctx.ownerKey) return candidates;
+    if (ctx.region !== race.regionId) {
+      const stakeThere: RegionDeposits = {};
+      Object.keys(ctx.deposits).forEach(code => { stakeThere[code] = { ...ctx.deposits[code] }; });
+      const stake = getRequiredDepositToControl(stakeThere, race.regionId, ctx.ownerKey);
+      return candidates.map(c => (travelTo(c) === race.regionId ? raceTrip(c, Math.max(0, stake)) : c));
+    }
+    const deposits: RegionDeposits = {};
+    Object.keys(ctx.deposits).forEach(code => { deposits[code] = { ...ctx.deposits[code] }; });
+    const required = getRequiredDepositToControl(deposits, race.regionId, ctx.ownerKey);
+    if (!(required > 0) || ctx.money - required < AI_SAFETY_BUFFER) return candidates;
+    const claim = { type: 'region_deposit', description: `Deposit ${fmtMoney(required)} in ${rrRegionName(race.regionId)}`, data: { region: race.regionId, amount: required, reason: 'to win the race' }, score: top * 1.2 + 1, plan: AI_TUNING_LAB_DEFAULT_PLAN } as unknown as T;
+    return [...candidates.filter(c => c.type !== 'region_deposit'), claim];
+  }
+  if (race.kind === 'new_ground') {
+    // Trips to new places score higher; and — as a region race's trip — the best of them is lifted above every other move
+    // when the prize still covers the fares left to pay (that trip's fare once per place still needed). A Hard or Expert
+    // rival's challenges used to outscore any boosted trip, so it never contested these races.
+    const fresh = (c: T) => { const r = travelTo(c); return Boolean(r) && !ctx.visited.includes(r); };
+    const before = race.baseline.rival.visited;
+    const remaining = Math.max(1, race.target - ctx.visited.filter(code => !before.includes(code)).length);
+    const boosted = candidates.map(c => (fresh(c) ? boost(c, RIVAL_RACE_NEW_GROUND_BOOST) : c));
+    let pick = -1;
+    boosted.forEach((c, i) => {
+      if (!fresh(c) || !(race.prize > Math.max(0, Number(dataOf(c).cost) || 0) * remaining)) return;
+      if (pick < 0 || (Number(c.score) || 0) > (Number(boosted[pick].score) || 0)) pick = i;
+    });
+    return pick < 0 ? boosted : boosted.map((c, i) => (i === pick ? { ...c, score: Math.max(Number(c.score) || 0, top * 1.05 + 1) } : c));
+  }
+  if (race.kind === 'challenge_sprint') return candidates.map(c => (c.type === 'challenge' ? boost(c, RIVAL_RACE_SPRINT_BOOST) : c));
+  return candidates.map(c => (c.type === 'challenge' || c.type === 'sell' ? boost(c, RIVAL_RACE_CASH_BOOST) : c));
+}
+
+/** Whether races run in this match: the setting, AI Opponent mode, a match in play. */
+export function rivalRacesActive(settings: { rivalRacesEnabled?: unknown } | null | undefined, gameState: { selectedMode?: unknown; gameMode?: unknown } | null | undefined): boolean {
+  return settings?.rivalRacesEnabled === true && gameState?.selectedMode === 'ai' && gameState?.gameMode === 'game';
+}
+
+/** Region deposits as the races read them (only whole, positive numbers). */
+export function rivalRaceDeposits(raw: unknown): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  if (!rrIsRecord(raw)) return out;
+  Object.keys(raw).forEach(code => {
+    const entry = raw[code];
+    if (!rrIsRecord(entry)) return;
+    const clean: Record<string, number> = {};
+    Object.keys(entry).forEach(owner => { const v = entry[owner]; if (typeof v === 'number' && Number.isFinite(v) && v > 0) clean[owner] = v; });
+    out[code] = clean;
+  });
+  return out;
+}
+
+/**
+ * What the rival's chooser needs to race, read from the live match — or null when races are not running or no race is
+ * open (then the chooser is untouched). `aiState` is the rival actor as makeAiDecision receives it.
+ */
+export function v100RivalRaceChooserContext(gameState: unknown, aiState: unknown, settings: { rivalRacesEnabled?: unknown; negotiationMode?: unknown } | null | undefined): RivalRaceChooserContext | null {
+  if (!rrIsRecord(gameState) || !rivalRacesActive(settings, gameState)) return null;
+  const races = sanitizeRivalRacesState(gameState.rivalRaces);
+  if (!races || !races.active) return null;
+  const ai = rrIsRecord(aiState) ? aiState : {};
+  return {
+    race: races.active,
+    staking: settings?.negotiationMode !== true,
+    ownerKey: RIVAL_OWNER_KEY,
+    region: typeof ai.currentRegion === 'string' ? ai.currentRegion : '',
+    money: typeof ai.money === 'number' && Number.isFinite(ai.money) ? ai.money : 0,
+    visited: Array.isArray(ai.visitedRegions) ? ai.visitedRegions.filter((x): x is string => typeof x === 'string') : [],
+    deposits: rivalRaceDeposits(gameState.regionDeposits)
+  };
+}
+
+/** The debrief's line about the match's races ("Rival Races: you won 3 (+$2,400), Scientist AI won 1 (+$650), 1 went unclaimed."), or null when none finished. */
+export function rivalRaceDebriefLine(raw: unknown, rivalName: string): string | null {
+  const st = sanitizeRivalRacesState(raw);
+  if (!st || !st.results.length) return null;
+  const mine = st.results.filter(r => r.winner === 'player');
+  const theirs = st.results.filter(r => r.winner === 'rival');
+  const open = st.results.length - mine.length - theirs.length;
+  const sum = (list: RivalRaceResult[]) => fmtMoney(list.reduce((t, r) => t + r.prize, 0));
+  const parts = [`you won ${mine.length}${mine.length ? ` (+${sum(mine)})` : ''}`, `${rivalName || 'the rival'} won ${theirs.length}${theirs.length ? ` (+${sum(theirs)})` : ''}`];
+  if (open > 0) parts.push(`${open} went unclaimed`);
+  return `Rival Races: ${parts.join(', ')}.`;
+}
+
+/**
+ * One line on how to take part, in the words the screen uses (the region panel's "Deposit Money", challenges, trips).
+ * The Recommended Action does not weigh races, so the card says what counts.
+ */
+export function rivalRaceHowTo(race: RivalRace): string {
+  const where = rrRegionName(race.regionId);
+  if (race.kind === 'region_challenge') return `How: travel to ${where} and win any challenge there.`;
+  if (race.kind === 'stake_region') return `How: in ${where}, use Deposit Money in the region panel. The highest total controls it.`;
+  if (race.kind === 'new_ground') return 'How: travel to regions you had not visited when the race opened. Each one counts once.';
+  if (race.kind === 'challenge_sprint') return 'How: win challenges in any region. Only wins count.';
+  return 'How: grow your cash. Winnings and sales count, spending lowers it, and loans are not counted.';
+}
+
+// ---- The card ---------------------------------------------------------------------------------------------------------------
+export interface RivalRaceCardView {
+  race: RivalRace | null;
+  you: RivalRaceProgress | null;
+  them: RivalRaceProgress | null;
+  rivalName: string;
+  day: number;
+  last: RivalRaceResult | null;
+  nextOpenDay: number;
+  lastDay: number;
+}
+
+export function buildRivalRaceCardView(state: RivalRacesState | null, inputs: RivalRaceInputs): RivalRaceCardView {
+  const st = state || createRivalRacesState();
+  const race = st.active;
+  return {
+    race,
+    you: race ? rivalRaceProgress(race, 'player', inputs) : null,
+    them: race ? rivalRaceProgress(race, 'rival', inputs) : null,
+    rivalName: inputs.rival.name || 'Rival',
+    day: inputs.day,
+    last: st.results.length ? st.results[st.results.length - 1] : null,
+    nextOpenDay: st.nextOpenDay,
+    lastDay: inputs.lastDay
+  };
+}
+
+export function RivalRaceCard({ view, theme }: { view: RivalRaceCardView; theme: { card: string; border: string } }): React.ReactElement | null {
+  const { race } = view;
+  if (!race) {
+    if (!view.last && view.nextOpenDay > view.lastDay) return null;
+    const lastLine = view.last
+      ? (view.last.winner === 'player' ? `Last race: you won ${fmtMoney(view.last.prize)}.` : view.last.winner === 'rival' ? `Last race: ${view.rivalName} won it.` : 'Last race: nobody finished in time.')
+      : null;
+    const next = view.nextOpenDay <= view.lastDay ? (view.nextOpenDay <= view.day ? 'The next race opens shortly.' : `The next race opens on day ${view.nextOpenDay}.`) : 'No more races this match.';
+    return (
+      <section className={`${theme.card} ${theme.border} border rounded-xl px-4 py-2 text-xs opacity-90`} aria-label="Rival races" data-testid="v100-race-idle">
+        🏁 {lastLine ? `${lastLine} ` : ''}{next}
+      </section>
+    );
+  }
+  const left = Math.max(0, race.closesDay - view.day);
+  const when = left === 0 ? 'closes at the end of today' : `closes at the end of day ${race.closesDay} (${left} more day${left === 1 ? '' : 's'})`;
+  const you = view.you ? rivalRaceProgressText(race, view.you) : '—';
+  const them = view.them ? rivalRaceProgressText(race, view.them) : '—';
+  return (
+    <section className={`${theme.card} border-2 border-amber-500/70 rounded-xl px-4 py-3 space-y-1`} aria-label="Rival race" data-testid="v100-race">
+      {/* The prize sits beside the title, on the left: the top-right corner is where notifications land. */}
+      <div className="text-[11px] font-bold uppercase tracking-wider opacity-80">🏁 Rival race · {when}</div>
+      <div className="font-bold">{race.title} <span className="text-amber-500 font-extrabold whitespace-nowrap">· Prize {fmtMoney(race.prize)}</span></div>
+      <div className="text-xs opacity-80" data-testid="v100-race-how">{rivalRaceHowTo(race)}</div>
+      <div className="text-xs flex flex-wrap gap-x-4 gap-y-1" data-testid="v100-race-progress">
+        <span><span className="font-semibold">You:</span> {you}</span>
+        <span><span className="font-semibold">{view.rivalName}:</span> {them}</span>
+      </div>
+    </section>
+  );
+}
+
+// ---- Self-tests (v100fx: SECTION 20AY, v100rr: SECTION 20AZ) ------------------------------------------------------------------
+/** The two V10.0 suites, in section order. */
+export const V100_SUITE_IDS: readonly string[] = ['v100fx', 'v100rr'];
+
+export function runV100FoundationsSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  const clone = (v: SaveGameData): SaveGameData => JSON.parse(JSON.stringify(v));
+  /** A save as an older release wrote it: today's shape stamped with an older version (and, optionally, extra match fields). */
+  const stamped = (gameVersion: string, extra: Record<string, unknown> = {}): SaveGameData => {
+    const f = clone(createV95SaveFixture());
+    f.metadata = { ...f.metadata, gameVersion };
+    f.gameState = { ...(f.gameState as unknown as Record<string, unknown>), ...extra } as unknown as SaveGameData['gameState'];
+    return f;
+  };
+  const gsOf = (d: SaveGameData): Record<string, unknown> => d.gameState as unknown as Record<string, unknown>;
+  /** A scripted rng: hands out `values` in order (then repeats the last) and counts the draws. */
+  const scripted = (values: number[]) => { let i = 0; const rng = { draws: 0, next: () => { rng.draws += 1; const v = values[Math.min(i, values.length - 1)]; i += 1; return v; } }; return rng; };
+  const ranked = [{ id: 'a', score: 9 }, { id: 'b', score: 7 }, { id: 'c', score: 5 }, { id: 'd', score: 3 }, { id: 'e', score: 1 }];
+  const idOf = (x: { id: string } | null) => (x ? x.id : 'null');
+  const sig = (o: Partial<FirstRunSignals> = {}): FirstRunSignals => ({ day: 1, money: 1000, inventoryCount: 0, challengesWon: 0, rivalAhead: false, diplomacyOffer: false, inShopRegion: false, ...o });
+
+  // ---- Version and release notes -----------------------------------------------------------------------------------------
+  check('v100fx_01_version', 'GAME_VERSION is 10.0.0, the label reads V10.0 and a new save stamps it', () =>
+    (GAME_VERSION === '10.0.0' && GAME_VERSION_LABEL === 'V10.0' && createV95SaveFixture().metadata.gameVersion === '10.0.0' && VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1') || `${GAME_VERSION} / ${GAME_VERSION_LABEL}`);
+  check('v100fx_02_whats_new', "What's New leads with V10.0, names the new switch as off by default, and keeps V9.9's entry written out", () =>
+    (V100_CHANGELOG[0].startsWith('V10.0 - ') && V100_CHANGELOG.length >= 8 && V100_CHANGELOG.length <= 14 && new Set(V100_CHANGELOG).size === V100_CHANGELOG.length
+      && V100_CHANGELOG.every(line => line.length >= 20 && line.length <= 240)
+      && V100_CHANGELOG.some(line => line.includes('off by default') && line.includes('Rival Races'))
+      && V100_CHANGELOG.some(line => line.includes('Classic rival (V9.9)'))
+      && V99_CHANGELOG[0] === 'V9.9 - A more solid, more replayable game') || json(V100_CHANGELOG));
+
+  // ---- The rules stamp and the save ladder -------------------------------------------------------------------------------
+  check('v100fx_03_rules_stamp', 'Only a whole number from 1 to RULES_VERSION_MAX is a rules stamp; a V10.0 match is one stamped 1000 or later', () => {
+    const table: Array<[unknown, number | null]> = [[1000, 1000], [1, 1], [0, null], [-3, null], [1000.5, null], ['1000', null], [null, null], [undefined, null], [RULES_VERSION_MAX + 1, null]];
+    const wrong = table.filter(([raw, want]) => sanitizeRulesVersion(raw) !== want);
+    return (wrong.length === 0 && isV100Match({ rulesVersion: V100_RULES_VERSION }) && isV100Match({ rulesVersion: 1200 }) && !isV100Match({ rulesVersion: 999 })
+      && !isV100Match({}) && !isV100Match(null) && !isV100Match({ rulesVersion: '1000' }) && readRulesVersion({ rulesVersion: 1000 }) === 1000 && readRulesVersion('x') === null) || json(wrong);
+  });
+  check('v100fx_04_stamp_survives_a_save', 'A save keeps a valid rules stamp, drops a broken one, and a save without one stays without one', () => {
+    const kept = gsOf(validateSaveDataCore(stamped(GAME_VERSION, { rulesVersion: V100_RULES_VERSION }))).rulesVersion;
+    const broken = gsOf(validateSaveDataCore(stamped(GAME_VERSION, { rulesVersion: 'abc' }))).rulesVersion;
+    const none = gsOf(validateSaveDataCore(stamped(GAME_VERSION)));
+    return (kept === V100_RULES_VERSION && broken === undefined && !('rulesVersion' in none && none.rulesVersion !== undefined)) || json({ kept, broken, none: none.rulesVersion });
+  });
+  check('v100fx_05_rung_is_a_fixed_point', 'migrateSaveTo1000 returns the very same save, unchanged, when there is nothing to remove; the ladder too', () => {
+    const input = validateSaveDataCore(stamped('9.6.0'));
+    const before = json(input);
+    const step = migrateSaveTo1000(input);
+    const ladder = runSaveMigrationLadder(input, '9.9.0');
+    const current = runSaveMigrationLadder(input, '10.0.0');
+    return (step.data === input && !step.changed && ladder.data === input && !ladder.changed && current.data === input && json(input) === before) || 'the rung altered a clean save';
+  });
+  check('v100fx_06_rung_removes_a_stray_stamp', 'An older save carrying a rules stamp or a races record loses both, without mutating the input; a second run changes nothing', () => {
+    const input = stamped('9.9.0', { rulesVersion: 1000, rivalRaces: createRivalRacesState() });
+    const before = json(input);
+    const once = migrateSaveTo1000(input);
+    const twice = migrateSaveTo1000(once.data);
+    const gs = gsOf(once.data);
+    return (once.changed && !('rulesVersion' in gs) && !('rivalRaces' in gs) && json(input) === before && twice.data === once.data && !twice.changed && gs.day === gsOf(input).day) || json({ changed: once.changed, keys: Object.keys(gs).filter(k => k === 'rulesVersion' || k === 'rivalRaces') });
+  });
+  check('v100fx_07_old_save_plays_old_rules', 'A V9.8 (9.6.0) or V9.9 save loads through the transaction as an old match: no rules stamp, so none of the V10.0 rule changes apply to it', () => {
+    // The transaction validates; the live load (applyLoadedState) then runs the migration ladder on its result, as here.
+    const v98 = prepareSaveLoadTransaction(json(stamped('9.6.0', { rulesVersion: 1000 })));
+    const v99 = prepareSaveLoadTransaction(json(stamped('9.9.0')));
+    const loaded = (tx: ReturnType<typeof prepareSaveLoadTransaction>) => (tx.ok && tx.data !== null ? v95MigrateSaveForLoad(JSON.parse(json(tx.data))).data : null);
+    const a = loaded(v98), b = loaded(v99);
+    return (a !== null && b !== null && !isV100Match(a.gameState) && !isV100Match(b.gameState) && v98.report.fatalErrors.length === 0 && v99.report.migrationChangedData === false
+      && v98.report.migrationIdempotent && a.metadata.gameVersion === GAME_VERSION) || json({ v98: v98.ok, v99: v99.ok, stampA: a ? readRulesVersion(a.gameState) : 'none', changed: v99.report.migrationChangedData });
+  });
+  check('v100fx_08_new_match_is_stamped', "initialGameState carries no stamp (a bare state is an old match); the new-match payload is stamped where V9.9 records the seed", () =>
+    (!isV100Match(initialGameState) && readRulesVersion(initialGameState) === null && V100_RULES_VERSION === 1000) || 'initialGameState is stamped');
+
+  // ---- Settings ---------------------------------------------------------------------------------------------------------
+  check('v100fx_09_settings_default_off', 'Rival Races and the classic rival are off by default; only a real boolean switches either on', () => {
+    const d = createDefaultGameSettings();
+    const junk = sanitizeGameSettings({ ...d, rivalRacesEnabled: 'yes', classicRivalV99: 1 } as unknown as Partial<GameSettingsState>);
+    const on = sanitizeGameSettings({ ...d, rivalRacesEnabled: true, classicRivalV99: true });
+    return (DEFAULT_GAME_SETTINGS.rivalRacesEnabled === false && DEFAULT_GAME_SETTINGS.classicRivalV99 === false && junk.rivalRacesEnabled === false && junk.classicRivalV99 === false
+      && on.rivalRacesEnabled === true && on.classicRivalV99 === true) || json({ junk: [junk.rivalRacesEnabled, junk.classicRivalV99], on: [on.rivalRacesEnabled, on.classicRivalV99] });
+  });
+  check('v100fx_10_settings_classified', 'Both V10.0 switches are match rules, listed in the registry with the hub labels, and found in the "New in V10.0" hub section only', () => {
+    const rows = [...V100_FEATURE_TOGGLE_ROWS, ...V100_CLASSIC_TOGGLE_ROWS];
+    const section = SETTINGS_HUB_SECTION_INDEX.filter(s => s.id === V100_SETTINGS_HUB_SECTION_ID);
+    const bad = V100_SETTING_KEYS.filter(k => {
+      const reg = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(s => s.key === k);
+      const row = rows.find(r => r.key === k);
+      return !reg || !row || reg.label !== row.label || reg.description !== row.description || !(V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes(k)
+        || V95_PROFILE_SCOPED_SETTING_KEYS.includes(k) || SETTINGS_HUB_SECTION_INDEX.filter(s => (s.fieldKeys as readonly string[]).includes(k)).length !== 1;
+    });
+    return (bad.length === 0 && section.length === 1 && json(section[0].fieldKeys) === json(['rivalRacesEnabled', 'classicRivalV99']) && section[0].title === V100_SETTINGS_HUB_SECTION_TITLE) || json(bad);
+  });
+  check('v100fx_11_settings_ride_with_the_save', 'A save carries both switches (match rules): a loaded match keeps the choice it was played with', () => {
+    const f = stamped(GAME_VERSION);
+    f.gameSettings = { ...f.gameSettings, rivalRacesEnabled: true, classicRivalV99: true };
+    const v = validateSaveDataCore(f).gameSettings;
+    return (v.rivalRacesEnabled === true && v.classicRivalV99 === true) || json({ races: v.rivalRacesEnabled, classic: v.classicRivalV99 });
+  });
+  check('v100fx_12_key_names', 'isV100SettingKeyName accepts exactly the two V10.0 keys', () =>
+    (V100_SETTING_KEYS.every(k => isV100SettingKeyName(k)) && !isV100SettingKeyName('turnDigestEnabled') && !isV100SettingKeyName(undefined) && !isV100SettingKeyName('totalDays')) || 'wrong');
+  check('v100fx_13_hub_body', 'The hub body shows both switches OFF by default and a press writes that key', () => {
+    const pressed: string[] = [];
+    const tree = V100SettingsHubBody({ settings: {}, onToggle: k => { pressed.push(k); }, onClassName: 'on', offClassName: 'off' });
+    const buttons = v99FindElements(tree, el => typeof el.props['data-testid'] === 'string' && String(el.props['data-testid']).startsWith('v100-setting-') && !String(el.props['data-testid']).startsWith('v100-setting-row-'));
+    buttons.forEach(b => { const click = b.props.onClick; if (typeof click === 'function') (click as () => void)(); });
+    return (buttons.length === 2 && buttons.every(b => v99ElementText(b) === 'OFF') && json(pressed) === json(['rivalRacesEnabled', 'classicRivalV99'])) || json({ n: buttons.length, pressed });
+  });
+
+  // ---- F1: a rival that plays -----------------------------------------------------------------------------------------------
+  check('v100fx_14_best_move_rates', 'The V10.0 pick plays the best move at the rate the difficulty screen promises ("Decision" 40/70/90/95%) and the runner-up otherwise', () => {
+    const pick = (d: string, roll: number) => idOf(pickV100RivalDecision(ranked, scripted([roll, 0]), d, false));
+    const got = [pick('expert', 0.94), pick('expert', 0.96), pick('hard', 0.89), pick('hard', 0.91), pick('medium', 0.69), pick('medium', 0.71), pick('easy', 0.39), pick('easy', 0.41)];
+    const screen = (['easy', 'medium', 'hard', 'expert'] as const).every(d => V100_RIVAL_BEST_MOVE_RATE[d] === Number(AI_DIFFICULTY_PROFILES[d].decisionQuality));
+    return (json(got) === json(['a', 'b', 'a', 'b', 'a', 'b', 'a', 'b']) && screen) || json({ got, screen });
+  });
+  check('v100fx_15_easy_spreads_its_misses', "Easy's lesser move is one of its next three, chosen by a second draw", () => {
+    const got = [0, 0.4, 0.99].map(second => idOf(pickV100RivalDecision(ranked, scripted([0.9, second]), 'easy', false)));
+    return json(got) === json(['b', 'c', 'd']) || json(got);
+  });
+  check('v100fx_16_mistake_is_a_move', 'A mistake is a lesser move — never "thinking" — and a single option is still played', () => {
+    const got = ['expert', 'hard', 'medium'].map(d => idOf(pickV100RivalDecision(ranked, scripted([0]), d, true)));
+    const only = idOf(pickV100RivalDecision([{ id: 'solo', score: 1 }], scripted([0]), 'medium', true));
+    return (json(got) === json(['b', 'b', 'b']) && only === 'solo' && pickV100RivalDecision([], scripted([0]), 'expert', false) === null) || json({ got, only });
+  });
+  check('v100fx_17_fixed_draw_count', 'The pick draws once (Easy: twice when it plays a lesser move) — never a variable number on the same path', () => {
+    const a = scripted([0.1, 0.5]); pickV100RivalDecision(ranked, a, 'medium', false);
+    const b = scripted([0.9, 0.5]); pickV100RivalDecision(ranked, b, 'medium', false);
+    const c = scripted([0.9, 0.5]); pickV100RivalDecision(ranked, c, 'easy', false);
+    const d = scripted([0.1, 0.5]); pickV100RivalDecision(ranked, d, 'easy', false);
+    return (a.draws === 1 && b.draws === 1 && c.draws === 2 && d.draws === 1) || json([a.draws, b.draws, c.draws, d.draws]);
+  });
+  check('v100fx_18_policy_gate', 'The V10.0 rival plays only in a V10.0 match without the classic switch', () =>
+    (v100RivalPolicyActive({ rulesVersion: 1000 }, {}) && !v100RivalPolicyActive({ rulesVersion: 1000 }, { classicRivalV99: true }) && !v100RivalPolicyActive({}, {})
+      && !v100RivalPolicyActive({ matchSeed: 48213 }, {}) && v100RivalPolicyActive({ rulesVersion: 1000 }, null) && v100RivalDifficulty('HARD') === 'hard' && v100RivalDifficulty(undefined) === 'medium') || 'gate wrong');
+  check('v100fx_19_chooser_unchanged_without_the_flag', "chooseAction without the V10.0 flag decides exactly as V9.9's did (same moves, same draws)", () => {
+    const state = createTuningMatchState(4242, false);
+    const weights = defaultWeightsFromSpec();
+    const run = (live: ClassicAiLiveHooks | undefined) => { const rng = createSeededRng(99); const a = chooseAction(state, 'ai', weights, rng, { difficultyKey: 'medium', live }); return `${a?.type}:${json(a?.data)}:${rng.next()}`; };
+    return (run(undefined) === run({}) && run({ isRejected: () => false }) === run(undefined)) || 'the chooser changed without the flag';
+  });
+  check('v100fx_20_v100_expert_plays_its_best', 'With the V10.0 flag an Expert rival plays the same (best) move for every pick draw under its rate, and never "thinks" on a mistake roll', () => {
+    const state = createTuningMatchState(4242, false);
+    const weights = defaultWeightsFromSpec();
+    const at = (values: number[], live: ClassicAiLiveHooks) => chooseAction(state, 'ai', weights, scripted(values), { difficultyKey: 'expert', live });
+    const x = at([0.5, 0.01], { v100Policy: true });
+    const y = at([0.5, 0.9], { v100Policy: true });
+    const mistake = at([0, 0.5], { v100Policy: true });
+    const classicMistake = at([0, 0.5], {});
+    return (x !== null && y !== null && x.type === y.type && json(x.data) === json(y.data) && mistake !== null && mistake.type !== 'think' && classicMistake?.type === 'think') || json({ x: x?.type, y: y?.type, mistake: mistake?.type, classic: classicMistake?.type });
+  });
+  check('v100fx_21_streak_share', "The rival's win-streak share follows STREAK_BONUSES: none below 5 wins, 10% at 5, 15% at 7, 25% from 10; Lucky Streak never stacks", () => {
+    const got = [0, 2, 3, 4, 5, 6, 8, 9, 30].map(k => v100StreakRewardShare(k, false));
+    return (json(got) === json([0, 0, 0, 0.1, 0.1, 0.15, 0.15, 0.25, 0.25]) && v100StreakRewardShare(9, true) === 0 && v100StreakRewardShare('x', false) === 0) || json(got);
+  });
+  check('v100fx_22_streak_is_the_players_rule', "For every streak the rival's share equals the share computeChallengeRewardCore pays the player", () => {
+    const bad: number[] = [];
+    for (let k = 0; k <= 14; k++) {
+      const core = computeChallengeRewardCore({ wager: 1000, rewardMultiplier: 1, consecutiveWins: k });
+      if (core.streakBonus !== v100StreakRewardShare(k, false)) bad.push(k);
+    }
+    return bad.length === 0 || `differs at ${bad.join(', ')}`;
+  });
+  check('v100fx_23_streak_reward', 'The streak share is applied in whole dollars and never lowers a payout', () =>
+    (v100RivalRewardWithStreak(1000, 0.25) === 1250 && v100RivalRewardWithStreak(999, 0.1) === 1098 && v100RivalRewardWithStreak(500, 0) === 500 && v100RivalRewardWithStreak(-50, 0.25) === 0
+      && v100RivalRewardWithStreak(Number.NaN, 0.1) === 0) || 'reward arithmetic wrong');
+
+  // ---- F2: a world that moves ------------------------------------------------------------------------------------------------
+  check('v100fx_24_round_follows_the_day', 'In a V10.0 one-on-one match the round the world reads is the day (it stayed 1); team mode and old matches keep roundNumber', () => {
+    const got = [
+      v100EffectiveRound({ rulesVersion: 1000, selectedMode: 'ai', roundNumber: 1, day: 6 }),
+      v100EffectiveRound({ rulesVersion: 1000, selectedMode: 'grand_tour', roundNumber: 1, day: 9 }),
+      v100EffectiveRound({ rulesVersion: 1000, selectedMode: 'single', roundNumber: 1, day: 4 }),
+      v100EffectiveRound({ selectedMode: 'ai', roundNumber: 1, day: 6 }),
+      v100EffectiveRound({ rulesVersion: 1000, selectedMode: 'team_human_ai_vs_ai_ai', roundNumber: 3, day: 6 }),
+      v100EffectiveRound({ rulesVersion: 1000, selectedMode: 'ai', roundNumber: 9, day: 6 }),
+      v100EffectiveRound(null), v100EffectiveRound({ rulesVersion: 1000, day: 'x', roundNumber: 'y' })
+    ];
+    return json(got) === json([6, 9, 4, 1, 3, 9, 1, 1]) || json(got);
+  });
+
+  // ---- F3: a first match that teaches -------------------------------------------------------------------------------------
+  check('v100fx_25_early_goal_is_celebrated', 'Goal met on day 1 → celebrate (the tour carries on), then one new tool on day 2', () => {
+    const st = createFirstRunState(0);
+    const first = v100FirstRunStep(st, sig({ day: 1, money: 2600, challengesWon: 3 }));
+    const after = v100CelebrateFirstRunGoal(st);
+    const sameDay = v100FirstRunStep(after, sig({ day: 1, money: 2600, challengesWon: 3 }));
+    const next = v100FirstRunStep(after, sig({ day: 2, money: 2600, challengesWon: 3 }));
+    return (first.kind === 'celebrate' && after.active && after.outcome === 'goal_met' && sameDay.kind === 'none' && next.kind === 'unlock' && next.concept === 'trade') || json({ first, sameDay, next });
+  });
+  check('v100fx_26_celebrated_tour_finishes', 'Once every tool is on screen a celebrated tour finishes as goal met (and keeps doing so if cash later dips)', () => {
+    const all = applyFirstRunPatch(v100CelebrateFirstRunGoal(createFirstRunState()), { kind: 'init', state: { ...v100CelebrateFirstRunGoal(createFirstRunState()), unlocked: [...FIRST_RUN_ALL_CONCEPTS] } });
+    const step = v100FirstRunStep(all, sig({ day: 6, money: 400, challengesWon: 1 }));
+    return (all !== null && v100FirstRunAllUnlocked(all) && step.kind === 'finish' && step.outcome === 'goal_met') || json(step);
+  });
+  check('v100fx_27_deadline_still_ends_it', 'A tour whose goal was never met still ends at the deadline; a skipped/finished tour does nothing', () => {
+    const late = v100FirstRunStep(createFirstRunState(), sig({ day: 8, money: 1500, challengesWon: 2 }));
+    const done = v100FirstRunStep({ ...createFirstRunState(), active: false }, sig({ day: 3 }));
+    return (late.kind === 'finish' && late.outcome === 'deadline' && done.kind === 'none' && v100FirstRunStep(null, sig()).kind === 'none') || json({ late, done });
+  });
+  check('v100fx_28_celebration_survives_a_save', 'A celebrated tour keeps "goal met, still active" through the save sanitizer and the init patch', () => {
+    const st = v100CelebrateFirstRunGoal(createFirstRunState(1));
+    const viaSave = sanitizeFirstRunState(JSON.parse(json(st)));
+    const viaPatch = applyFirstRunPatch(null, { kind: 'init', state: st });
+    return (viaSave !== null && viaSave.active && viaSave.outcome === 'goal_met' && viaPatch !== null && viaPatch.outcome === 'goal_met' && viaPatch.startChallenges === 1) || json({ viaSave, viaPatch });
+  });
+  check('v100fx_29_panel_line', 'The tutorial panel says the goal is met (and names the next tool) only while a celebrated tour runs', () => {
+    const plain = v100FirstRunPanelView(createFirstRunState(), sig());
+    const met = v100FirstRunPanelView(v100CelebrateFirstRunGoal(createFirstRunState()), sig({ money: 2500, challengesWon: 3 }));
+    const notice = v100FirstRunGoalMetNotice(1, 'Trade');
+    return (!plain.goalMetLine && typeof met.goalMetLine === 'string' && met.goalMetLine.includes('Goal met') && met.goalMetLine.includes('Trade') && notice.includes('day 1') && notice.includes('Trade')
+      && v100FirstRunGoalMetLine(null, null) === null) || json({ plain: plain.goalMetLine, met: met.goalMetLine });
+  });
+
+  // ---- F4: screens that tell the truth ----------------------------------------------------------------------------------------
+  check('v100fx_30_cancel_clears_the_card', 'Cancelling a risky challenge removes "What you did" about it — and only about it', () => {
+    const card = { whatHappened: 'Take Tour the Blue Mountains — wager $500', why: 'x' };
+    const finale = { whatHappened: 'Take the finale: National Champion — wager $500', why: 'x' };
+    const sale = { whatHappened: 'Sell Opals ($165)', why: 'x' };
+    return (v100TeachingAfterCancel(card, 'Tour the Blue Mountains') === null && v100TeachingAfterCancel(finale, 'National Champion') === null
+      && v100TeachingAfterCancel(card, 'Surf at Bondi Beach') === card && v100TeachingAfterCancel(sale, 'Tour the Blue Mountains') === sale
+      && v100TeachingAfterCancel(card, null) === card && v100TeachingAfterCancel(null, 'x') === null) || 'wrong card handling';
+  });
+  check('v100fx_31_which_challenge_was_cancelled', "The cancelled question's challenge is read from the dialog's data; any other question names none", () =>
+    (v100ConfirmationChallengeName({ type: 'challenge', data: { challenge: { name: 'Visit Uluru' }, wager: 500 } }) === 'Visit Uluru'
+      && v100ConfirmationChallengeName({ type: 'emergencyLoan', data: { challenge: { name: 'x' } } }) === null && v100ConfirmationChallengeName({ type: 'challenge', data: null }) === null
+      && v100ConfirmationChallengeName({ type: 'challenge', data: { challenge: { name: '' } } }) === null && v100ConfirmationChallengeName(null) === null) || 'wrong');
+  check('v100fx_32_focus_questions', "Questions about the current focus or goal are recognised; cash questions are not", () => {
+    const yes = ['why is goal: finish with the most money my focus?', 'what is my goal', "what's my current focus?", 'explain my current objective', 'why is that my focus'];
+    // Questions that only MENTION the goal keep their own answers (found by the V10.0 review: these were swallowed).
+    const no = ['why is my cash so low', 'what should i do next', 'why am i broke? my goal is money', 'what should i focus on to win',
+      'which challenge should i take for my goal?', 'why am i losing money? my goal is cash', 'why is the rival ahead of me on my goal?', 'what should i do to reach my goal?'];
+    const wrong = [...yes.filter(q => !v100IsFocusQuestion(q)), ...no.filter(q => v100IsFocusQuestion(q))];
+    return wrong.length === 0 || json(wrong);
+  });
+  check('v100fx_33_focus_why_is_answered', 'The Current Focus "Why?" is routed to the objective (it was answered "Why your cash is tight"); a cash question still gets the cash diagnosis', () => {
+    const w = createGIFixtureWorld().world;
+    const focus = understandGIQuery('Why is Goal: Finish with the most money my focus?', w, createGIConversationContext());
+    const cash = understandGIQuery('Why is my cash so low?', w, createGIConversationContext());
+    return (focus.primary === 'objective_status' && cash.primary !== 'objective_status') || json({ focus: focus.primary, cash: cash.primary });
+  });
+  check('v100fx_40_first_run_resumable_after_goal', 'Autosave is held back during the guided first match only until its goal is met (then it no longer restarts by itself)', () =>
+    (v100FirstRunBlocksRecovery(createFirstRunState()) && !v100FirstRunBlocksRecovery(v100CelebrateFirstRunGoal(createFirstRunState())) && !v100FirstRunBlocksRecovery(null)
+      && !v100FirstRunBlocksRecovery({ ...createFirstRunState(), active: false })) || 'wrong');
+  check('v100fx_41_rescore_runs_after_scoring', 'A post-scoring hook is weighed against final scores (its pick wins when it scores highest) and a candidate it adds is still filtered by isRejected', () => {
+    const state = createTuningMatchState(4242, false);
+    const weights = defaultWeightsFromSpec();
+    const extra = { type: 'travel', description: 'Travel to Tasmania', data: { region: 'TAS', cost: 800 }, score: 1e9, plan: AI_TUNING_LAB_DEFAULT_PLAN } as unknown as AIAction & { score: number };
+    const add: ClassicAiLiveHooks['rescore'] = list => [...list, extra];
+    const chosen = chooseAction(state, 'ai', weights, scripted([0.5, 0.01]), { difficultyKey: 'expert', live: { rescore: add } });
+    const refused = chooseAction(state, 'ai', weights, scripted([0.5, 0.01]), { difficultyKey: 'expert', live: { rescore: add, isRejected: c => c.type === 'travel' && (c.data as { region?: unknown } | null)?.region === 'TAS' } });
+    return (chosen !== null && chosen.type === 'travel' && (chosen.data as { region?: unknown }).region === 'TAS' && refused !== null && !(refused.type === 'travel' && (refused.data as { region?: unknown }).region === 'TAS')) || json({ chosen: chosen?.type, refused: refused?.type });
+  });
+  check('v100fx_34_welcome_steps_aside', "The welcome card is done once the player has acted or day 1 is over — and only while it is still pending", () =>
+    (!v100WelcomeCardDone({ welcome: 'pending', day: 1, actionsUsed: 0 }) && v100WelcomeCardDone({ welcome: 'pending', day: 1, actionsUsed: 1 }) && v100WelcomeCardDone({ welcome: 'pending', day: 2, actionsUsed: 0 })
+      && !v100WelcomeCardDone({ welcome: 'started', day: 5, actionsUsed: 2 }) && !v100WelcomeCardDone({ welcome: 'basics', day: 3, actionsUsed: 0 }) && V100_GAME_NAME === 'Aussie Adventure') || 'wrong');
+
+  // ---- F5: the rival's moves stay in History ------------------------------------------------------------------------------------
+  check('v100fx_35_rival_moves_are_kept', "The rival's short-lived notices are kept in History; everything else is as before", () =>
+    (v100KeepsInHistory({ type: 'ai', persistent: false }) && v100KeepsInHistory({ type: 'ai' }) && !v100KeepsInHistory({ type: 'ai', persistent: true })
+      && !v100KeepsInHistory({ type: 'info', persistent: false }) && !v100KeepsInHistory(null)) || 'wrong');
+  check('v100fx_36_toast_lifetime', 'A rival notice leaves the lane at the same time but is hidden, not deleted; Classic sticky toasts keep the V9.8 rule; others are unchanged', () => {
+    const rival = { id: 'r', type: 'ai', persistent: false, message: 'Scientist AI completed Visit Uluru and won $1100!' };
+    const info = { id: 'i', type: 'info', persistent: false, message: 'Market trend: stable' };
+    const routine = { id: 'p', type: 'success', persistent: true, message: 'Saved' };
+    const a = v100ToastLifetime(rival, 5, false), b = v100ToastLifetime(rival, 5, true), c = v100ToastLifetime(info, 5, false), d = v100ToastLifetime(routine, 5, false);
+    return (a.mode === 'hide' && a.seconds === 5 && b.mode === 'delete' && json(c) === json(resolveToastLifetime(info, 5, false)) && json(d) === json(resolveToastLifetime(routine, 5, false))
+      && v100ToastDismissMode(rival, false) === 'hide' && v100ToastDismissMode(rival, true) === 'delete' && v100ToastDismissMode(info, false) === 'delete') || json({ a, b, c, d });
+  });
+
+  check('v100fx_38_stale_turn_feedback', '"No actions left" leaves the feedback strip when the next turn begins; other feedback stays (same array when there is nothing to drop)', () => {
+    const q = [{ id: 'a', kind: 'ap_exhausted' }, { id: 'b', kind: 'cash_change' }];
+    const kept = [{ id: 'b', kind: 'cash_change' }];
+    return (json(v100DropStaleTurnFeedback(q)) === json(kept) && v100DropStaleTurnFeedback(kept) === kept) || json(v100DropStaleTurnFeedback(q));
+  });
+  // ---- Registration ------------------------------------------------------------------------------------------------------------
+  check('v100fx_37_suites_registered', 'Both V10.0 suites are registered once each in V95_EXISTING_SUITES, quick tier, in section order, after V9.9', () => {
+    const ids = V95_EXISTING_SUITES.map(s => s.id);
+    const mine = V95_EXISTING_SUITES.filter(s => V100_SUITE_IDS.includes(s.id));
+    return (json(mine.map(s => s.id)) === json(V100_SUITE_IDS) && mine.every(s => s.tier === 'quick') && ids.indexOf('v100fx') > ids.indexOf('v99td')) || json(mine.map(s => s.id));
+  });
+  return results;
+}
+
+export function runV100RivalRacesSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  type Completion = { playerId: string; region: string; turn: number };
+  const inputs = (o: Partial<RivalRaceInputs> = {}): RivalRaceInputs => ({
+    day: 2, lastDay: 29, seed: 48213,
+    player: { id: 'player', name: 'You', money: 3000, region: 'NSW', visited: ['NSW'] },
+    rival: { id: 'ai', name: 'Scientist AI', money: 2000, region: 'QLD', visited: ['QLD'] },
+    completions: [], deposits: {}, turnSide: 'player', ...o
+  });
+  const raceOf = (kind: RivalRaceKind, regionId: string | null, target: number, o: Partial<RivalRace> = {}): RivalRace => ({
+    id: 'race_0', index: 0, kind, title: `First to test ${kind}`, regionId, target, prize: 800, openedDay: 2, closesDay: 4,
+    baseline: { player: { challengesWon: 0, visited: ['NSW'], money: 3000 }, rival: { challengesWon: 0, visited: ['QLD'], money: 2000 } }, ...o
+  });
+  const withRace = (race: RivalRace): RivalRacesState => ({ ...createRivalRacesState(), active: race, nextIndex: 1 });
+
+  check('v100rr_01_off_by_default', 'Rival Races is off by default and runs only in an AI Opponent match in play with the switch on', () =>
+    (DEFAULT_GAME_SETTINGS.rivalRacesEnabled === false && !rivalRacesActive(DEFAULT_GAME_SETTINGS, { selectedMode: 'ai', gameMode: 'game' })
+      && rivalRacesActive({ rivalRacesEnabled: true }, { selectedMode: 'ai', gameMode: 'game' }) && !rivalRacesActive({ rivalRacesEnabled: true }, { selectedMode: 'grand_tour', gameMode: 'game' })
+      && !rivalRacesActive({ rivalRacesEnabled: true }, { selectedMode: 'ai', gameMode: 'menu' }) && !rivalRacesActive({ rivalRacesEnabled: 'true' }, { selectedMode: 'ai', gameMode: 'game' })) || 'gate wrong');
+  check('v100rr_02_state_sanitizer', 'The races record is versioned; broken races are dropped, unknown results skipped and history bounded', () => {
+    const many = Array.from({ length: 20 }, (_, i) => ({ id: `race_${i}`, kind: 'cash_sprint', title: 't', winner: i % 2 ? 'player' : 'rival', prize: 500, day: i + 2 }));
+    const st = sanitizeRivalRacesState({ version: 1, nextIndex: 3, nextOpenDay: 7, active: { kind: 'stake_region', regionId: 'XX' }, results: [...many, { kind: 'nope' }] });
+    const kept = sanitizeRivalRacesState({ version: 1, nextIndex: 1, nextOpenDay: 2, active: raceOf('region_challenge', 'VIC', 1), results: [] });
+    return (sanitizeRivalRacesState(null) === null && sanitizeRivalRacesState({ version: 2 }) === null && st !== null && st.active === null && st.results.length === RIVAL_RACE_RESULTS_CAP
+      && st.nextIndex === 3 && kept !== null && kept.active !== null && kept.active.regionId === 'VIC' && json(createRivalRacesState()) === json({ version: 1, nextIndex: 0, nextOpenDay: RIVAL_RACE_FIRST_DAY, active: null, results: [] })) || json({ st, kept: kept?.active });
+  });
+  check('v100rr_03_hash', 'The race hash is deterministic, varies with the seed, the race number and the purpose, and stays in [0, 1)', () => {
+    const a = rivalRaceHash(48213, 0, 'kind'), b = rivalRaceHash(48213, 0, 'kind'), c = rivalRaceHash(48213, 1, 'kind'), d = rivalRaceHash(7, 0, 'kind'), e = rivalRaceHash(48213, 0, 'region');
+    const all = Array.from({ length: 200 }, (_, i) => rivalRaceHash(i, i % 7, 'kind'));
+    return (a === b && a !== c && a !== d && a !== e && all.every(x => x >= 0 && x < 1)) || json({ a, c, d, e });
+  });
+  check('v100rr_04_plan_is_deterministic_and_varied', 'The same seed and race number plan the same race; across seeds every kind of race turns up', () => {
+    const once = json(planRivalRace(0, inputs())), twice = json(planRivalRace(0, inputs()));
+    const kinds = new Set(Array.from({ length: 60 }, (_, i) => planRivalRace(i % 5, inputs({ seed: 1000 + i }))?.kind));
+    return (once === twice && RIVAL_RACE_KINDS.every(k => kinds.has(k))) || json(Array.from(kinds));
+  });
+  check('v100rr_05_regions_are_fair', 'A region race never names a region either side stands in, and a stake race only a region nobody controls', () => {
+    const deposits = { VIC: { player: 400 }, SA: { ai: 500 } };
+    const bad: string[] = [];
+    for (let seed = 1; seed <= 80; seed++) {
+      const r = planRivalRace(seed % 9, inputs({ seed, deposits }));
+      if (!r) { bad.push(`null@${seed}`); continue; }
+      if ((r.kind === 'region_challenge' || r.kind === 'stake_region') && (r.regionId === 'NSW' || r.regionId === 'QLD' || !r.regionId)) bad.push(`${r.kind}@${r.regionId}`);
+      if (r.kind === 'stake_region' && (r.regionId === 'VIC' || r.regionId === 'SA')) bad.push(`held:${r.regionId}`);
+    }
+    return bad.length === 0 || bad.slice(0, 5).join(', ');
+  });
+  check('v100rr_06_never_past_the_last_day', 'A race closes by the last day played; with fewer than two days left none opens', () => {
+    const late = planRivalRace(3, inputs({ day: 28, lastDay: 29 }));
+    const none = planRivalRace(3, inputs({ day: 29, lastDay: 29 }));
+    const normal = planRivalRace(0, inputs());
+    return (late !== null && late.closesDay === 29 && none === null && normal !== null && normal.closesDay === normal.openedDay + RIVAL_RACE_DURATION_DAYS - 1) || json({ late: late?.closesDay, none, normal: normal?.closesDay });
+  });
+  check('v100rr_07_prizes_scale_and_stay_bounded', 'Prizes are whole fifties between the bounds and grow with the money in play', () => {
+    const small = planRivalRace(2, inputs({ seed: 5 }))!;
+    const rich = planRivalRace(2, inputs({ seed: 5, player: { ...inputs().player, money: 90000 }, rival: { ...inputs().rival, money: 60000 } }))!;
+    const huge = planRivalRace(2, inputs({ seed: 5, player: { ...inputs().player, money: 1e9 } }))!;
+    return (small.prize >= RIVAL_RACE_PRIZE_MIN && small.prize % 50 === 0 && rich.prize > small.prize && huge.prize <= RIVAL_RACE_PRIZE_MAX) || json({ small: small.prize, rich: rich.prize, huge: huge.prize });
+  });
+  check('v100rr_27_region_races_are_worth_the_trip', 'A region race always pays more than the cheaper trip there (and the stake, for a stake race)', () => {
+    const bad: string[] = [];
+    for (let seed = 1; seed <= 120; seed++) {
+      const r = planRivalRace(seed % 7, inputs({ seed }));
+      if (!r || !r.regionId) continue;
+      const fare = Math.min(computeTravelCostCore({ from: 'NSW', to: r.regionId }), computeTravelCostCore({ from: 'QLD', to: r.regionId }));
+      const cost = fare + (r.kind === 'stake_region' ? REGION_MIN_CONTROL_STAKE : 0);
+      if (!(r.prize > cost) && r.prize < RIVAL_RACE_PRIZE_MAX) bad.push(`${r.kind}@${r.regionId}: prize ${r.prize} vs cost ${cost}`);
+    }
+    return bad.length === 0 || bad.slice(0, 4).join(' | ');
+  });
+  check('v100rr_28_cash_race_ignores_loans', 'A cash race measures cash net of loans: three emergency loans do not win it', () => {
+    const race = planRivalRace(4, inputs({ seed: 3, player: { ...inputs().player, money: 3000, debt: 0 } }));
+    const cash: RivalRace = race && race.kind === 'cash_sprint' ? race : raceOf('cash_sprint', null, 1500, { baseline: { player: { challengesWon: 0, visited: ['NSW'], money: 3000 }, rival: { challengesWon: 0, visited: ['QLD'], money: 2000 } } });
+    const borrowed = rivalRaceProgress(cash, 'player', inputs({ player: { ...inputs().player, money: 4500, debt: 1500 } }));
+    const earned = rivalRaceProgress(cash, 'player', inputs({ player: { ...inputs().player, money: 4600, debt: 0 } }));
+    const debt = rivalRaceDebtOf({ loans: [{ amount: 500 }, { amount: 625 }], advancedLoans: [{ amount: 2000 }, { amount: 'x' }] });
+    return (!borrowed.done && borrowed.value === 0 && earned.done && debt === 3125 && rivalRaceDebtOf(null) === 0 && rivalRaceNetCash({ money: 1000, debt: 1500 }) === -500) || json({ borrowed, earned, debt });
+  });
+  check('v100rr_29_nothing_counts_after_the_deadline', 'Progress first seen after the last day (overnight income) does not win a race: it closes unwon', () => {
+    const st = withRace(raceOf('cash_sprint', null, 1000, { closesDay: 4 }));
+    const out = stepRivalRaces(st, inputs({ day: 5, player: { ...inputs().player, money: 9000 } }));
+    return (out.events[0]?.kind === 'closed' && out.state.results[0].winner === null && !out.events.some(e => e.kind === 'won')) || json(out.events.map(e => e.kind));
+  });
+  check('v100rr_30_no_stake_races_without_deposits', 'With region deposits refused (negotiation mode) no stake race is planned and the rival is offered no stake', () => {
+    const planned = Array.from({ length: 80 }, (_, i) => planRivalRace(i % 5, inputs({ seed: 500 + i, staking: false }))?.kind);
+    const race = raceOf('stake_region', 'TAS', 1);
+    const list = [{ type: 'challenge', data: {}, score: 200 }];
+    const out = rivalRaceRefine(list, { race, staking: false, ownerKey: 'ai', region: 'TAS', money: 9000, visited: [], deposits: {} });
+    const ctx = v100RivalRaceChooserContext({ selectedMode: 'ai', gameMode: 'game', rivalRaces: withRace(race) }, { currentRegion: 'TAS', money: 9000 }, { rivalRacesEnabled: true, negotiationMode: true });
+    return (!planned.includes('stake_region') && out === list && ctx !== null && ctx.staking === false) || json({ stake: planned.filter(k => k === 'stake_region').length, out: out.length });
+  });
+  check('v100rr_31_race_rides_the_rescore_hook', "In a V10.0 match with races on and a race open, the rival's race preference is installed after scoring (rescore), not before it", () => {
+    const gs = { matchSeed: 48213, rulesVersion: V100_RULES_VERSION, selectedMode: 'ai', gameMode: 'game', rivalRaces: withRace(raceOf('stake_region', 'TAS', 1)), regionDeposits: {} };
+    const settings = { ...createDefaultGameSettings(), rivalRacesEnabled: true };
+    const on = rivalLiveHooksFor({ options: null, aiState: { id: 'ai', currentRegion: 'TAS', money: 5000, visitedRegions: [] }, gameState: gs, playerState: {}, settings, difficultyKey: 'hard' });
+    const off = rivalLiveHooksFor({ options: null, aiState: { id: 'ai', currentRegion: 'TAS', money: 5000, visitedRegions: [] }, gameState: gs, playerState: {}, settings: { ...settings, rivalRacesEnabled: false }, difficultyKey: 'hard' });
+    return (on !== undefined && typeof on.rescore === 'function' && on.v100Policy === true && off !== undefined && off.rescore === undefined) || json({ on: on ? Object.keys(on) : null, off: off ? Object.keys(off) : null });
+  });
+  check('v100rr_32_rival_contests_new_ground', 'On a new-ground race the best new place the prize can pay for (fare x places still needed) is lifted above every move; none qualifies = boosts only', () => {
+    const race = raceOf('new_ground', null, 2, { prize: 900, baseline: { player: { challengesWon: 0, visited: ['VIC'], money: 3000 }, rival: { challengesWon: 0, visited: ['QLD', 'NSW'], money: 3000 } } });
+    const list = [
+      { type: 'challenge', data: {}, score: 500 },
+      { type: 'travel', data: { region: 'VIC', cost: 200 }, score: 100 },
+      { type: 'travel', data: { region: 'TAS', cost: 300 }, score: 120 },
+      { type: 'travel', data: { region: 'NSW', cost: 50 }, score: 400 }
+    ];
+    // Nothing gained yet: two places still needed, so a trip qualifies when the prize beats twice its fare.
+    const ctx = { race, ownerKey: 'ai', region: 'QLD', money: 3000, visited: ['QLD', 'NSW'], deposits: {} };
+    const best = (out: Array<{ type: string; data: { region?: string }; score: number }>) => [...out].sort((a, b) => b.score - a.score)[0];
+    const rich = rivalRaceRefine(list, ctx);
+    const lean = rivalRaceRefine(list, { ...ctx, race: { ...race, prize: 500 } });
+    const poor = rivalRaceRefine(list, { ...ctx, race: { ...race, prize: 300 } });
+    // SA was gained since the race opened, so one place is still needed: TAS (300) fits a 500 prize again.
+    const halfway = rivalRaceRefine(list, { ...ctx, race: { ...race, prize: 500 }, visited: ['QLD', 'NSW', 'SA'] });
+    return (best(rich).data.region === 'TAS' && best(lean).data.region === 'VIC' && best(poor).type === 'challenge'
+      && Math.abs(poor[1].score - 180) < 1e-9 && poor[3].score === 400 && best(halfway).data.region === 'TAS') || json({ rich: best(rich), lean: best(lean), poor: best(poor), halfway: best(halfway) });
+  });
+  check('v100rr_08_region_challenge_progress', 'A region race counts only wins in that region from the day it opened', () => {
+    const race = raceOf('region_challenge', 'VIC', 1);
+    const early: Completion[] = [{ playerId: 'ai', region: 'VIC', turn: 1 }];
+    const elsewhere: Completion[] = [{ playerId: 'ai', region: 'SA', turn: 3 }];
+    const won: Completion[] = [{ playerId: 'ai', region: 'VIC', turn: 3 }];
+    const p = (c: Completion[], side: RivalRaceSide) => rivalRaceProgress(race, side, inputs({ completions: c })).done;
+    return (!p(early, 'rival') && !p(elsewhere, 'rival') && p(won, 'rival') && !p(won, 'player')) || 'progress wrong';
+  });
+  check('v100rr_09_stake_and_new_ground_progress', 'A stake race is done by the controller; new ground counts regions beyond the opening list', () => {
+    const stake = raceOf('stake_region', 'TAS', 1);
+    const ground = raceOf('new_ground', null, 2);
+    const held = rivalRaceProgress(stake, 'player', inputs({ deposits: { TAS: { player: 300 } } })).done;
+    const tied = rivalRaceProgress(stake, 'player', inputs({ deposits: { TAS: { player: 300, ai: 300 } } })).done;
+    const g1 = rivalRaceProgress(ground, 'rival', inputs({ rival: { ...inputs().rival, visited: ['QLD', 'NT'] } }));
+    const g2 = rivalRaceProgress(ground, 'rival', inputs({ rival: { ...inputs().rival, visited: ['QLD', 'NT', 'WA'] } }));
+    return (held && !tied && g1.value === 1 && !g1.done && g2.done) || json({ held, tied, g1, g2 });
+  });
+  check('v100rr_10_sprint_and_cash_progress', 'A sprint counts wins since it opened; a cash race measures cash gained since it opened', () => {
+    const sprint = raceOf('challenge_sprint', null, 3);
+    const cash = raceOf('cash_sprint', null, 1500);
+    const wins: Completion[] = [{ playerId: 'player', region: 'NSW', turn: 1 }, { playerId: 'player', region: 'NSW', turn: 2 }, { playerId: 'player', region: 'VIC', turn: 3 }, { playerId: 'player', region: 'VIC', turn: 4 }];
+    const s = rivalRaceProgress(sprint, 'player', inputs({ completions: wins }));
+    const c1 = rivalRaceProgress(cash, 'player', inputs({ player: { ...inputs().player, money: 4400 } }));
+    const c2 = rivalRaceProgress(cash, 'player', inputs({ player: { ...inputs().player, money: 4600 } }));
+    const down = rivalRaceProgress(cash, 'player', inputs({ player: { ...inputs().player, money: 100 } }));
+    return (s.value === 3 && s.done && c1.value === 1400 && !c1.done && c2.done && down.value === 0) || json({ s, c1, c2, down });
+  });
+  check('v100rr_11_first_race_opens_on_day_2', 'No race on day 1; on day 2 one opens (announced once)', () => {
+    const d1 = stepRivalRaces(null, inputs({ day: 1 }));
+    const d2 = stepRivalRaces(d1.state, inputs({ day: 2 }));
+    const again = stepRivalRaces(d2.state, inputs({ day: 2 }));
+    return (d1.events.length === 0 && d1.state.active === null && d2.events.length === 1 && d2.events[0].kind === 'opened' && d2.state.active !== null && d2.state.nextIndex === 1
+      && again.events.length === 0 && again.state === d2.state) || json({ d1: d1.events, d2: d2.events, again: again.events });
+  });
+  check('v100rr_12_a_win_is_paid_once', 'A finished race names its winner once, records the result and schedules the next race for the next day', () => {
+    const st = withRace(raceOf('region_challenge', 'VIC', 1));
+    const won = stepRivalRaces(st, inputs({ day: 3, completions: [{ playerId: 'player', region: 'VIC', turn: 3 }] }));
+    const after = stepRivalRaces(won.state, inputs({ day: 3, completions: [{ playerId: 'player', region: 'VIC', turn: 3 }] }));
+    const ev = won.events[0];
+    return (won.events.length === 1 && ev.kind === 'won' && ev.winner === 'player' && won.state.active === null && won.state.results.length === 1 && won.state.results[0].winner === 'player'
+      && won.state.nextOpenDay === 4 && after.events.length === 0 && after.state === won.state) || json({ won: won.events, after: after.events });
+  });
+  check('v100rr_13_unwon_race_closes', 'A race nobody finished closes after its last day with no winner, and the next can open that day', () => {
+    const st = withRace(raceOf('challenge_sprint', null, 3, { closesDay: 4 }));
+    const out = stepRivalRaces(st, inputs({ day: 5 }));
+    return (out.events[0]?.kind === 'closed' && out.state.results[0].winner === null && out.state.results[0].day === 4 && out.events.some(e => e.kind === 'opened') && out.state.active !== null) || json(out.events.map(e => e.kind));
+  });
+  check('v100rr_14_tie_goes_to_the_mover', 'If both sides finish in one evaluation the side whose turn it is takes it', () => {
+    const st = withRace(raceOf('cash_sprint', null, 1000));
+    const both = inputs({ day: 3, player: { ...inputs().player, money: 5000 }, rival: { ...inputs().rival, money: 4000 } });
+    const a = stepRivalRaces(st, { ...both, turnSide: 'rival' }).events[0];
+    const b = stepRivalRaces(st, { ...both, turnSide: 'player' }).events[0];
+    return (a?.kind === 'won' && a.winner === 'rival' && b?.kind === 'won' && b.winner === 'player') || json({ a, b });
+  });
+  check('v100rr_15_messages', 'Every race event has a plain sentence with the race and the prize', () => {
+    const race = raceOf('region_challenge', 'VIC', 1, { title: 'First to win a challenge in Victoria' });
+    const names = { player: 'You', rival: 'Scientist AI' };
+    const opened = rivalRaceEventMessage({ kind: 'opened', race }, names);
+    const mine = rivalRaceEventMessage({ kind: 'won', race, winner: 'player' }, names);
+    const theirs = rivalRaceEventMessage({ kind: 'won', race, winner: 'rival' }, names);
+    const closed = rivalRaceEventMessage({ kind: 'closed', race }, names);
+    return (opened.includes('Victoria') && opened.includes('$800') && opened.includes('day 4') && mine.startsWith('🏁 You won') && mine.includes('+$800') && theirs.includes('Scientist AI won')
+      && closed.includes('Nobody')) || json({ opened, mine, theirs, closed });
+  });
+  check('v100rr_16_refine_without_a_race', "With no race open the rival's candidates come back untouched (same array)", () => {
+    const list = [{ type: 'challenge', data: {}, score: 10 }, { type: 'travel', data: { region: 'VIC' }, score: 5 }];
+    return rivalRaceRefine(list, { race: null, ownerKey: 'ai', region: 'QLD', money: 5000, visited: [], deposits: {} }) === list || 'changed';
+  });
+  check('v100rr_17_refine_region_race', 'On a region race the trip there scores higher, and so does a challenge once the rival is there', () => {
+    const race = raceOf('region_challenge', 'VIC', 1);
+    const list = [{ type: 'travel', data: { region: 'VIC' }, score: 100 }, { type: 'travel', data: { region: 'SA' }, score: 100 }, { type: 'challenge', data: {}, score: 100 }];
+    const away = rivalRaceRefine(list, { race, ownerKey: 'ai', region: 'QLD', money: 5000, visited: ['QLD'], deposits: {} });
+    const there = rivalRaceRefine(list, { race, ownerKey: 'ai', region: 'VIC', money: 5000, visited: ['QLD', 'VIC'], deposits: {} });
+    return (away[0].score === 100 * RIVAL_RACE_TRAVEL_BOOST && away[1].score === 100 && away[2].score === 100 && there[2].score === 100 * RIVAL_RACE_CHALLENGE_BOOST) || json({ away: away.map(c => c.score), there: there.map(c => c.score) });
+  });
+  check('v100rr_25_worthwhile_trip_beats_the_best_move', 'When the prize is worth more than the fare (plus a stake), the trip to the race region becomes the rival\'s best move; when it is not, it is only doubled', () => {
+    const list = [{ type: 'challenge', data: {}, score: 300 }, { type: 'travel', data: { region: 'TAS', cost: 400 }, score: 10 }];
+    const ctx = { ownerKey: 'ai', region: 'VIC', money: 5000, visited: ['VIC'], deposits: {} };
+    const worth = rivalRaceRefine(list, { ...ctx, race: raceOf('region_challenge', 'TAS', 1, { prize: 800 }) });
+    const notWorth = rivalRaceRefine(list, { ...ctx, race: raceOf('region_challenge', 'TAS', 1, { prize: 300 }) });
+    const stakeWorth = rivalRaceRefine(list, { ...ctx, race: raceOf('stake_region', 'TAS', 1, { prize: 800 }) });
+    const stakeTooDear = rivalRaceRefine(list, { ...ctx, race: raceOf('stake_region', 'TAS', 1, { prize: 650 }) });
+    return (worth[1].score > 300 && notWorth[1].score === 20 && stakeWorth[1].score > 300 && stakeTooDear[1].score === 20) || json({ worth: worth[1].score, notWorth: notWorth[1].score, stakeWorth: stakeWorth[1].score, stakeTooDear: stakeTooDear[1].score });
+  });
+  check('v100rr_26_debrief_line', 'The debrief sums the races up (who won how many, the prizes, the unclaimed ones) and says nothing when none finished', () => {
+    const st: RivalRacesState = { ...createRivalRacesState(), results: [
+      { id: 'race_0', kind: 'challenge_sprint', title: 't', winner: 'player', prize: 650, day: 4 },
+      { id: 'race_1', kind: 'stake_region', title: 't', winner: 'rival', prize: 1750, day: 6 },
+      { id: 'race_2', kind: 'cash_sprint', title: 't', winner: 'player', prize: 900, day: 9 },
+      { id: 'race_3', kind: 'new_ground', title: 't', winner: null, prize: 500, day: 12 }
+    ] };
+    const line = rivalRaceDebriefLine(st, 'Scientist AI');
+    return (line === 'Rival Races: you won 2 (+$1,550), Scientist AI won 1 (+$1,750), 1 went unclaimed.' && rivalRaceDebriefLine(createRivalRacesState(), 'X') === null && rivalRaceDebriefLine(undefined, 'X') === null) || String(line);
+  });
+  check('v100rr_18_refine_stake_race', 'On a stake race the rival standing there is offered the stake that takes control (keeping its safety buffer); not when it cannot afford it or already holds it', () => {
+    const race = raceOf('stake_region', 'TAS', 1);
+    const list = [{ type: 'challenge', data: {}, score: 200 }, { type: 'region_deposit', data: { region: 'TAS', amount: 200 }, score: 50 }];
+    const rich = rivalRaceRefine(list, { race, ownerKey: 'ai', region: 'TAS', money: 5000, visited: [], deposits: { TAS: { player: 300 } } });
+    const claim = rich.find(c => c.type === 'region_deposit');
+    const poor = rivalRaceRefine(list, { race, ownerKey: 'ai', region: 'TAS', money: 700, visited: [], deposits: { TAS: { player: 300 } } });
+    const holds = rivalRaceRefine(list, { race, ownerKey: 'ai', region: 'TAS', money: 5000, visited: [], deposits: { TAS: { ai: 400 } } });
+    const amount = claim && typeof claim.data === 'object' && claim.data ? Number((claim.data as { amount?: unknown }).amount) : 0;
+    return (claim !== undefined && amount === 301 && claim.score > 200 && rich.filter(c => c.type === 'region_deposit').length === 1 && poor === list && holds === list) || json({ claim, poor: poor.length, holds: holds === list });
+  });
+  check('v100rr_19_refine_other_races', 'New ground favours unvisited regions; a sprint favours challenges; a cash race favours challenges and sales', () => {
+    const list = [{ type: 'travel', data: { region: 'WA' }, score: 10 }, { type: 'travel', data: { region: 'QLD' }, score: 10 }, { type: 'challenge', data: {}, score: 10 }, { type: 'sell', data: {}, score: 10 }];
+    const ctx = { ownerKey: 'ai', region: 'QLD', money: 5000, visited: ['QLD'], deposits: {} };
+    const ground = rivalRaceRefine(list, { ...ctx, race: raceOf('new_ground', null, 2) }).map(c => c.score);
+    const sprint = rivalRaceRefine(list, { ...ctx, race: raceOf('challenge_sprint', null, 3) }).map(c => c.score);
+    const cash = rivalRaceRefine(list, { ...ctx, race: raceOf('cash_sprint', null, 1500) }).map(c => c.score);
+    return (json(ground) === json([10 * RIVAL_RACE_NEW_GROUND_BOOST, 10, 10, 10]) && json(sprint) === json([10, 10, 10 * RIVAL_RACE_SPRINT_BOOST, 10])
+      && json(cash) === json([10, 10, 10 * RIVAL_RACE_CASH_BOOST, 10 * RIVAL_RACE_CASH_BOOST])) || json({ ground, sprint, cash });
+  });
+  check('v100rr_20_chooser_context_gate', "The rival's race context exists only with the switch on, in AI Opponent mode, while a race is open", () => {
+    const gs = { selectedMode: 'ai', gameMode: 'game', rivalRaces: withRace(raceOf('stake_region', 'TAS', 1)), regionDeposits: { TAS: { player: 300 } } };
+    const ai = { currentRegion: 'TAS', money: 4000, visitedRegions: ['QLD', 'TAS'] };
+    const on = v100RivalRaceChooserContext(gs, ai, { rivalRacesEnabled: true });
+    return (on !== null && on.ownerKey === RIVAL_OWNER_KEY && on.region === 'TAS' && on.money === 4000 && json(on.visited) === json(['QLD', 'TAS']) && on.deposits.TAS.player === 300
+      && v100RivalRaceChooserContext(gs, ai, { rivalRacesEnabled: false }) === null && v100RivalRaceChooserContext({ ...gs, selectedMode: 'grand_tour' }, ai, { rivalRacesEnabled: true }) === null
+      && v100RivalRaceChooserContext({ ...gs, rivalRaces: createRivalRacesState() }, ai, { rivalRacesEnabled: true }) === null) || json(on);
+  });
+  check('v100rr_21_card', 'The card shows the open race, both sides\' progress and the prize; between races one line; nothing once no race can open', () => {
+    const st = withRace(raceOf('new_ground', null, 2, { title: 'First to set foot in 2 regions they have never visited' }));
+    const view = buildRivalRaceCardView(st, inputs({ day: 3, rival: { ...inputs().rival, visited: ['QLD', 'NT'] } }));
+    const card = RivalRaceCard({ view, theme: { card: 'c', border: 'b' } });
+    const text = v99ElementText(card);
+    const idleState: RivalRacesState = { ...createRivalRacesState(), nextOpenDay: 6, results: [{ id: 'race_0', kind: 'cash_sprint', title: 't', winner: 'player', prize: 900, day: 4 }] };
+    const idle = v99ElementText(RivalRaceCard({ view: buildRivalRaceCardView(idleState, inputs({ day: 5 })), theme: { card: 'c', border: 'b' } }));
+    const over = RivalRaceCard({ view: buildRivalRaceCardView({ ...createRivalRacesState(), nextOpenDay: 40 }, inputs({ day: 28 })), theme: { card: 'c', border: 'b' } });
+    return (text.includes('Prize $800') && text.includes('never visited') && text.includes('You: 0/2') && text.includes('Scientist AI: 1/2') && idle.includes('you won $900') && idle.includes('day 6') && over === null) || json({ text, idle });
+  });
+  check('v100rr_33_card_says_how', "The card says how to take part in each kind of race, in the screen's own words", () => {
+    const how = (kind: RivalRaceKind, region: string | null) => rivalRaceHowTo(raceOf(kind, region, 1));
+    const lines = { rc: how('region_challenge', 'TAS'), st: how('stake_region', 'TAS'), ng: how('new_ground', null), cs: how('challenge_sprint', null), cash: how('cash_sprint', null) };
+    const text = v99ElementText(RivalRaceCard({ view: buildRivalRaceCardView(withRace(raceOf('stake_region', 'TAS', 1)), inputs({ day: 3 })), theme: { card: 'c', border: 'b' } }));
+    return (lines.rc.includes('travel to Tasmania') && lines.rc.includes('win any challenge') && lines.st.includes('Deposit Money') && lines.st.includes('Tasmania')
+      && lines.ng.includes('not visited') && lines.cs.includes('Only wins count') && lines.cash.includes('loans are not counted')
+      && new Set(Object.values(lines)).size === 5 && Object.values(lines).every(l => l.startsWith('How: ') && l.length < 120)
+      && text.includes(lines.st)) || json({ lines, text });
+  });
+  check('v100rr_22_save_roundtrip', 'A save keeps the races record (sanitised); a broken one is dropped', () => {
+    const f: SaveGameData = JSON.parse(json(createV95SaveFixture()));
+    const st = withRace(raceOf('region_challenge', 'VIC', 1));
+    (f.gameState as unknown as Record<string, unknown>).rivalRaces = st;
+    const kept = (validateSaveDataCore(f).gameState as unknown as Record<string, unknown>).rivalRaces;
+    (f.gameState as unknown as Record<string, unknown>).rivalRaces = { version: 7 };
+    const dropped = (validateSaveDataCore(f).gameState as unknown as Record<string, unknown>).rivalRaces;
+    return (json(kept) === json(sanitizeRivalRacesState(st)) && dropped === undefined) || json({ kept: Boolean(kept), dropped });
+  });
+  check('v100rr_23_no_dice_are_drawn', 'Planning and stepping races never draws from a gameplay RNG stream and never calls Math.random', () => {
+    const before = json(globalRngRegistry.exportStreamStates());
+    const original = Math.random;
+    let calls = 0;
+    Math.random = () => { calls += 1; return 0.5; };
+    try {
+      let st: RivalRacesState | null = null;
+      for (let day = 1; day <= 12; day++) st = stepRivalRaces(st, inputs({ day, seed: 77 + day })).state;
+    } finally { Math.random = original; }
+    return (calls === 0 && json(globalRngRegistry.exportStreamStates()) === before) || `${calls} Math.random calls / streams moved`;
+  });
+  check('v100rr_24_progress_text', 'Progress reads naturally for every kind of race', () => {
+    const p = (value: number, target: number): RivalRaceProgress => ({ value, target, done: value >= target });
+    const got = [
+      rivalRaceProgressText(raceOf('cash_sprint', null, 1500), p(600, 1500)),
+      rivalRaceProgressText(raceOf('region_challenge', 'VIC', 1), p(0, 1)),
+      rivalRaceProgressText(raceOf('stake_region', 'TAS', 1), p(1, 1)),
+      rivalRaceProgressText(raceOf('challenge_sprint', null, 3), p(5, 3))
+    ];
+    return json(got) === json(['+$600 of $1,500', 'not yet', 'in control', '3/3']) || json(got);
+  });
+  return results;
+}
+
+// ============================================================================
 // SECTION 21: MAIN COMPONENT
 // ============================================================================
 function AustraliaGame() {
@@ -208640,7 +210223,8 @@ function AustraliaGame() {
     // this match's list (notification ids restart with every match).
     const dismissSeconds = gameSettings.notificationSettings?.autoDismiss?.[notificationType] ?? 5;
     const classicSticky = gameSettings.classicStickyToasts === true;
-    const lifetime = resolveToastLifetime(notification, dismissSeconds, classicSticky);
+    // V10.0 (SECTION 20AY, F5): the rival's moves leave the lane as before but stay in the History (hidden, not deleted).
+    const lifetime = v100ToastLifetime(notification, dismissSeconds, classicSticky);
     if (lifetime.mode !== 'sticky') {
       const timerMode = lifetime.mode;
       // A toast a window kept off screen gets a few readable seconds — once — after the window closes (v99ToastTimerStep).
@@ -208649,7 +210233,8 @@ function AustraliaGame() {
       const scheduleDismissal = (delayMs: number) => {
         setTimeout(() => {
           if (v95MatchEpochRef.current !== epochAtSchedule) return;
-          if (timerMode === 'hide' && v99ClassicStickyToastsRef.current) return;
+          // V10.0 (SECTION 20AY, F5): a kept rival notice (not persistent) still leaves if Classic sticky toasts was switched on meanwhile.
+          if (timerMode === 'hide' && v99ClassicStickyToastsRef.current && notification.persistent === true) return;
           const currentSurfaceState = globalUISurfaceManager.getState();
           const isModalActive = globalUISurfaceManager.hasBlockingModal() || Boolean(currentSurfaceState?.activeBlockingModal) || ((currentSurfaceState?.modalStack?.length ?? 0) > 0);
           const step = v99ToastTimerStep({ mode: timerMode, modalActive: isModalActive, showsOverModal: v99ToastShowsOverModal(notification, classicSticky), deferred: heldBackByModal, graceUsed });
@@ -209371,7 +210956,7 @@ function dispatchGameSettingsChange(
   const dismissToast = useCallback((id: string) => {
     setNotifications(prev => {
       const target = prev.find(n => n.id === id);
-      return v99ToastDismissMode(target, v99ClassicStickyToastsRef.current) === 'hide' ? v99HideToast(prev, id) : prev.filter(n => n.id !== id);
+      return v100ToastDismissMode(target, v99ClassicStickyToastsRef.current) === 'hide' ? v99HideToast(prev, id) : prev.filter(n => n.id !== id); // V10.0 (SECTION 20AY, F5): a rival move's ✕ keeps it in the History
     });
   }, []);
 
@@ -210418,12 +212003,36 @@ function dispatchGameSettingsChange(
     });
   }, []);
 
+  // V10.0 (SECTION 20AY, F4): whether the open question was answered with its confirm button (set just before onConfirm).
+  const v100ConfirmAcceptedRef = useRef(false);
+  const v100LastConfirmationRef = useRef<{ type: unknown; data: unknown } | null>(null);
   const handleConfirm = useCallback(() => {
+    v100ConfirmAcceptedRef.current = true;
     if (confirmationDialog.onConfirm) {
       confirmationDialog.onConfirm();
     }
     closeConfirmation();
   }, [confirmationDialog, closeConfirmation]);
+  // V10.0 (SECTION 20AY, F4): a "Risky Challenge" question closed WITHOUT taking the challenge (Cancel, Escape, a click
+  // outside) takes the teaching card it caused with it — "Do It" set that card before the question, so it said "What you
+  // did: Take …" about a move that was never made. Every other way a question closes is unchanged.
+  useEffect(() => {
+    if (confirmationDialog.isOpen) {
+      v100LastConfirmationRef.current = { type: confirmationDialog.type, data: confirmationDialog.data };
+      v100ConfirmAcceptedRef.current = false;
+      return;
+    }
+    const last = v100LastConfirmationRef.current;
+    v100LastConfirmationRef.current = null;
+    if (!last || v100ConfirmAcceptedRef.current) return;
+    const cancelled = v100ConfirmationChallengeName(last);
+    if (!cancelled) return;
+    setUiState(prev => {
+      const kept = v100TeachingAfterCancel(prev.intentTeaching, cancelled);
+      return kept === prev.intentTeaching ? prev : { ...prev, intentTeaching: kept };
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmationDialog.isOpen]);
 
   // SH3: Apply settings preset with structural equality comparison and shallow object merging for nested objects
   // V9.6 (SECTION 20AG): switch experience mode — immediate on the start screen, confirmed during a live match.
@@ -215341,6 +216950,11 @@ function dispatchGameSettingsChange(
             const streakBonus = Math.min(0.5, currentAi.consecutiveWins * 0.1);
             reward = Math.floor(reward * (1 + streakBonus));
           }
+          // V10.0 (SECTION 20AY, F1): the win-streak bonus every player win already paid (STREAK_BONUSES, as in
+          // computeChallengeRewardCore), now paid to the rival too — in a match started on V10.0 without the classic rival.
+          if (v100RivalPolicyActive(gameState, gameSettings)) {
+            reward = v100RivalRewardWithStreak(reward, v100StreakRewardShare(currentAi.consecutiveWins, Boolean(currentAi.masteryUnlocks?.includes("Lucky Streak"))));
+          }
 
           // Calculate XP gain and check for level up
           let xpGain = challenge.difficulty * 20;
@@ -215865,7 +217479,9 @@ function dispatchGameSettingsChange(
 	    getWealthState,
       isAdvancedLoansEnabledForActor,
       commitMatchMemory,
-      gameState.turnCounter
+      gameState.turnCounter,
+      gameState.rulesVersion, // V10.0 (SECTION 20AY, F1): the streak payout reads the match's rules
+      gameSettings.classicRivalV99 // … and the classic-rival switch (read live, like the move picker)
 	  ]);
 
   // AE3/AE4: the one place a resolved AI decision engine actually gets consulted for solo
@@ -217053,6 +218669,8 @@ function dispatchGameSettingsChange(
         // V9.9 (SECTION 20AS): the seed this match runs on (optional field; a save without it is a pre-V9.9 match).
         matchSeed: sanitizeMatchSeed(wpMfMatchSeed) ?? undefined,
         matchEnd: undefined, // V9.9 (SECTION 20AS): a new match has not ended
+        rulesVersion: V100_RULES_VERSION, // V10.0 (SECTION 20AY): a match started now plays by the V10.0 rules
+        rivalRaces: undefined, // V10.0 (SECTION 20AZ): no race has run in a new match
         regionDeposits: {},
         standingPerActor: initializeRegionalStanding(nextTurnOrder),
         regionControlStats: createDefaultRegionControlStats(),
@@ -217730,6 +219348,9 @@ function dispatchGameSettingsChange(
 	      // V9.9 (SECTION 20AS): explicit, so the previous match's seed cannot survive the LOAD_STATE merge.
 	      matchSeed: readMatchSeed(data.gameState) ?? undefined,
 	      matchEnd: readMatchEnd(data.gameState) ?? undefined, // V9.9 (SECTION 20AS): how the loaded match ended, if it had
+	      // V10.0 (SECTIONS 20AY/20AZ): explicit, so the previous match's rules stamp and races cannot survive the LOAD_STATE merge.
+	      rulesVersion: readRulesVersion(data.gameState) ?? undefined,
+	      rivalRaces: sanitizeRivalRacesState((data.gameState as { rivalRaces?: unknown }).rivalRaces) ?? undefined,
 	      adaptiveAiPhase: data.gameState.adaptiveAiPhase || 'normal',
 	      adaptiveAiDaysTriggered: data.gameState.adaptiveAiDaysTriggered ?? 0,
 	      playerDominanceDays: data.gameState.playerDominanceDays ?? 0,
@@ -218212,7 +219833,7 @@ function dispatchGameSettingsChange(
     player,
     matchParts: recoveryMatchParts({ aiPlayer, actorsById, teamsById, humanAutomations, gameSettings, dontAskAgain }), // W4B: the settings a save holds are watched too
     replayActive: Boolean(isolatedReplayRuntime),
-    firstRunActive: Boolean(wp8State?.active),
+    firstRunActive: v100FirstRunBlocksRecovery(wp8State), // V10.0 (SECTION 20AY, F3): once the goal is met the tour no longer blocks autosave
     rematchPending: wpMfPendingRematch !== null,
     leaveDialogOpen: v99LeaveMatchOpen,
     epochRef: v95MatchEpochRef,
@@ -239580,7 +241201,9 @@ function dispatchGameSettingsChange(
   // monitored on every committed action; AI evaluation is deterministic and reads only its own knowledge.
   const dnStoredRaw = gameState.diplomacyState as DiplomacyState | undefined;
   /** Diplomacy's clock is the ROUND (one per player turn) — the HUD turn counter advances once per actor. */
-  const dnRound = Math.max(1, Number(gameState.roundNumber || 1));
+  // V10.0 (SECTION 20AY, F2): in a V10.0 one-on-one match the round-timed systems read the day — roundNumber only ever
+  // advanced in Team mode, so Living Regions, Regional Factions, World Reaction windows and diplomacy deadlines stood still.
+  const dnRound = v100EffectiveRound(gameState);
   const dnState = useMemo(() => sanitizeDiplomacyState(dnStoredRaw), [dnStoredRaw]);
   const dnEnabled = Boolean(isLiveIntentMatch && isCompetitiveMode && !gameState.isolatedReplayRuntime);
   const dnPlayerTeamId = String(player?.teamId || (isTeamMode ? TEAM_PLAYER_ID : 'team_player'));
@@ -241336,6 +242959,43 @@ function dispatchGameSettingsChange(
   }) : null), [v99tdOn, gameState.selectedMode, gameState.day, gameState.weather, gameState.marketTrend, gameState.resourcePrices, gameState.grandTourState, player, aiPlayer?.id, actorsById, gameSettings.winCondition, getCompetitiveMetricValue, isTeamMode]);
   const v99tdWaiting = useMemo(() => (v99tdOn ? v99DigestWaitingLines(v9Cohesion) : V99_DIGEST_NO_LINES), [v99tdOn, v9Cohesion]);
   const v99td = useV99TurnDigest(v99tdSnapshot ? { epoch: v95MatchEpochRef.current, turnKey: `${gameState.day}:${gameState.turnCounter}`, humanTurn: isPlayerTurnForCoPilot, activity: v99DigestActivityOf(player), snapshot: v99tdSnapshot, notes: notifications, waiting: v99tdWaiting } : null);
+  // V10.0 (SECTION 20AZ): Rival Races — head-to-head races for a prize (rivalRacesEnabled, AI Opponent mode; off = nothing
+  // is built, shown, saved or paid). Progress is read from what the match already records; this effect only resolves and
+  // opens races, pays the winner and announces it. The rival's chooser reads the open race through its live hooks.
+  const v100RacesOn = rivalRacesActive(gameSettings, gameState) && isLiveIntentMatch && !isolatedReplayRuntime;
+  const v100RaceInputs = useMemo<RivalRaceInputs | null>(() => {
+    if (!v100RacesOn) return null;
+    const visitedOf = (a: { visitedRegions?: unknown } | null | undefined): string[] => (Array.isArray(a?.visitedRegions) ? a.visitedRegions.filter((x: unknown): x is string => typeof x === 'string') : []);
+    return {
+      day: Number(gameState.day) || 1,
+      lastDay: matchLengthInDays(Number(gameSettings.totalDays) || 30),
+      seed: resolveEffectiveMatchSeed(gameState, Number(gameSettings.worldRngSeed ?? gameSettings.aiDeterministicSeed ?? 12345) || 12345),
+      player: { id: String(player?.id || 'player'), name: 'You', money: Number(player?.money) || 0, region: String(player?.currentRegion || ''), visited: visitedOf(player), debt: rivalRaceDebtOf(player) },
+      rival: { id: RIVAL_OWNER_KEY, name: String(aiPlayer?.name || 'Rival'), money: Number(aiPlayer?.money) || 0, region: String(aiPlayer?.currentRegion || ''), visited: visitedOf(aiPlayer), debt: rivalRaceDebtOf(aiPlayer) },
+      completions: Array.isArray(gameState.challengeCompletions) ? gameState.challengeCompletions : [],
+      deposits: rivalRaceDeposits(gameState.regionDeposits),
+      turnSide: gameState.currentTurn === 'ai' ? 'rival' : 'player',
+      staking: gameSettings.negotiationMode !== true
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v100RacesOn, gameState.day, gameState.matchSeed, gameState.challengeCompletions, gameState.regionDeposits, gameState.currentTurn, gameSettings.totalDays, gameSettings.negotiationMode, player?.id, player?.money, player?.currentRegion, player?.visitedRegions, player?.loans, player?.advancedLoans, aiPlayer?.name, aiPlayer?.money, aiPlayer?.currentRegion, aiPlayer?.visitedRegions, aiPlayer?.loans, aiPlayer?.advancedLoans]);
+  useEffect(() => {
+    if (!v100RaceInputs) return;
+    const current = sanitizeRivalRacesState(gameState.rivalRaces);
+    const out = stepRivalRaces(current, v100RaceInputs);
+    if (out.state === current && !out.events.length) return;
+    dispatchGameState({ type: 'UPDATE_GAME_STATE', payload: (st: GameStateSnapshot) => ({ ...st, rivalRaces: out.state }) });
+    out.events.forEach(ev => {
+      if (ev.kind === 'won') {
+        if (ev.winner === 'player') dispatchPlayer({ type: 'UPDATE_MONEY', payload: ev.race.prize });
+        else updateAiPlayerState((prev: PlayerStateSnapshot) => ({ ...prev, money: addMoney(prev.money, ev.race.prize) }));
+      }
+      const type = ev.kind === 'won' ? (ev.winner === 'player' ? 'success' : 'ai') : 'info';
+      addNotification(rivalRaceEventMessage(ev, { player: 'You', rival: v100RaceInputs.rival.name }), type, true);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v100RaceInputs]);
+  const v100RaceView = useMemo(() => (v100RaceInputs ? buildRivalRaceCardView(sanitizeRivalRacesState(gameState.rivalRaces), v100RaceInputs) : null), [v100RaceInputs, gameState.rivalRaces]);
   const v9CohesionRef = useRef<V9Cohesion | null>(null);
   v9CohesionRef.current = v9Cohesion;
   // After-action feedback for MAJOR player actions: the player's own root event and what the world did next.
@@ -241605,6 +243265,8 @@ function dispatchGameSettingsChange(
     if (!feelSnapshot) { if (prev) setV94Queue([]); return; }
     const t0 = typeof performance !== 'undefined' ? performance.now() : 0; const now = Date.now();
     const evs = deriveFeedbackEvents(prev, feelSnapshot, now);
+    // V10.0 (SECTION 20AY): "No actions left · End your turn" described the turn that just ended — it stayed ~3 s into the next day.
+    if (prev && prev.turnKey !== feelSnapshot.turnKey) setV94Queue(q => v100DropStaleTurnFeedback(q));
     const d = v94DiagRef.current; d.derivations += 1; d.lastMs = Math.round(((typeof performance !== 'undefined' ? performance.now() : 0) - t0) * 100) / 100; d.maxMs = Math.max(d.maxMs, d.lastMs);
     if (!evs.length) return;
     d.events += evs.length; d.lastDeltas = [...evs.map(e => `${e.kind}: ${e.title}${e.lines[0] ? ` (${e.lines[0]})` : ''}`), ...d.lastDeltas].slice(0, 10);
@@ -241638,6 +243300,13 @@ function dispatchGameSettingsChange(
     if (!evs.length) return;
     setGameSettings(prev => ({ ...prev, guidedLearning: evs.reduce((st, ev) => applyLearningEvent(st, ev), sanitizeLearningState(prev.guidedLearning)) }));
   }, [setGameSettings]);
+  // V10.0 (SECTION 20AY, F4): once the player has started playing (an action taken, or day 1 over) the welcome card counts
+  // as "Start Playing" — it stayed until clicked, and while it was up every other guided hint was held back.
+  useEffect(() => {
+    if (!isLiveIntentMatch || !v100WelcomeCardDone({ welcome: glLearning.welcome, day: gameState.day, actionsUsed: player?.actionsUsedThisTurn })) return;
+    glDispatch([{ kind: 'welcome', welcome: 'started', turn: glTurn }]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLiveIntentMatch, glLearning.welcome, gameState.day, player?.actionsUsedThisTurn]);
   // V9.9 (SECTION 20AU): "Next" in the tour brings the new step into view (step 2 appeared below the window, step 3
   // far from the map it describes). Only a step-to-step move scrolls — never the start of a match.
   const v99TourStepRef = useRef<number | null>(glLearning.basicsStep);
@@ -241687,9 +243356,28 @@ function dispatchGameSettingsChange(
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!wp8State || !wp8State.active || gameState.gameMode !== 'game') return;
-    const outcome = evaluateFirstRunGoal(wp8State, wp8Signals);
-    if (outcome) { wp8Finish(outcome); return; }
-    const next = nextFirstRunUnlock(wp8State, wp8Signals);
+    let next: FirstRunConcept | null;
+    if (isV100Match(gameState)) {
+      // V10.0 (SECTION 20AY, F3): an early goal is celebrated and the tour carries on — one new tool a day — until every
+      // tool is on screen. (It used to end the tour on the spot: three "Do It" presses on day 1 unlocked everything.)
+      const step = v100FirstRunStep(wp8State, wp8Signals);
+      if (step.kind === 'none') return;
+      if (step.kind === 'finish') { wp8Finish(step.outcome); return; }
+      if (step.kind === 'celebrate') {
+        dispatchGameState({ type: 'V96_FIRST_RUN_PATCH', payload: { kind: 'init', state: v100CelebrateFirstRunGoal(wp8State) } });
+        // The first run counts as completed from this moment (as V9.9's immediate finish recorded it): leaving mid-tour
+        // never restarts the guided match on the next launch, and the match can be resumed like any other.
+        writeFirstRunRecord(firstRunStorage(), 'completed', Date.now());
+        const upcoming = FIRST_RUN_UNLOCK_ORDER.find(c => !wp8State.unlocked.includes(c) && v99FirstRunConceptAvailable(c, v99FirstRunAvailability(gameSettings))) || null;
+        addNotification(v100FirstRunGoalMetNotice(wp8Signals.day, upcoming ? FIRST_RUN_LABELS[upcoming] : null), 'success', true, 'system');
+        return;
+      }
+      next = step.concept;
+    } else {
+      const outcome = evaluateFirstRunGoal(wp8State, wp8Signals);
+      if (outcome) { wp8Finish(outcome); return; }
+      next = nextFirstRunUnlock(wp8State, wp8Signals);
+    }
     if (!next) return;
     dispatchGameState({ type: 'V96_FIRST_RUN_PATCH', payload: { kind: 'unlock', concept: next, day: wp8Signals.day } });
     // V9.9 (SECTION 20AR): a tool that is switched off in this match is passed silently (it used to be announced as
@@ -241704,7 +243392,7 @@ function dispatchGameSettingsChange(
   const wp8SimpleSettingChange = useCallback((key: string, value: boolean | string | number) => {
     if (key === 'experienceMode') { if (value === 'explorer' || value === 'nation' || value === 'full') requestExperienceModeChange(value); return; }
     if (key === 'guidedFirstRunEnabled') { wp8SetGuidedFirstRun(value === true); return; }
-    if (!SIMPLE_SETTINGS_KEYS.includes(key) && !isSimpleCompanionSettingKey(key) && !isV99SettingKeyName(key)) return; // V9.9 (SECTION 20AS): + the rival's actions per day; W4A (f1-03): + the "New in V9.9" card
+    if (!SIMPLE_SETTINGS_KEYS.includes(key) && !isSimpleCompanionSettingKey(key) && !isV99SettingKeyName(key) && !isV100SettingKeyName(key)) return; // V10.0 (SECTION 20AY): + the "New in V10.0" card // V9.9 (SECTION 20AS): + the rival's actions per day; W4A (f1-03): + the "New in V9.9" card
     trackedSetGameSettings('direct_player_change', '⚙️ Simple settings', prev => ({ ...prev, ...({ [key]: value } as unknown as Partial<GameSettingsState>) }));
   }, [requestExperienceModeChange, trackedSetGameSettings, wp8SetGuidedFirstRun]);
   const glCtx = useMemo<LearningContext>(() => {
@@ -244599,9 +246287,17 @@ function dispatchGameSettingsChange(
                 </div>
               </SettingsSection>
               <SettingsSection id="interface.changelog" tab="interfaceAcc" title="What's New" chips={['UX only']}>
-                {/* V9.9 (SECTION 20AQ): the current release leads the list; its label derives from VERSION_CONSTANTS. */}
+                {/* V10.0 (SECTION 20AY): the current release leads the list (its label derives from VERSION_CONSTANTS); V9.9 follows. */}
+                <div className="mb-3 pb-3 border-b border-current border-opacity-10" data-testid="v100-whats-new">
+                  <div className="text-sm font-semibold mb-1">{V100_CHANGELOG[0]} <span className="text-xs font-normal opacity-60">· v{VERSION_CONSTANTS.GAME_VERSION}</span></div>
+                  <div className="text-xs opacity-80">
+                    {V100_CHANGELOG.slice(1).map(item => (
+                      <div key={item}>- {item}</div>
+                    ))}
+                  </div>
+                </div>
                 <div className="mb-3 pb-3 border-b border-current border-opacity-10" data-testid="v99-whats-new">
-                  <div className="text-sm font-semibold mb-1">{V99_CHANGELOG[0]} <span className="text-xs font-normal opacity-60">· v{VERSION_CONSTANTS.GAME_VERSION}</span></div>
+                  <div className="text-sm font-semibold mb-1">{V99_CHANGELOG[0]} <span className="text-xs font-normal opacity-60">· v9.9.0</span></div>
                   <div className="text-xs opacity-80">
                     {V99_CHANGELOG.slice(1).map(item => (
                       <div key={item}>- {item}</div>
@@ -245762,6 +247458,15 @@ function dispatchGameSettingsChange(
                 </div>
               </SettingsSection>
 
+              {/* V10.0 (SECTIONS 20AY/20AZ): Rival Races (new, off by default) and the classic-rival switch. First on the Gameplay tab. */}
+              <SettingsSection id={V100_SETTINGS_HUB_SECTION_ID} tab="gameplay" title={V100_SETTINGS_HUB_SECTION_TITLE} chips={['Off by default']} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === V100_SETTINGS_HUB_SECTION_ID)!.fieldKeys}>
+                <V100SettingsHubBody
+                  settings={gameSettings}
+                  onToggle={key => trackedSetGameSettings("direct_player_change", V100_SETTINGS_HUB_SECTION_TITLE, prev => ({ ...prev, [key]: prev[key] !== true }))}
+                  onClassName={`${themeStyles.success} text-white`}
+                  offClassName={themeStyles.buttonSecondary}
+                />
+              </SettingsSection>
               {/* V9.9 (SECTION 20AQ): the new features (off by default), the rival turn pace and the two "classic" presentation switches. W4A (f1-03): first on the Gameplay tab. */}
               <SettingsSection id="gameplay.v99" tab="gameplay" title="✨ New in V9.9" chips={['Off by default']} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.v99')!.fieldKeys}>
                 <V99SettingsHubBody
@@ -257028,10 +258733,11 @@ function dispatchGameSettingsChange(
     const actionButtonGap = actionButtonCompact ? 'gap-1.5' : 'gap-2';
     const actionButtonClass = `${themeStyles.button} text-white rounded-lg flex items-center ${actionButtonSize} ${actionButtonGap} disabled:opacity-50`;
     const actionButtonSecondaryClass = `${themeStyles.buttonSecondary} rounded-lg flex items-center ${actionButtonSize} ${actionButtonGap}`;
-    const actionButtonKbdClass = `${actionButtonCompact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs'} bg-black bg-opacity-30 rounded`;
+    // V10.0 (SECTION 20AY): key caps are for keyboards — hidden on phone-width screens, as the docked bar's already were (`hidden sm:inline`).
+    const actionButtonKbdClass = `${actionButtonCompact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs'} bg-black bg-opacity-30 rounded hidden sm:inline`;
     const quickActionCompact = uiState.quickActionCompactView ?? (actionButtonCompact || getQuickActions.length > 6);
     const quickActionButtonClass = `${themeStyles.button} text-white rounded-lg flex items-center ${quickActionCompact ? 'px-3 py-1.5 text-xs gap-1.5' : 'px-4 py-2 text-sm gap-2'} hover:scale-105 transform transition-all disabled:opacity-50`;
-    const quickActionKbdClass = `${quickActionCompact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs'} bg-black bg-opacity-30 rounded`;
+    const quickActionKbdClass = `${quickActionCompact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs'} bg-black bg-opacity-30 rounded hidden sm:inline`;
     const quickActionLabelClass = quickActionCompact ? 'text-xs font-bold opacity-75 mr-2' : 'text-sm font-bold opacity-75 mr-2';
     const quickActionHideClass = `${themeStyles.buttonSecondary} ${quickActionCompact ? 'px-2 py-1' : 'px-2 py-2'} rounded ml-2`;
     const activeDomainFilter = uiState.quickActionDomainFilter || 'all';
@@ -257471,7 +259177,7 @@ function dispatchGameSettingsChange(
           >
             <span>{descriptor.icon}</span>
             {descriptor.label && <span>{descriptor.label}</span>}
-            {descriptor.hotkey && <kbd className={descriptor.hotkey === 'Space' || descriptor.hotkey === 'P' || descriptor.hotkey === 'H' || descriptor.hotkey === 'N' ? "ml-2 px-2 py-0.5 bg-black bg-opacity-30 rounded text-xs" : actionButtonKbdClass}>{descriptor.hotkey}</kbd>}
+            {descriptor.hotkey && <kbd className={descriptor.hotkey === 'Space' || descriptor.hotkey === 'P' || descriptor.hotkey === 'H' || descriptor.hotkey === 'N' ? "ml-2 px-2 py-0.5 bg-black bg-opacity-30 rounded text-xs hidden sm:inline" : actionButtonKbdClass}>{descriptor.hotkey}</kbd>}
             {descriptor.badge && (
               <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full min-w-5 h-5 px-1 flex items-center justify-center">
                 {descriptor.badge}
@@ -258154,7 +259860,9 @@ function dispatchGameSettingsChange(
           )}
           {/* V9.9 (SECTION 20AX): "Since your last turn" — one card for what happened while the player waited (Turn Digest; off = not drawn). */}
           {v99td.digest && <OptionalSurfaceBoundary surface="Turn digest"><V99TurnDigestCard digest={v99td.digest} theme={themeStyles} collapsed={v99td.collapsed} historyCount={v99DigestHistoryCount(v99td.digest, notifications)} onToggle={v99td.onToggle} onDismiss={v99td.onDismiss} onShowAll={() => updateUiState({ showNotifications: true })} laneSide={v99DigestLaneSide(gameSettings.notificationSettings?.position, v99ClassicLayout, gameSettings.classicStickyToasts === true)} /></OptionalSurfaceBoundary>}
-          {wp8State?.active && <V99ToastLaneBelow active={!v99ClassicLayout}>{/* V9.9 (SECTION 20AU, W4A — f1-06): no toast over the goal counters or "Skip tutorial" */}<OptionalSurfaceBoundary surface="Guided first run"><FirstRunPanel view={buildFirstRunView(wp8State, wp8Signals, v99FirstRunAvailability(gameSettings))} onSkip={wp7Kit.fn('firstRunSkip', () => wp8Finish('skipped'))} theme={themeStyles} /></OptionalSurfaceBoundary></V99ToastLaneBelow>}
+          {wp8State?.active && <V99ToastLaneBelow active={!v99ClassicLayout}>{/* V9.9 (SECTION 20AU, W4A — f1-06): no toast over the goal counters or "Skip tutorial" */}<OptionalSurfaceBoundary surface="Guided first run"><FirstRunPanel view={v100FirstRunPanelView(wp8State, wp8Signals, v99FirstRunAvailability(gameSettings))} onSkip={wp7Kit.fn('firstRunSkip', () => wp8Finish('skipped'))} theme={themeStyles} /></OptionalSurfaceBoundary></V99ToastLaneBelow>}
+          {/* V10.0 (SECTION 20AZ): the open Rival Race (Rival Races on, AI Opponent mode; off = not drawn). */}
+          {v100RaceView && <OptionalSurfaceBoundary surface="Rival races"><RivalRaceCard view={v100RaceView} theme={themeStyles} /></OptionalSurfaceBoundary>}
           {wp6HudView && <OptionalSurfaceBoundary surface="Match shape"><MatchShapeHud view={wp6HudView} theme={themeStyles} /></OptionalSurfaceBoundary>}
 
           <FeedbackStrip theme={themeStyles} major={v94Visible.major} minor={v94Visible.minor} onDismiss={dismissV94} onWhy={wp7Kit.fn('feedbackWhy', (e: UiFeedbackEvent) => void submitIntelligenceQuery(e.kind === 'region_control_changed' ? `Why did control of ${REGIONS[e.subject]?.name || e.subject} change?` : e.kind === 'crisis_resolved' ? 'What changed after the crisis?' : 'What should I focus on next?'))} />
