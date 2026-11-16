@@ -44918,7 +44918,7 @@ export const AskGameDrawer: React.FC<AskGameDrawerProps> = ({
 
   useEffect(() => {
     if (isOpen && activeTab === 'chat') {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      messagesEndRef.current?.scrollIntoView({ behavior: v101ScrollBehavior() }); // V10.1 (SECTION 20BF): was 'smooth' even with Reduce Motion on
     }
   }, [conversationHistory, isOpen, activeTab, isProcessing]);
 
@@ -130626,7 +130626,7 @@ export const MECHANICS_DIRECTORY_ENTRIES: MechanicsDirectoryEntry[] = [
 export const MechanicsDirectoryEntries: React.FC<{ theme: any; focusId: string | null; onConfigure: (tab: SettingsHubTabId) => void; onAsk?: (q: string) => void }> = ({ theme, focusId, onConfigure }) => {
   useEffect(() => {
     if (!focusId || typeof document === 'undefined') return;
-    const t = window.setTimeout(() => { const el = document.getElementById(`mech-${focusId}`); if (el) { el.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); (el as HTMLElement).focus?.(); } }, 80);
+    const t = window.setTimeout(() => { const el = document.getElementById(`mech-${focusId}`); if (el) { el.scrollIntoView?.({ behavior: v101ScrollBehavior(), block: 'start' }); (el as HTMLElement).focus?.(); } }, 80); // V10.1 (SECTION 20BF): was 'smooth' even with Reduce Motion on
     return () => window.clearTimeout(t);
   }, [focusId]);
   return (
@@ -212641,9 +212641,730 @@ export function runV101FirstRunSelfTests(): V9SelfTestResult[] {
 // SECTION 20BF: V10.1 PLAY SCREEN & ACCESSIBILITY — BUTTONS THAT WORK, MENUS THAT FIT, TEXT YOU CAN READ
 // ============================================================================
 // <<V101-SLOT UI begin>>
-// (work package UI: replace everything between the two markers; keep the markers and the exported suite function below.)
+// ----------------------------------------------------------------------------
+// V10.1 (SECTION 20BF): work package UI. Every fix below is to what the player SEES or can DO with the keyboard; none changes how a match plays
+// and nothing here is saved in a match (no new match state). It therefore applies to every match, older saves and Classic rules included.
+//
+// U1 Strategy Planner (every match). The Dock / Launcher entry set showStrategyPlannerModal, but StrategyPlannerModal was never mounted: an invisible
+//    blocking surface hid the dock, the toasts and every shortcut, and Escape cleared a DIFFERENT flag so the next sync re-opened it. The modal is now
+//    mounted (inside a local error boundary, with its own session-only plan state: the game does not run plans, so nothing is written to the match),
+//    closing clears every alias flag of the surface (v101EscapeFlagPatch, v101PlannerClosePatch), and the Launcher's Notifications entry opens the
+//    notification history it always claimed to.
+// U2 "More" menu (every match). V101MorePopover measures its button and keeps the panel on screen (v101PopoverPlacement); Settings and Help get labels.
+// U3 Keyboard (every match). Shortcuts go through the same availability check as the buttons (v101ShortcutGate); Escape always backs out of a slider,
+//    dropdown or empty field (v101EscapeFieldRule), is left alone while a text field holds text or an IME is composing; chips advertise only real keys
+//    (v101AdvertisedHotkey); a "/" typed in a text field is text; a slider drag released over the Settings backdrop does not close it
+//    (v101BackdropClickCloses); the wager slider moves in $10 / $25 steps (v101WagerStep); smooth scrolls honour Reduce Motion (v101ScrollBehavior);
+//    "Max Visible" notifications are honoured (v101ToastLaneLimit).
+// U4 Styles (every match). V101StyleProbe notices that the Tailwind CDN did not apply and says so, in plain inline-styled text (v101StyleProbeDecision).
+// U5 Dialogs (every match). The ten core modals are dialogs: role, aria-modal, aria-labelledby, focus moves in, Tab is trapped ONLY while
+//    accessibilitySettings.trapFocusInModals is not false, Escape always closes, focus returns to the opener (v101DialogProps).
+// U6 Readable (every match). v99ThemeAccent gains rivalText and highlightText; Dark returns the very classes it did before, Light reads on white; the
+//    light primary button is blue-600. Text size: accessibilitySettings.textScaleMultiplier (0.8 to 1.5, default 1.0) now scales the page (html font
+//    size for rem-based text, a CSS variable for the 9/10/11 px literals) with A- / A+ / Reset in Settings > Accessibility. At 1.0 nothing is emitted.
+// Suite v101ui (runV101PlayScreenSelfTests).
+// ----------------------------------------------------------------------------
+
+/** The accent keys V10.1 adds to the semantic accents of resolveThemeStyles (Dark keeps the pink-400 / yellow-400 the play screen hard-coded). */
+export type V101ExtraAccentKey = 'rivalText' | 'highlightText';
+
+// ---- U1: the surface flags (Escape and the rescue clear every alias) ----------------------------------------------------------------------------------------
+export interface V101SurfaceFlagEntry { flags: readonly string[]; surfaceId: string }
+/** The surface-to-flags table GlobalUISurfaceManager.syncWithUIState last used (it sets this on every sync); null before the first sync. */
+export const v101SurfaceFlagSink: { current: ReadonlyArray<V101SurfaceFlagEntry> | null } = { current: null };
+/** The aliases the sink holds at runtime, kept here so the rule is testable without a mounted game. */
+export const V101_STATIC_SURFACE_ALIASES: ReadonlyArray<V101SurfaceFlagEntry> = [
+  { flags: ['showStrategyPlanner', 'showStrategyPlannerModal'], surfaceId: 'strategy_planner' },
+  { flags: ['showNotifications', 'showNotificationDrawer'], surfaceId: 'notification_drawer' },
+  { flags: ['showHelp', 'showAskGameAi'], surfaceId: 'ask_game_ai' },
+];
+/** What Escape sets on uiState when it closes `surfaceId`: its main flag, and every alias flag that is currently on (so the next sync cannot re-open it). */
+export function v101EscapeFlagPatch(surfaceId: string, mainFlag: string, uiState: unknown): Record<string, boolean> {
+  const patch: Record<string, boolean> = { [mainFlag]: false };
+  const ui = uiState && typeof uiState === 'object' ? uiState as Record<string, unknown> : {};
+  const table = v101SurfaceFlagSink.current || V101_STATIC_SURFACE_ALIASES;
+  for (const entry of table) {
+    if (entry.surfaceId !== surfaceId) continue;
+    for (const flag of entry.flags) if (flag !== mainFlag && ui[flag]) patch[flag] = false;
+  }
+  return patch;
+}
+/** What closing the Strategy Planner clears: both names of its flag. */
+export function v101PlannerClosePatch(): { showStrategyPlanner: false; showStrategyPlannerModal: false } {
+  return { showStrategyPlanner: false, showStrategyPlannerModal: false };
+}
+/** The planner state a modal update carries (the planner only changes strategyPlannerState), or null when it carries none. */
+export function v101PlannerSessionFrom(next: unknown): StrategyPlannerState | null {
+  if (!next || typeof next !== 'object') return null;
+  const state: unknown = (next as { strategyPlannerState?: unknown }).strategyPlannerState;
+  return state && typeof state === 'object' ? state as StrategyPlannerState : null;
+}
+/** The game state the planner modal reads: the live one, with the planner's own session state laid over strategyPlannerState (a copy; the match is not touched). */
+export function v101PlannerView<T extends object>(gameState: T, session: StrategyPlannerState | null): T {
+  return session ? { ...gameState, strategyPlannerState: session } : gameState;
+}
+
+// ---- U2: a popover that stays on screen ---------------------------------------------------------------------------------------------------------------
+export interface V101PopoverInput { anchorLeft: number; anchorRight: number; anchorTop: number; anchorBottom: number; panelWidth: number; panelHeight: number; viewportWidth: number; viewportHeight: number; margin?: number }
+export interface V101PopoverPlacement {
+  /** 'right': the panel's right edge is the button's (the old look); 'left': its left edge is the button's; 'clamped': neither fits, so it is pushed inside the window. */
+  side: 'right' | 'left' | 'clamped';
+  /** Offset in px of the panel's left edge from the button's left edge. */
+  left: number;
+  vertical: 'below' | 'above';
+  /** Largest height in px the panel may take on its side (it scrolls past that). */
+  maxHeight: number;
+}
+/** Where a popover opened from a button goes so that it is fully inside the window: prefers the old right-aligned look, then left-aligned, then clamped. */
+export function v101PopoverPlacement(input: V101PopoverInput): V101PopoverPlacement {
+  const n = (v: number, fallback = 0) => (Number.isFinite(v) ? v : fallback);
+  const m = Math.max(0, n(input.margin ?? 8, 8));
+  const vw = Math.max(0, n(input.viewportWidth)), vh = Math.max(0, n(input.viewportHeight));
+  const width = Math.max(0, Math.min(n(input.panelWidth), vw - 2 * m));
+  const rightAligned = n(input.anchorRight) - width;
+  const leftAligned = n(input.anchorLeft);
+  const fits = (x: number) => x >= m && x + width <= vw - m;
+  let side: V101PopoverPlacement['side'] = 'clamped';
+  let x = Math.min(Math.max(m, rightAligned), Math.max(m, vw - m - width));
+  if (fits(rightAligned)) { side = 'right'; x = rightAligned; } else if (fits(leftAligned)) { side = 'left'; x = leftAligned; }
+  const gap = 8;
+  const below = vh - n(input.anchorBottom) - m - gap;
+  const above = n(input.anchorTop) - m - gap;
+  const height = Math.max(0, n(input.panelHeight));
+  const vertical: V101PopoverPlacement['vertical'] = height <= below || below >= above ? 'below' : 'above';
+  const room = vertical === 'below' ? below : above;
+  return { side, left: Math.round(x - n(input.anchorLeft)), vertical, maxHeight: Math.max(120, Math.floor(room)) };
+}
+/** Text for the icon-only entries of the More menu (they were blank squares when the menu was clipped). Everything else keeps its own label. */
+export const V101_MORE_MENU_LABELS: Readonly<Record<string, string>> = { settings: 'Settings', help: 'Help' };
+export function v101MoreMenuDescriptor<T extends { id: string; label: string }>(descriptor: T): T {
+  const label = V101_MORE_MENU_LABELS[descriptor?.id];
+  return descriptor && !descriptor.label && label ? { ...descriptor, label } : descriptor;
+}
+const v101UseIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+export interface V101MorePopoverProps { open: boolean; onToggle: () => void; buttonClassName: string; panelClassName: string; children?: React.ReactNode }
+/** The simplified action bar's "More" button and its panel: the panel is measured on open and never leaves the window; Escape closes it. */
+export function V101MorePopover(props: V101MorePopoverProps): React.ReactElement {
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [placement, setPlacement] = useState<V101PopoverPlacement | null>(null);
+  const { open, onToggle } = props;
+  v101UseIsoLayoutEffect(() => {
+    if (!open) { setPlacement(null); return undefined; }
+    const measure = () => {
+      try {
+        const wrap = wrapRef.current, panel = panelRef.current;
+        if (!wrap || !panel) return;
+        const a = wrap.getBoundingClientRect();
+        setPlacement(v101PopoverPlacement({ anchorLeft: a.left, anchorRight: a.right, anchorTop: a.top, anchorBottom: a.bottom, panelWidth: panel.scrollWidth || panel.offsetWidth, panelHeight: panel.scrollHeight || panel.offsetHeight, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }));
+      } catch { /* no layout (a test renderer): the panel keeps its default right-aligned place */ }
+    };
+    measure();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.shiftKey) onToggle(); };
+    window.addEventListener('resize', measure);
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('resize', measure); window.removeEventListener('keydown', onKey); };
+  }, [open, onToggle]);
+  const panelStyle: React.CSSProperties | undefined = placement
+    ? { left: placement.left, right: 'auto', maxHeight: placement.maxHeight, overflowY: 'auto', maxWidth: 'calc(100vw - 16px)' }
+    : { maxWidth: 'calc(100vw - 16px)' };
+  return (
+    <div className="relative" ref={wrapRef} data-testid="v101-more-popover">
+      <button type="button" onClick={onToggle} className={props.buttonClassName} aria-expanded={open} aria-haspopup="true">
+        <span>⋯</span>
+        <span>More</span>
+      </button>
+      {open && (
+        <div ref={panelRef} className={`absolute ${placement?.vertical === 'above' ? 'bottom-full mb-2' : 'mt-2'} ${placement ? '' : 'right-0'} ${props.panelClassName}`} style={panelStyle} data-testid="v101-more-panel" data-side={placement?.side || 'right'}>
+          {props.children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- U3: keyboard --------------------------------------------------------------------------------------------------------------------------------------
+/** The action-bar button each opening shortcut stands for (the shortcut is allowed exactly when that button would be shown). */
+export const V101_SHORTCUT_BUTTON_IDS: Readonly<Record<string, string>> = {
+  openChallenges: 'challenges', openResources: 'market', openResourceMarket: 'resourceMarket', openWorkshop: 'workshop', openTravel: 'travel', openNegotiations: 'negotiations',
+};
+const V101_SHORTCUT_NAMES: Readonly<Record<string, string>> = {
+  openChallenges: 'Challenges', openResources: 'The Sell Market', openResourceMarket: 'The Resource Market', openWorkshop: 'The Workshop', openTravel: 'Travel', openNegotiations: 'Negotiations',
+};
+export interface V101ShortcutGateInput {
+  /** The guided first match's state (null: no first match, everything is shown). */
+  firstRun: FirstRunState | null;
+  negotiationMode: boolean;
+  pendingNegotiations: number;
+  /** The window this key opens is already open (its own key still closes it). */
+  alreadyOpen: boolean;
+}
+export interface V101ShortcutGateResult { allowed: boolean; message: string }
+/** Whether a shortcut may run now. The buttons hide what the guided first match has not unlocked, and Negotiations does nothing with negotiation mode off; the keys used to open both anyway. */
+export function v101ShortcutGate(action: string, input: V101ShortcutGateInput): V101ShortcutGateResult {
+  const allowed: V101ShortcutGateResult = { allowed: true, message: '' };
+  const buttonId = V101_SHORTCUT_BUTTON_IDS[action];
+  if (!buttonId || input.alreadyOpen) return allowed;
+  const name = V101_SHORTCUT_NAMES[action] || 'That';
+  if (!isFirstRunActionVisible(input.firstRun, buttonId)) return { allowed: false, message: `${name} is not unlocked yet in your first match. It opens up as you play.` };
+  if (action === 'openNegotiations' && !input.negotiationMode && !(input.pendingNegotiations > 0)) return { allowed: false, message: 'Negotiations are switched off for this match. Turn them on in Settings > Competition to use them.' };
+  return allowed;
+}
+
+/** What Escape does when it comes from a focused field: 'close' (let go of the field and go on to close the window), 'blur' (the field holds text: it only loses focus), 'rescue' (Shift+Escape: the UI rescue), 'ignore' (not ours). */
+export type V101EscapeFieldDecision = 'close' | 'blur' | 'rescue' | 'ignore';
+export interface V101EscapeFieldEvent { key?: unknown; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; isComposing?: boolean; keyCode?: number; target?: EventTarget | null }
+/** True for an element the player types text into (text-like inputs, textareas, contenteditable and role=textbox). */
+export function v101IsTextEntry(target: unknown): boolean {
+  if (!target || typeof target !== 'object') return false;
+  const el = target as { tagName?: unknown; type?: unknown; isContentEditable?: unknown; getAttribute?: (name: string) => string | null };
+  const tag = typeof el.tagName === 'string' ? el.tagName.toLowerCase() : '';
+  if (tag === 'textarea') return true;
+  if (tag === 'input') {
+    const type = typeof el.type === 'string' ? el.type.toLowerCase() : 'text';
+    return ['text', 'search', 'email', 'url', 'tel', 'password', 'number', ''].includes(type);
+  }
+  return el.isContentEditable === true || (typeof el.getAttribute === 'function' && (el.getAttribute('contenteditable') === 'true' || el.getAttribute('role') === 'textbox'));
+}
+function v101FieldHoldsText(target: unknown): boolean {
+  const el = target as { value?: unknown; textContent?: unknown } | null;
+  if (!el) return false;
+  if (typeof el.value === 'string') return el.value.length > 0;
+  return typeof el.textContent === 'string' && el.textContent.trim().length > 0;
+}
+/** The Escape rule for a key pressed in a focused field: a slider, dropdown, checkbox or empty field never swallows Escape; a field with text keeps it for itself (it loses focus, a second Escape closes); an IME composition and every other key are left alone. */
+export function v101EscapeFieldRule(event: V101EscapeFieldEvent): V101EscapeFieldDecision {
+  if (event.key !== 'Escape' && event.key !== 'Esc') return 'ignore';
+  if (event.isComposing === true || event.keyCode === 229) return 'ignore';
+  if (event.shiftKey) return 'rescue';
+  if (event.ctrlKey || event.metaKey || event.altKey) return 'ignore';
+  return v101IsTextEntry(event.target) && v101FieldHoldsText(event.target) ? 'blur' : 'close';
+}
+/** Takes focus off a field (never throws). */
+export function v101BlurTarget(target: EventTarget | null): void {
+  try { const el = target as { blur?: () => void } | null; if (el && typeof el.blur === 'function') el.blur(); } catch { /* a node without blur: nothing to let go of */ }
+}
+
+/** The key a chip shows, or null when pressing it would do nothing: only keys KEYBOARD_SHORTCUTS (and Ctrl+S, handled beside it) answer are advertised. */
+export function v101AdvertisedHotkey(hotkey: unknown): string | null {
+  if (typeof hotkey !== 'string' || !hotkey.trim()) return null;
+  const shown = hotkey.trim();
+  const lower = shown.toLowerCase();
+  if (lower === 'ctrl+s') return shown;
+  const key = lower === 'space' ? ' ' : lower;
+  return Object.prototype.hasOwnProperty.call(KEYBOARD_SHORTCUTS, key) ? shown : null;
+}
+
+/** A click closes a backdrop-click window only when the press began on the backdrop too (null: no press seen, as with a keyboard-made click). */
+export function v101BackdropClickCloses(pressBeganOnBackdrop: boolean | null, clickIsOnBackdrop: boolean): boolean {
+  return clickIsOnBackdrop && pressBeganOnBackdrop !== false;
+}
+/** Step of the challenge wager sliders (the minimum stake is $50, so both grids include it): $10 up to a $500 range, $25 above; $1 steps were 450 key presses long. */
+export function v101WagerStep(maxWager: unknown): number {
+  const max = typeof maxWager === 'number' && Number.isFinite(maxWager) ? maxWager : 0;
+  return max > 500 ? 25 : 10;
+}
+/** The scroll behaviour to ask for: instant when Reduce Motion is on in the game (data-motion="reduced") or the OS asks for it, otherwise smooth. */
+export function v101ScrollBehaviorFor(gameMotion: string | null | undefined, osPrefersReduced: boolean): 'auto' | 'smooth' {
+  return gameMotion === 'reduced' || osPrefersReduced ? 'auto' : 'smooth';
+}
+export function v101ScrollBehavior(): 'auto' | 'smooth' {
+  try {
+    if (typeof document === 'undefined') return 'smooth';
+    const motion = document.querySelector('[data-v94]')?.getAttribute('data-motion');
+    const os = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return v101ScrollBehaviorFor(motion, os);
+  } catch { return 'smooth'; }
+}
+/** How many toasts the lane shows: the Max Visible setting (0 = unlimited), 3 when it is missing. It was hard-capped at 3, so 5, 10, 20 and Unlimited all showed 3. */
+export function v101ToastLaneLimit(maxVisible: unknown, available: number): number {
+  const n = typeof maxVisible === 'number' && Number.isFinite(maxVisible) ? Math.floor(maxVisible) : 3;
+  return n <= 0 ? Math.max(0, available) : Math.min(n, 50);
+}
+/** Extra classes for a lane that can hold more than the default three: it scrolls inside the window instead of running off it. */
+export function v101ToastLaneExtraClass(maxVisible: unknown): string {
+  const n = typeof maxVisible === 'number' && Number.isFinite(maxVisible) ? Math.floor(maxVisible) : 3;
+  return n <= 0 || n > 3 ? ' max-h-[calc(100dvh-8rem)] overflow-y-auto' : '';
+}
+
+// ---- U5: the core modals as dialogs --------------------------------------------------------------------------------------------------------------------
+/** The ten core modals that get dialog semantics. */
+export const V101_CORE_DIALOG_IDS: readonly string[] = ['travel', 'challenges', 'sell', 'resource-market', 'shop', 'workshop', 'investments', 'sabotage', 'loans', 'day-transition'];
+export function v101DialogTitleId(id: string): string { return `v101-dialog-title-${id}`; }
+const V101_FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+/** The controls inside `root` that Tab can reach (visible ones only). */
+export function v101FocusableWithin(root: ParentNode): HTMLElement[] {
+  try {
+    return Array.from(root.querySelectorAll<HTMLElement>(V101_FOCUSABLE)).filter(el => typeof el.getClientRects !== 'function' || el.getClientRects().length > 0);
+  } catch { return []; }
+}
+/** Where Tab / Shift+Tab goes inside a trapped dialog: the index to focus when the browser's own move would leave (or has left) the dialog, or null to let the browser move. */
+export function v101TabWrapTarget(count: number, activeIndex: number, shift: boolean): number | null {
+  if (!(count > 0)) return null;
+  if (activeIndex < 0) return shift ? count - 1 : 0;
+  if (shift && activeIndex === 0) return count - 1;
+  if (!shift && activeIndex === count - 1) return 0;
+  return null;
+}
+const V101_DIALOG_OPENERS = new Map<string, HTMLElement | null>();
+const V101_DIALOG_REFS = new Map<string, (el: HTMLDivElement | null) => void>();
+function v101FocusDialog(el: HTMLElement): void {
+  try {
+    if (!el.isConnected) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && el.contains(active)) return;
+    const first = v101FocusableWithin(el)[0];
+    if (first) { first.focus(); return; }
+    el.style.outline = 'none';
+    el.focus();
+  } catch { /* focus is a nicety: a dialog that cannot take it still works */ }
+}
+/** One stable ref callback per dialog id (so a re-render does not run it again): moves focus into the dialog after the surface manager has noted the opener, and gives focus back to the opener when the dialog goes. */
+function v101DialogRef(id: string): (el: HTMLDivElement | null) => void {
+  let callback = V101_DIALOG_REFS.get(id);
+  if (!callback) {
+    callback = (el: HTMLDivElement | null) => {
+      try {
+        if (el) {
+          V101_DIALOG_OPENERS.set(id, typeof document !== 'undefined' ? document.activeElement as HTMLElement | null : null);
+          if (typeof setTimeout === 'function') setTimeout(() => v101FocusDialog(el), 0);
+        } else {
+          const opener = V101_DIALOG_OPENERS.get(id) || null;
+          V101_DIALOG_OPENERS.delete(id);
+          const active = typeof document !== 'undefined' ? document.activeElement : null;
+          if (opener && opener.isConnected && (!active || active === document.body) && typeof opener.focus === 'function') opener.focus();
+        }
+      } catch { /* never let focus handling break a window */ }
+    };
+    V101_DIALOG_REFS.set(id, callback);
+  }
+  return callback;
+}
+/** Props that make a modal's panel a dialog: role, aria-modal, aria-labelledby (the heading must carry id={v101DialogTitleId(id)}), focus in on open, and a Tab trap only while `trapFocus` is on (Settings > Accessibility > Focus Trapping). Escape is the game's own and always closes. */
+export function v101DialogProps(id: string, trapFocus: boolean): React.HTMLAttributes<HTMLDivElement> & React.RefAttributes<HTMLDivElement> {
+  return {
+    role: 'dialog',
+    'aria-modal': true,
+    'aria-labelledby': v101DialogTitleId(id),
+    tabIndex: -1,
+    ref: v101DialogRef(id),
+    onKeyDown: trapFocus ? (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== 'Tab' || e.defaultPrevented) return;
+      const nodes = v101FocusableWithin(e.currentTarget);
+      const target = v101TabWrapTarget(nodes.length, nodes.indexOf(document.activeElement as HTMLElement), e.shiftKey);
+      if (target !== null) { e.preventDefault(); nodes[target]?.focus(); }
+    } : undefined,
+  };
+}
+
+// ---- U4: the style probe -------------------------------------------------------------------------------------------------------------------------------
+export const V101_STYLE_BANNER_TEXT = "The game's styles did not load, so it looks plain. Check your connection or ad blocker, then reload.";
+/** What the probe's computed display says: 'ok' (styles applied, or the browser cannot tell: never nag), 'wait' (not applied yet; check again), 'banner' (still not applied after the wait). */
+export function v101StyleProbeDecision(display: string | null | undefined, check: number): 'ok' | 'wait' | 'banner' {
+  if (typeof display !== 'string' || !display.trim()) return 'ok';
+  if (display.trim() === 'none') return 'ok';
+  return check < 1 ? 'wait' : 'banner';
+}
+export interface V101StyleBannerProps { onReload: () => void; onDismiss: () => void }
+/** The banner, drawn with inline styles only (it is shown exactly when the class-based styles are missing). */
+export function V101StyleBanner(props: V101StyleBannerProps): React.ReactElement {
+  const button: React.CSSProperties = { font: 'inherit', padding: '6px 14px', borderRadius: 6, border: '1px solid #ffffff', background: 'transparent', color: '#ffffff', cursor: 'pointer', minHeight: 36 };
+  return (
+    <div role="status" aria-live="polite" data-testid="v101-style-banner" style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 2147483000, background: '#7c2d12', color: '#ffffff', padding: '10px 16px', fontFamily: 'system-ui, sans-serif', fontSize: 15, lineHeight: 1.4, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+      <span style={{ flex: '1 1 260px' }}>{V101_STYLE_BANNER_TEXT}</span>
+      <button type="button" style={{ ...button, background: '#ffffff', color: '#7c2d12', fontWeight: 700 }} onClick={props.onReload} data-testid="v101-style-banner-reload">Reload</button>
+      <button type="button" style={button} onClick={props.onDismiss} data-testid="v101-style-banner-dismiss">Dismiss</button>
+    </div>
+  );
+}
+/** Renders a hidden probe element carrying Tailwind's "hidden" class; if the stylesheet applied, its display is none. Checks at mount and again after the CDN has had its time. Never throws, never blocks play. */
+export function V101StyleProbe(): React.ReactElement {
+  const probeRef = useRef<HTMLSpanElement | null>(null);
+  const [missing, setMissing] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    let live = true;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const check = (n: number) => {
+      if (!live) return;
+      let display: string | null = null;
+      try { if (probeRef.current && typeof window.getComputedStyle === 'function') display = window.getComputedStyle(probeRef.current).display; } catch { display = null; }
+      const verdict = v101StyleProbeDecision(display, n);
+      if (verdict === 'ok') setMissing(false); else if (verdict === 'banner') setMissing(true);
+    };
+    check(0);
+    [1500, 5000].forEach((ms, i) => timers.push(setTimeout(() => check(i + 1), ms)));
+    return () => { live = false; timers.forEach(t => clearTimeout(t)); };
+  }, []);
+  return (
+    <>
+      <span ref={probeRef} className="hidden" aria-hidden="true" data-testid="v101-style-probe" />
+      {missing && !dismissed && <V101StyleBanner onReload={() => { try { window.location.reload(); } catch { /* nothing to reload */ } }} onDismiss={() => setDismissed(true)} />}
+    </>
+  );
+}
+
+// ---- U6: text size ---------------------------------------------------------------------------------------------------------------------------------------
+export const V101_TEXT_SCALE_MIN = 0.8;
+export const V101_TEXT_SCALE_MAX = 1.5;
+export const V101_TEXT_SCALE_STEP = 0.05;
+/** The text scale to use: a number from 0.8 to 1.5 (two decimals), 1 for anything else. */
+export function v101TextScaleClamp(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1;
+  return Math.round(Math.min(V101_TEXT_SCALE_MAX, Math.max(V101_TEXT_SCALE_MIN, value)) * 100) / 100;
+}
+/** One A- (-1) or A+ (+1) step from `current`. */
+export function v101TextScaleStep(current: unknown, direction: 1 | -1): number {
+  return v101TextScaleClamp(Math.round((v101TextScaleClamp(current) + direction * V101_TEXT_SCALE_STEP) * 100) / 100);
+}
+export function v101TextScaleLabel(value: unknown): string { return `${Math.round(v101TextScaleClamp(value) * 100)}%`; }
+/** Style for the game's root element: nothing at 100% (the page is exactly as before), otherwise the variable the 9/10/11 px text classes read. */
+export function v101TextScaleRootStyle(value: unknown): React.CSSProperties | undefined {
+  const scale = v101TextScaleClamp(value);
+  if (scale === 1) return undefined;
+  const style: Record<string, string> = { '--v101-text-scale': String(scale) };
+  return style as React.CSSProperties;
+}
+/** Joins the root's existing inline style (if any) with the text-scale style; undefined when both are. */
+export function v101MergeRootStyle(base: React.CSSProperties | undefined, scale: React.CSSProperties | undefined): React.CSSProperties | undefined {
+  return base || scale ? { ...(base || {}), ...(scale || {}) } : undefined;
+}
+/** The font size for <html> (every rem-based size follows it), or null at 100%. */
+export function v101TextScaleHtmlFontSize(value: unknown): string | null {
+  const scale = v101TextScaleClamp(value);
+  return scale === 1 ? null : `${Math.round(scale * 10000) / 100}%`;
+}
+/** Rules that scale the literal 9, 10 and 11 px text classes (they ignore the root font size). Only drawn when the scale is not 100%. */
+export function v101TextScaleCss(): string {
+  return [9, 10, 11].map(px => `[data-v101-text-scale] .text-\\[${px}px\\]{font-size:calc(${px}px * var(--v101-text-scale,1))}`).join('\n');
+}
+/** Puts the scale on <html> (and removes it again when the scale returns to 100% or the game goes); returns the clean-up. Never throws. */
+export function v101ApplyTextScale(value: unknown): () => void {
+  try {
+    if (typeof document === 'undefined') return () => undefined;
+    const size = v101TextScaleHtmlFontSize(value);
+    if (size === null) return () => undefined;
+    const style = document.documentElement.style;
+    const before = style.fontSize;
+    style.fontSize = size;
+    return () => { try { style.fontSize = before; } catch { /* page already gone */ } };
+  } catch { return () => undefined; }
+}
+export interface V101TextScaleControlProps { value: unknown; onChange: (next: number) => void; buttonClassName: string }
+/** The "Text size" row of Settings > Accessibility: A- / A+ and a reset, 100% by default. */
+export function V101TextScaleControl(props: V101TextScaleControlProps): React.ReactElement {
+  const scale = v101TextScaleClamp(props.value);
+  const button = `${props.buttonClassName} px-3 py-2 rounded font-semibold min-h-[44px] min-w-[44px] disabled:opacity-50`;
+  return (
+    <div className="flex items-center justify-between gap-3 flex-wrap" data-testid="v101-text-scale-setting">
+      <div>
+        <div className="font-semibold" id="v101-text-scale-label">Text size</div>
+        <div className="text-sm opacity-75">Makes the text bigger or smaller everywhere. 100% is the normal size.</div>
+      </div>
+      <div className="flex items-center gap-2" role="group" aria-labelledby="v101-text-scale-label">
+        <button type="button" className={button} aria-label="Smaller text" disabled={scale <= V101_TEXT_SCALE_MIN} onClick={() => props.onChange(v101TextScaleStep(scale, -1))} data-testid="v101-text-smaller">A-</button>
+        <span className="w-14 text-center font-semibold" aria-live="polite" data-testid="v101-text-scale-value">{v101TextScaleLabel(scale)}</span>
+        <button type="button" className={button} aria-label="Larger text" disabled={scale >= V101_TEXT_SCALE_MAX} onClick={() => props.onChange(v101TextScaleStep(scale, 1))} data-testid="v101-text-larger">A+</button>
+        <button type="button" className={button} aria-label="Reset text size to 100%" disabled={scale === 1} onClick={() => props.onChange(1)} data-testid="v101-text-reset">Reset</button>
+      </div>
+    </div>
+  );
+}
+
+// ---- Suite v101ui ------------------------------------------------------------------------------------------------------------------------------------------
 export function runV101PlayScreenSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  const render = (el: React.ReactElement): string | null => (typeof (globalThis as { __v101RenderStatic?: unknown }).__v101RenderStatic === 'function' ? v101RenderStatic(el) : null);
+  const stamped = (rulesVersion: number | null): Record<string, unknown> => (rulesVersion === null ? { day: 3 } : { day: 3, rulesVersion });
+
+  check('v101ui_01_more_popover_side_table', 'The More panel stays inside the window: right-aligned when it fits, left-aligned when the button is at the left edge (1280 px, wrapped row), clamped on a phone, and it opens upward when there is no room below', () => {
+    const at = (anchorLeft: number, anchorRight: number, viewportWidth: number, over: Partial<V101PopoverInput> = {}) => v101PopoverPlacement({ anchorLeft, anchorRight, anchorTop: 300, anchorBottom: 340, panelWidth: 256, panelHeight: 420, viewportWidth, viewportHeight: 800, ...over });
+    const rows: Array<[string, V101PopoverPlacement, V101PopoverPlacement['side'], number]> = [
+      ['1280 px, button wrapped to the left edge (x 29 to 115)', at(29, 115, 1280), 'left', 0],
+      ['1440 px, button mid-row (x 900 to 986)', at(900, 986, 1440), 'right', 986 - 256 - 900],
+      ['390 px phone, button at x 16 to 102', at(16, 102, 390), 'left', 0],
+      ['300 px window, button at x 100 to 180 (neither side fits 256)', at(100, 180, 300), 'clamped', 8 - 100],
+      ['320 px phone, button at the right edge (x 234 to 312): right-aligned', at(234, 312, 320), 'right', 312 - 256 - 234],
+    ];
+    for (const [label, got, side, left] of rows) if (got.side !== side || got.left !== left) return `${label}: ${json(got)}, expected side ${side} left ${left}`;
+    // the panel's left edge is always inside the window, and so is its right edge
+    for (const vw of [320, 390, 768, 1280, 1920]) for (let x = 0; x < vw; x += 37) {
+      const p = at(x, Math.min(vw, x + 86), vw);
+      const edge = x + p.left;
+      if (edge < 8 - 0.5 || edge + Math.min(256, vw - 16) > vw - 8 + 0.5) return `at viewport ${vw} the button at ${x} gives a panel from ${edge}`;
+    }
+    const low = at(500, 586, 1280, { anchorTop: 700, anchorBottom: 740 });
+    if (low.vertical !== 'above') return `no room below, expected the panel above: ${json(low)}`;
+    if (at(29, 115, 1280).vertical !== 'below') return 'with room below the panel opens below';
+    return true;
+  });
+
+  check('v101ui_02_style_probe_decision_table', 'The style probe decision: styled (display none) never shows the banner, an unstyled probe waits once and then shows it, and an unreadable style (no getComputedStyle) never shows it', () => {
+    const table: Array<[string | null | undefined, number, string]> = [
+      ['none', 0, 'ok'], ['none', 1, 'ok'], ['none', 2, 'ok'],
+      ['inline', 0, 'wait'], ['inline', 1, 'banner'], ['block', 2, 'banner'],
+      [null, 0, 'ok'], [null, 1, 'ok'], [undefined, 1, 'ok'], ['', 1, 'ok'], ['  ', 2, 'ok'],
+    ];
+    for (const [display, check2, expected] of table) { const got = v101StyleProbeDecision(display, check2); if (got !== expected) return `display ${String(display)} check ${check2}: ${got}, expected ${expected}`; }
+    return true;
+  });
+
+  check('v101ui_03_style_banner_is_plain_inline', 'The style banner says what went wrong in plain words, has Reload and Dismiss, and uses no class names at all (it must read when Tailwind is missing)', () => {
+    const markup = render(<V101StyleBanner onReload={() => undefined} onDismiss={() => undefined} />);
+    if (markup === null) return true; // no static renderer in this runner: skipped
+    if (/class=/.test(markup)) return 'the banner uses class names';
+    if (!markup.replace(/&#x27;/g, "'").includes(V101_STYLE_BANNER_TEXT)) return 'the banner text is missing';
+    if (!/Reload/.test(markup) || !/Dismiss/.test(markup)) return 'Reload or Dismiss is missing';
+    if (!/role="status"/.test(markup)) return 'the banner is not announced';
+    const probe = render(<V101StyleProbe />);
+    if (probe === null || /data-testid="v101-style-banner"/.test(probe)) return 'the banner must not appear on the first render';
+    if (!/class="hidden"/.test(probe)) return 'the probe element does not carry the Tailwind "hidden" class';
+    return true;
+  });
+
+  check('v101ui_04_shortcut_gate_table', 'Every opening shortcut x (shown, still locked in the guided first match, Negotiations off) follows the button: W and the other locked ones refuse with a reason, N refuses with negotiation mode off, a window already open still closes', () => {
+    const open = createFirstRunState();
+    const locked = { ...open, active: true, unlocked: [] as FirstRunState['unlocked'] };
+    const base = (over: Partial<V101ShortcutGateInput> = {}): V101ShortcutGateInput => ({ firstRun: null, negotiationMode: true, pendingNegotiations: 0, alreadyOpen: false, ...over });
+    for (const action of Object.keys(V101_SHORTCUT_BUTTON_IDS)) {
+      if (!v101ShortcutGate(action, base()).allowed) return `${action} refused with nothing locked`;
+      const lockedResult = v101ShortcutGate(action, base({ firstRun: locked }));
+      const buttonShown = isFirstRunActionVisible(locked, V101_SHORTCUT_BUTTON_IDS[action]);
+      if (lockedResult.allowed !== buttonShown) return `${action}: shortcut allowed=${lockedResult.allowed} but the button is ${buttonShown ? 'shown' : 'hidden'}`;
+      if (!lockedResult.allowed && !/not unlocked yet/.test(lockedResult.message)) return `${action}: no reason given (${lockedResult.message})`;
+      if (!v101ShortcutGate(action, base({ firstRun: locked, alreadyOpen: true })).allowed) return `${action}: an open window could not be closed with its key`;
+    }
+    const w = v101ShortcutGate('openWorkshop', base({ firstRun: { ...locked, unlocked: ['crafting'] } }));
+    if (!w.allowed) return 'W stays refused after crafting unlocks';
+    const day1 = v101ShortcutGate('openWorkshop', base({ firstRun: locked }));
+    if (day1.allowed) return 'W opens the Workshop on day 1 of the guided match';
+    const n = v101ShortcutGate('openNegotiations', base({ negotiationMode: false }));
+    if (n.allowed || !/Settings/.test(n.message)) return `N with negotiation mode off: ${json(n)}`;
+    if (!v101ShortcutGate('openNegotiations', base({ negotiationMode: false, pendingNegotiations: 2 })).allowed) return 'N with pending proposals must still open';
+    if (!v101ShortcutGate('openNegotiations', base({ negotiationMode: false, alreadyOpen: true })).allowed) return 'N must close an open Negotiation Center';
+    for (const action of ['endTurn', 'openMap', 'openNotifications', 'openProgress', 'toggleHelp', 'closeModal', 'clearNotifications']) if (!v101ShortcutGate(action, base({ firstRun: locked, negotiationMode: false })).allowed) return `${action} is not a gated shortcut`;
+    return true;
+  });
+
+  check('v101ui_05_escape_in_field_rule', 'Escape from a slider, dropdown, checkbox or empty field closes; with text in a text field it only blurs; during IME composition and with Ctrl/Alt it is ignored; Shift+Escape passes as the rescue; other keys stay blocked', () => {
+    const el = (tagName: string, type?: string, value?: string) => ({ tagName, type, value });
+    const esc = (target: unknown, over: V101EscapeFieldEvent = {}) => v101EscapeFieldRule({ key: 'Escape', target: target as EventTarget, ...over });
+    const table: Array<[string, V101EscapeFieldDecision, V101EscapeFieldDecision]> = [
+      ['range slider', esc(el('INPUT', 'range', '500')), 'close'],
+      ['select', esc(el('SELECT', undefined, 'price')), 'close'],
+      ['checkbox', esc(el('INPUT', 'checkbox', 'on')), 'close'],
+      ['empty text field', esc(el('INPUT', 'text', '')), 'close'],
+      ['empty search box', esc(el('INPUT', 'search', '')), 'close'],
+      ['text field with text', esc(el('INPUT', 'text', 'iron')), 'blur'],
+      ['textarea with text', esc(el('TEXTAREA', undefined, 'note')), 'blur'],
+      ['number field with a value', esc(el('INPUT', 'number', '40')), 'blur'],
+      ['IME composing', esc(el('INPUT', 'text', 'ni'), { isComposing: true }), 'ignore'],
+      ['IME keyCode 229', esc(el('INPUT', 'text', ''), { keyCode: 229 }), 'ignore'],
+      ['Shift+Escape in a field', esc(el('INPUT', 'text', 'x'), { shiftKey: true }), 'rescue'],
+      ['Ctrl+Escape', esc(el('INPUT', 'range', '1'), { ctrlKey: true }), 'ignore'],
+      ['Alt+Escape', esc(el('SELECT'), { altKey: true }), 'ignore'],
+      ['a letter in a field', v101EscapeFieldRule({ key: 'w', target: el('INPUT', 'text', '') as unknown as EventTarget }), 'ignore'],
+      ['the legacy key name Esc', v101EscapeFieldRule({ key: 'Esc', target: el('INPUT', 'range', '5') as unknown as EventTarget }), 'close'],
+    ];
+    for (const [label, got, expected] of table) if (got !== expected) return `${label}: ${got}, expected ${expected}`;
+    // isInputFocused is unchanged: the rule runs AFTER it, so letters typed in fields still never fire shortcuts
+    if (isInputFocused(null) !== false) return 'isInputFocused(null) changed';
+    return true;
+  });
+
+  check('v101ui_06_planner_escape_clears_every_alias', 'Escape on the Strategy Planner surface clears showStrategyPlanner AND showStrategyPlannerModal (and the notification drawer alias), so the next sync cannot re-open it; the rescue list names them too', () => {
+    const patch = v101EscapeFlagPatch('strategy_planner', 'showStrategyPlanner', { showStrategyPlannerModal: true });
+    if (patch.showStrategyPlanner !== false || patch.showStrategyPlannerModal !== false) return `planner patch ${json(patch)}`;
+    const drawer = v101EscapeFlagPatch('notification_drawer', 'showNotifications', { showNotificationDrawer: true, showNotifications: true });
+    if (drawer.showNotifications !== false || drawer.showNotificationDrawer !== false) return `drawer patch ${json(drawer)}`;
+    const only = v101EscapeFlagPatch('travel_modal', 'showTravelModal', { showTravelModal: true, showStrategyPlannerModal: true });
+    if (json(only) !== json({ showTravelModal: false })) return `a surface with no aliases must clear only its own flag: ${json(only)}`;
+    const close = v101PlannerClosePatch();
+    if (close.showStrategyPlanner !== false || close.showStrategyPlannerModal !== false) return 'close patch misses a flag';
+    // the manager's own table is what the sink carries: the planner surface lists both names
+    const entry = V101_STATIC_SURFACE_ALIASES.find(e => e.surfaceId === 'strategy_planner');
+    if (!entry || !entry.flags.includes('showStrategyPlannerModal')) return 'the alias table lacks the planner modal flag';
+    return true;
+  });
+
+  check('v101ui_07_planner_session_is_not_match_state', 'The planner modal works on a session copy: an update from the modal never writes into the match, the view lays the session over a copy, and unusable updates are ignored', () => {
+    const match = { day: 4, rulesVersion: 1010, player: { money: 900 } };
+    const before = json(match);
+    const session = createDefaultStrategyPlannerState();
+    const view = v101PlannerView(match, session) as typeof match & { strategyPlannerState?: unknown };
+    if (view === match || view.strategyPlannerState !== session) return 'the view must be a copy carrying the session';
+    if (json(match) !== before || 'strategyPlannerState' in match) return 'the match was modified';
+    if (v101PlannerView(match, null) !== match) return 'with no session the live state is passed through';
+    if (v101PlannerSessionFrom({ strategyPlannerState: session }) !== session) return 'a modal update with planner state is not read';
+    if (v101PlannerSessionFrom(null) !== null || v101PlannerSessionFrom({}) !== null || v101PlannerSessionFrom({ strategyPlannerState: 7 }) !== null) return 'a bad update was accepted';
+    if (V101_ADDED_STATE_KEYS.some(k => /textScale|v101ui|playScreen|strategyPlannerSession/i.test(k))) return 'a UI key was added to the save ladder';
+    return true;
+  });
+
+  check('v101ui_08_dark_accents_byte_identical', 'Dark returns exactly the classes it did before for every semantic accent (the old pale class is kept verbatim at every call site) and the two new keys equal what the play screen hard-coded', () => {
+    const dark = resolveThemeStyles('dark', true) as Record<string, string>;
+    const oldClasses = ['text-green-400', 'text-yellow-400', 'text-amber-300', 'text-cyan-400', 'text-pink-400', 'text-red-400', 'text-blue-400', 'text-sky-300'];
+    for (const key of Object.keys(V99_DARK_ACCENT_TEXT) as Array<keyof typeof V99_DARK_ACCENT_TEXT>) {
+      if (dark[key] !== V99_DARK_ACCENT_TEXT[key]) return `Dark ${key} is ${dark[key]}, expected ${V99_DARK_ACCENT_TEXT[key]}`;
+      for (const old of oldClasses) if (v99ThemeAccent(dark, key, old) !== old) return `Dark ${key} changed ${old}`;
+    }
+    if (dark.rivalText !== 'text-pink-400' || dark.highlightText !== 'text-yellow-400') return `new Dark keys: ${dark.rivalText} ${dark.highlightText}`;
+    const system = resolveThemeStyles('system', true) as Record<string, string>;
+    if (system.rivalText !== 'text-pink-400' || system.highlightText !== 'text-yellow-400') return 'System on a dark OS differs from Dark';
+    return true;
+  });
+
+  check('v101ui_09_light_accents_readable', 'Light and System-on-light: every semantic accent (including rivalText and highlightText) is at least 4.5:1 on a white card, computed from the colours, and the primary button label is at least 4.5:1 on its fill', () => {
+    for (const styles of [resolveThemeStyles('light', false) as Record<string, string>, resolveThemeStyles('system', false) as Record<string, string>]) {
+      for (const key of ['moneyPositive', 'moneyNegative', 'warningText', 'successText', 'infoText', 'statMoney', 'statInfo', 'rivalText', 'highlightText']) {
+        const color = v99TailwindColor(styles[key], 'text');
+        if (!color) return `Light ${key} (${styles[key]}) is not a known colour`;
+        const ratio = wcagContrastRatio(color.hex, '#ffffff');
+        if (ratio < 4.5) return `Light ${key} ${styles[key]} is ${ratio}:1 on white`;
+      }
+      const fill = v99SurfaceColors(styles.button, '#ffffff')[0];
+      const label = wcagContrastRatio('#ffffff', fill);
+      if (label < 4.5) return `Light primary button ${styles.button}: ${label}:1`;
+      if (styles.button.includes('bg-blue-500') || styles.buttonPrimary.includes('bg-blue-500')) return 'the light primary button is still blue-500';
+    }
+    const retro = resolveThemeStyles('retro', false) as Record<string, string>;
+    const panel = V99_THEME_BASE_SURFACES.retro.panel;
+    for (const key of ['rivalText', 'highlightText']) { const c = v99TailwindColor(retro[key], 'text'); if (!c || wcagContrastRatio(c.hex, panel) < 4.5) return `Retro ${key} ${retro[key]} is not readable`; }
+    return true;
+  });
+
+  check('v101ui_10_text_scale_root_style', 'Text size: 1.0 draws nothing (no style, no html size), 1.25 and 1.5 give the expected style and 125% / 150% on <html>, and out-of-range or bad values clamp to 0.8 to 1.5 (junk is 1.0)', () => {
+    if (v101TextScaleRootStyle(1) !== undefined || v101TextScaleRootStyle(undefined) !== undefined || v101TextScaleRootStyle('x') !== undefined || v101TextScaleRootStyle(NaN) !== undefined) return 'a style is drawn at 100%';
+    if (v101TextScaleHtmlFontSize(1) !== null || v101TextScaleHtmlFontSize(null) !== null) return 'html font size set at 100%';
+    const s125 = v101TextScaleRootStyle(1.25) as Record<string, string> | undefined;
+    if (!s125 || s125['--v101-text-scale'] !== '1.25') return `1.25 style: ${json(s125)}`;
+    if (v101TextScaleHtmlFontSize(1.25) !== '125%' || v101TextScaleHtmlFontSize(1.5) !== '150%' || v101TextScaleHtmlFontSize(0.8) !== '80%') return 'html sizes wrong';
+    const clamp: Array<[unknown, number]> = [[2, 1.5], [5, 1.5], [0.5, 0.8], [0, 0.8], [-3, 0.8], [1.2345, 1.23], [Infinity, 1], [NaN, 1], ['1.2', 1], [null, 1], [undefined, 1]];
+    for (const [input, expected] of clamp) if (v101TextScaleClamp(input) !== expected) return `clamp(${String(input)}) = ${v101TextScaleClamp(input)}, expected ${expected}`;
+    if (v101TextScaleStep(1, 1) !== 1.05 || v101TextScaleStep(1, -1) !== 0.95 || v101TextScaleStep(1.5, 1) !== 1.5 || v101TextScaleStep(0.8, -1) !== 0.8) return 'A+ / A- steps wrong';
+    let n = 1; for (let i = 0; i < 40; i++) n = v101TextScaleStep(n, 1);
+    if (n !== 1.5) return `repeated A+ ends at ${n}`;
+    const merged = v101MergeRootStyle(undefined, undefined);
+    if (merged !== undefined) return 'merging nothing must give nothing (the root must render exactly as before)';
+    const both = v101MergeRootStyle({ minHeight: 3 }, s125 as React.CSSProperties) as Record<string, unknown>;
+    if (both.minHeight !== 3 || both['--v101-text-scale'] !== '1.25') return 'merge lost a style';
+    const css = v101TextScaleCss();
+    if (!['9px', '10px', '11px'].every(px => css.includes(`text-\\[${px}\\]`)) || !css.includes('var(--v101-text-scale')) return 'the px text rules are wrong';
+    return true;
+  });
+
+  check('v101ui_11_text_scale_control_markup', 'The Text size row renders labelled A- / A+ / Reset buttons with the current percentage; Reset is disabled at 100%, A- at the minimum and A+ at the maximum, and every button is at least 44 px tall', () => {
+    const at = (value: unknown) => render(<V101TextScaleControl value={value} onChange={() => undefined} buttonClassName="x" />);
+    const normal = at(1);
+    if (normal === null) return true;
+    if (!/Text size/.test(normal) || !/>100%</.test(normal) || !/aria-label="Smaller text"/.test(normal) || !/aria-label="Larger text"/.test(normal) || !/aria-label="Reset text size to 100%"/.test(normal)) return 'the row is missing a label';
+    if (!/min-h-\[44px\]/.test(normal)) return 'the buttons are not 44 px tall';
+    const resetDisabled = /aria-label="Reset text size to 100%"[^>]*disabled|disabled=""[^>]*aria-label="Reset text size to 100%"/.test(normal);
+    if (!resetDisabled) return 'Reset should be disabled at 100%';
+    const big = at(1.5) as string; const small = at(0.8) as string;
+    if (!/>150%</.test(big) || !/>80%</.test(small)) return 'the percentage is wrong';
+    if (!/disabled="" [^>]*aria-label="Larger text"|aria-label="Larger text"[^>]*disabled/.test(big)) return 'A+ should be disabled at 150%';
+    if (!/disabled="" [^>]*aria-label="Smaller text"|aria-label="Smaller text"[^>]*disabled/.test(small)) return 'A- should be disabled at 80%';
+    return true;
+  });
+
+  check('v101ui_12_dialog_semantics_markup', 'All ten core modals get dialog semantics: role="dialog", aria-modal="true", an aria-labelledby that resolves to the heading that exists in the markup, and a -1 tabindex so focus can land on the panel', () => {
+    if (V101_CORE_DIALOG_IDS.length !== 10 || new Set(V101_CORE_DIALOG_IDS).size !== 10) return 'the core dialog list is not ten distinct modals';
+    for (const id of V101_CORE_DIALOG_IDS) {
+      const markup = render(<div {...v101DialogProps(id, true)}><h3 id={v101DialogTitleId(id)}>Title</h3><button type="button" aria-label="Close">x</button></div>);
+      if (markup === null) return true;
+      const labelled = /aria-labelledby="([^"]+)"/.exec(markup);
+      if (!/role="dialog"/.test(markup) || !/aria-modal="true"/.test(markup) || !labelled || !/tabindex="-1"/.test(markup)) return `${id}: ${markup}`;
+      if (!new RegExp(`id="${labelled[1]}"`).test(markup)) return `${id}: aria-labelledby ${labelled[1]} does not resolve`;
+    }
+    return true;
+  });
+
+  check('v101ui_13_focus_trap_switch_is_real', 'The Tab trap exists only while Focus Trapping is on: with the switch off only the trap goes (role, label and focus-in remain); the wrap rule sends Tab from the last control to the first and Shift+Tab from the first to the last, and never traps an empty or unfocused dialog', () => {
+    const on = v101DialogProps('shop', true), off = v101DialogProps('shop', false);
+    if (typeof on.onKeyDown !== 'function' || off.onKeyDown !== undefined) return 'the trap does not follow the switch';
+    if (off.role !== 'dialog' || off['aria-modal'] !== true || off['aria-labelledby'] !== v101DialogTitleId('shop') || typeof off.ref !== 'function') return 'turning the switch off removed more than the trap';
+    if (v101DialogProps('shop', true).ref !== on.ref) return 'the focus ref must be stable between renders (it would steal focus on every render)';
+    const table: Array<[number, number, boolean, number | null]> = [
+      [3, 2, false, 0], [3, 0, true, 2], [3, 1, false, null], [3, 1, true, null], [3, 0, false, null], [3, 2, true, null],
+      [3, -1, false, 0], [3, -1, true, 2], [1, 0, false, 0], [1, 0, true, 0], [0, -1, false, null], [0, 0, true, null],
+    ];
+    for (const [count, active, shift, expected] of table) if (v101TabWrapTarget(count, active, shift) !== expected) return `count ${count} active ${active} shift ${shift}: ${String(v101TabWrapTarget(count, active, shift))}, expected ${String(expected)}`;
+    return true;
+  });
+
+  check('v101ui_14_chips_advertise_only_real_keys', 'Quick-action chips show a key only when pressing it does something: I, B, S and E (no shortcut) are no longer shown, every key the shortcut table answers still is, and the shortcuts that exist are unchanged', () => {
+    for (const dead of ['I', 'B', 'S', 'E', 'i', 'X', '', null, undefined, 7]) if (v101AdvertisedHotkey(dead) !== null) return `${String(dead)} is still advertised`;
+    for (const real of ['C', 'R', 'W', 'M', 'T', 'N', 'H', 'P', 'Space', 'Ctrl+S', 'G']) if (v101AdvertisedHotkey(real) !== real) return `${real} is not advertised though it is a shortcut`;
+    // regression guard: the shortcut table is what it was (the dead keys are still not shortcuts)
+    const decision = (key: string) => resolveShortcutAction({ key, ctrl: false, meta: false, alt: false, repeat: false, focusKind: 'none', modalOpen: false, confirmOpen: false, openFlags: {} }).action;
+    const expected: Record<string, string | null> = { c: 'openChallenges', r: 'openResources', w: 'openWorkshop', m: 'openResourceMarket', g: 'openMap', t: 'openTravel', n: 'openNegotiations', h: 'openNotifications', p: 'openProgress', '?': 'toggleHelp', ' ': 'endTurn', i: null, b: null, s: null, e: null };
+    for (const key of Object.keys(expected)) if (decision(key) !== expected[key]) return `key ${JSON.stringify(key)} means ${String(decision(key))}, expected ${String(expected[key])}`;
+    return true;
+  });
+
+  check('v101ui_15_backdrop_close_needs_press_and_release', 'A click closes Settings only when the press began on the backdrop too: a slider drag released over the backdrop no longer closes it, a plain backdrop click and a keyboard-made click still do, and a click inside never does', () => {
+    const table: Array<[boolean | null, boolean, boolean]> = [[true, true, true], [false, true, false], [null, true, true], [true, false, false], [false, false, false], [null, false, false]];
+    for (const [began, onBackdrop, expected] of table) if (v101BackdropClickCloses(began, onBackdrop) !== expected) return `press ${String(began)} click-on-backdrop ${onBackdrop}`;
+    return true;
+  });
+
+  check('v101ui_16_wager_slider_step', 'The challenge wager sliders move in $10 steps up to a $500 range and $25 steps above (both land on the $50 minimum), never $1', () => {
+    const table: Array<[unknown, number]> = [[100, 10], [500, 10], [501, 25], [5000, 25], [0, 10], [NaN, 10], [undefined, 10], ['900', 10]];
+    for (const [max, step] of table) if (v101WagerStep(max) !== step) return `max ${String(max)}: ${v101WagerStep(max)}, expected ${step}`;
+    for (const max of [100, 500, 2000]) { const s = v101WagerStep(max); if (50 % s !== 0 && s !== 25) return `$50 is not on the grid for ${max}`; if (s <= 1) return 'a $1 step'; }
+    return true;
+  });
+
+  check('v101ui_17_toast_max_visible_honoured', 'Max Visible is honoured: 1, 2, 3, 5, 10, 20 show that many, Unlimited shows all, a missing value shows 3 as before; a lane that can hold more than 3 scrolls inside the window and the default lane is unchanged', () => {
+    const table: Array<[unknown, number, number]> = [[1, 9, 1], [2, 9, 2], [3, 9, 3], [5, 9, 5], [10, 30, 10], [20, 30, 20], [0, 7, 7], [0, 0, 0], [undefined, 9, 3], [NaN, 9, 3], ['5', 9, 3]];
+    for (const [setting, available, expected] of table) if (v101ToastLaneLimit(setting, available) !== expected) return `maxVisible ${String(setting)}: ${v101ToastLaneLimit(setting, available)}, expected ${expected}`;
+    if (v101ToastLaneLimit(createDefaultNotificationSettings().maxVisible, 9) !== 3) return 'the default is no longer 3 toasts';
+    if (v101ToastLaneExtraClass(3) !== '' || v101ToastLaneExtraClass(undefined) !== '' || v101ToastLaneExtraClass(1) !== '') return 'the default lane gained classes';
+    if (!/overflow-y-auto/.test(v101ToastLaneExtraClass(10)) || !/overflow-y-auto/.test(v101ToastLaneExtraClass(0))) return 'a long lane cannot scroll';
+    return true;
+  });
+
+  check('v101ui_18_smooth_scroll_honours_reduce_motion', 'Smooth scrolling is used only when neither the game\'s Reduce Motion nor the OS asks for less motion', () => {
+    const table: Array<[string | null | undefined, boolean, string]> = [['reduced', false, 'auto'], ['full', true, 'auto'], ['system', true, 'auto'], ['full', false, 'smooth'], ['system', false, 'smooth'], [null, false, 'smooth'], [undefined, true, 'auto']];
+    for (const [motion, os, expected] of table) if (v101ScrollBehaviorFor(motion, os) !== expected) return `${String(motion)} / OS ${os}: ${v101ScrollBehaviorFor(motion, os)}`;
+    const live = v101ScrollBehavior();
+    if (live !== 'auto' && live !== 'smooth') return 'no behaviour from the live helper';
+    return true;
+  });
+
+  check('v101ui_19_more_menu_labels_and_popover_markup', 'Settings and Help carry text labels in the More menu (other entries keep theirs), and the More panel renders open with the right-aligned default, a toggle button that says it is expanded, and its children', () => {
+    const settings = v101MoreMenuDescriptor({ id: 'settings', label: '', icon: 'g' });
+    const help = v101MoreMenuDescriptor({ id: 'help', label: '', icon: 'q' });
+    const diag = v101MoreMenuDescriptor({ id: 'diagnostics', label: 'Diagnostics', icon: 'd' });
+    const withLabel = v101MoreMenuDescriptor({ id: 'settings', label: 'Custom', icon: 'g' });
+    if (settings.label !== 'Settings' || help.label !== 'Help' || diag.label !== 'Diagnostics' || withLabel.label !== 'Custom') return `labels: ${json([settings.label, help.label, diag.label, withLabel.label])}`;
+    const markup = render(<V101MorePopover open={true} onToggle={() => undefined} buttonClassName="b" panelClassName="p"><span>inside</span></V101MorePopover>);
+    if (markup === null) return true;
+    if (!/aria-expanded="true"/.test(markup) || !/inside/.test(markup) || !/right-0/.test(markup) || !/max-width:calc\(100vw - 16px\)/.test(markup)) return markup;
+    const closed = render(<V101MorePopover open={false} onToggle={() => undefined} buttonClassName="b" panelClassName="p"><span>inside</span></V101MorePopover>) as string;
+    if (/inside/.test(closed) || !/aria-expanded="false"/.test(closed)) return 'a closed menu must render only its button';
+    return true;
+  });
+
+  check('v101ui_20_old_matches_play_and_look_as_before', 'Regression guard for V10.0-stamped, unstamped and V10.1 matches alike: none of these UI helpers reads the rules stamp, 100% text size and the Dark theme change nothing, and the shortcut gate lets a match with nothing locked do everything it could before', () => {
+    for (const version of [null, 1000, 1010]) {
+      const state = stamped(version);
+      const open = createFirstRunState();
+      for (const action of Object.keys(V101_SHORTCUT_BUTTON_IDS)) if (!v101ShortcutGate(action, { firstRun: null, negotiationMode: true, pendingNegotiations: 0, alreadyOpen: false }).allowed) return `stamp ${String(version)}: ${action} refused`;
+      if (!v101ShortcutGate('openWorkshop', { firstRun: { ...open, active: false }, negotiationMode: true, pendingNegotiations: 0, alreadyOpen: false }).allowed) return 'an ended first match still locks the Workshop';
+      if (isV101Match(state) !== (version === 1010)) return `stamp ${String(version)} is classified wrongly, the fixtures are wrong`;
+      if (v101TextScaleRootStyle(state.textScaleMultiplier) !== undefined) return 'no setting must mean no style';
+    }
+    if (json(resolveThemeStyles('dark', true)) !== json(resolveThemeStyles('system', true))) return 'Dark and System-on-dark differ';
+    return true;
+  });
+
   return results;
 }
 // <<V101-SLOT UI end>>
@@ -224364,7 +225085,7 @@ function dispatchGameSettingsChange(
 
   useEffect(() => {
     if (uiState.pendingMode && ['ai', 'grand_tour', 'team_human_ai_vs_ai_ai', 'team_ai_vs_ai'].includes(uiState.pendingMode)) {
-      difficultySectionRef.current?.scrollIntoView?.({ behavior: 'smooth' });
+      difficultySectionRef.current?.scrollIntoView?.({ behavior: v101ScrollBehavior() }); // V10.1 (SECTION 20BF): was 'smooth' even with Reduce Motion on
     }
   }, [uiState.pendingMode]);
 
@@ -224505,7 +225226,7 @@ function dispatchGameSettingsChange(
       const targetQuery = `[data-setting-key="${resolvedSectionId}"]`;
       const el = document.querySelector(targetQuery) || document.getElementById(resolvedSectionId);
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        el.scrollIntoView({ behavior: v101ScrollBehavior(), block: 'start' }); // V10.1 (SECTION 20BF): was 'smooth' even with Reduce Motion on
         el.classList.add('ring-2', 'ring-amber-400');
       }
     }
@@ -224577,7 +225298,7 @@ function dispatchGameSettingsChange(
       }
 
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        el.scrollIntoView({ behavior: v101ScrollBehavior(), block: 'start' }); // V10.1 (SECTION 20BF): was 'smooth' even with Reduce Motion on
         if (pending.highlight) {
           el.classList.add('ring-2', 'ring-amber-400', 'transition-all');
           setTimeout(() => {
@@ -246409,7 +247130,7 @@ function dispatchGameSettingsChange(
   const v101NewestAnswerId = v9IntelFeed.length > 0 ? v9IntelFeed[v9IntelFeed.length - 1].id : null;
   useEffect(() => {
     if (!v101NewestAnswerId || wp8State?.active !== true || typeof document === 'undefined') return;
-    try { (document.querySelector('[data-testid="v101-first-run-answer"]') as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); } catch { /* a browser without scrollIntoView options: the card is still drawn */ }
+    try { (document.querySelector('[data-testid="v101-first-run-answer"]') as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest', behavior: v101ScrollBehavior() }); } catch { /* a browser without scrollIntoView options: the card is still drawn */ } // V10.1 (SECTION 20BF): was 'smooth' even with Reduce Motion on
   }, [v101NewestAnswerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Take Control: the exact canonical interrupt the HUD always used, plus cancellation of any
@@ -249592,6 +250313,12 @@ function dispatchGameSettingsChange(
 
   // ---- V9.4 Game feel: presentation-only feedback derived from canonical deltas (never persisted) ----
   const v94MotionMode = resolveUiMotionMode(gameSettings);
+  // V10.1 (SECTION 20BF): Text size. accessibilitySettings.textScaleMultiplier was sanitised and read by nothing; 1.0 changes nothing, anything else scales <html>'s font size (and the 9/10/11 px text, see v101TextScaleCss).
+  const v101TextScale = v101TextScaleClamp(gameSettings.accessibilitySettings?.textScaleMultiplier);
+  useEffect(() => v101ApplyTextScale(v101TextScale), [v101TextScale]);
+  // V10.1 (SECTION 20BF): the Strategy Planner modal's own plan state, for this session only (the game does not run plans, so nothing is written into the match or its saves); cleared when a match ends.
+  const [v101PlannerSession, setV101PlannerSession] = useState<StrategyPlannerState | null>(null);
+  useEffect(() => { if (gameState.gameMode !== 'game') setV101PlannerSession(null); }, [gameState.gameMode]);
   const v94FocusStrong = Boolean(gameSettings.accessibilitySettings?.highContrastFocusRings);
   // V9.6 (SECTION 20AM): state slice 15 — V9.4 feedback queue (3 fields in one reducer; setters keep useState semantics).
   const [wp7Slice15, wp7Slice15Set] = useStateSlice<{ v94DebugSlow: boolean; v94Queue: UiFeedbackEvent[]; v94Now: number }>(() => ({
@@ -253623,6 +254350,16 @@ function dispatchGameSettingsChange(
                       {(gameSettings.accessibilitySettings?.reduceMotion ?? false) ? 'ON' : 'OFF'}
                     </button>
                   </div>
+
+                  {/* V10.1 (SECTION 20BF): Text size: the existing accessibilitySettings.textScaleMultiplier (no new setting), 100% by default. */}
+                  <V101TextScaleControl
+                    value={gameSettings.accessibilitySettings?.textScaleMultiplier}
+                    buttonClassName={themeStyles.buttonSecondary}
+                    onChange={(next) => {
+                      const current = gameSettings.accessibilitySettings || createDefaultAccessibilitySettings();
+                      updateGameSetting('accessibilitySettings', { ...current, textScaleMultiplier: next }, { settingLabel: 'Text Size', section: 'Interface → Accessibility', source: 'direct_player_change' });
+                    }}
+                  />
 
                   <div className="p-3 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono space-y-2">
                     <div className="font-bold text-slate-200">⌨️ Keyboard Navigation Quick-Reference:</div>
@@ -266126,7 +266863,7 @@ function dispatchGameSettingsChange(
       updateUiState({ showIntentAllActions: true, simplifiedMoreOpen: true, experienceLayer: 'play' });
       if (typeof window !== 'undefined') {
         window.setTimeout(() => {
-          document.getElementById('v9-all-actions-bar')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+          document.getElementById('v9-all-actions-bar')?.scrollIntoView?.({ behavior: v101ScrollBehavior(), block: 'start' }); // V10.1 (SECTION 20BF): was 'smooth' even with Reduce Motion on
         }, 0);
       }
     };
@@ -266444,7 +267181,7 @@ function dispatchGameSettingsChange(
               onAsk={q => void submitIntelligenceQuery(q)}
               onGo={id => {
                 const el = typeof document !== 'undefined' ? document.getElementById(`v9-intel-${id}`) : null;
-                if (el) { el.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); return; }
+                if (el) { el.scrollIntoView?.({ behavior: v101ScrollBehavior(), block: 'start' }); return; } // V10.1 (SECTION 20BF): was 'smooth' even with Reduce Motion on
                 void submitIntelligenceQuery(id === 'rivals' ? (isTeamMode ? 'What is the enemy team doing?' : 'What is the opponent threatening?') : id === 'diplomacy' ? 'What agreements do I have?' : id === 'team' ? 'What is my teammate doing?' : 'What should I do next?');
               }}
             />
@@ -277946,7 +278683,10 @@ function dispatchGameSettingsChange(
   }
 
   return (
-    <div className="font-sans" data-v94="" data-motion={v94MotionMode} data-focus={v94FocusStrong ? 'strong' : 'normal'} style={v94DebugSlow ? ({ ['--v94-speed' as any]: 6 } as React.CSSProperties) : undefined}>
+    <div className="font-sans" data-v94="" data-motion={v94MotionMode} data-focus={v94FocusStrong ? 'strong' : 'normal'} data-v101-text-scale={v101TextScale !== 1 ? String(v101TextScale) : undefined} style={v101MergeRootStyle(v94DebugSlow ? ({ ['--v94-speed' as any]: 6 } as React.CSSProperties) : undefined, v101TextScaleRootStyle(v101TextScale))}>
+      {/* V10.1 (SECTION 20BF): says so when the Tailwind CDN did not apply (the page would otherwise be an unexplained unstyled stack), and scales the 9/10/11 px text when Text size is not 100%. */}
+      <V101StyleProbe />
+      {v101TextScale !== 1 && <style>{v101TextScaleCss()}</style>}
       <style>{V94_STYLESHEET}</style>
       <style>{`
         @keyframes notificationSlideIn {
@@ -278489,16 +279229,17 @@ function dispatchGameSettingsChange(
       />
 
       {/* V10.1 (SECTION 20BF): the Strategy Planner modal was defined but never mounted, so the dock and launcher entry opened an invisible blocking surface.
-          It is mounted here with its existing props; closing clears both flag names (v101PlannerClosePatch). */}
-      <StrategyPlannerModal
-        isOpen={Boolean(uiState.showStrategyPlanner || uiState.showStrategyPlannerModal)}
-        onClose={() => updateUiState(v101PlannerClosePatch())}
-        gameState={gameState}
-        onUpdateGameState={(next: unknown) => {
-          const patch = v101PlannerStatePatch(next, gameState);
-          if (patch) dispatchGameState({ type: 'UPDATE_GAME_STATE_PARTIAL', payload: patch });
-        }}
-      />
+          It is mounted here with its existing props, on a session copy of its own plan state (never the match); closing clears both flag names (v101PlannerClosePatch). */}
+      {Boolean(uiState.showStrategyPlanner || uiState.showStrategyPlannerModal) && (
+        <OptionalSurfaceBoundary surface="Strategy Planner">
+          <StrategyPlannerModal
+            isOpen={true}
+            onClose={() => updateUiState(v101PlannerClosePatch())}
+            gameState={v101PlannerView(gameState, v101PlannerSession)}
+            onUpdateGameState={(next: unknown) => { const session = v101PlannerSessionFrom(next); if (session) setV101PlannerSession(session); }}
+          />
+        </OptionalSurfaceBoundary>
+      )}
 
       <GuardianAiStatusPanel
         isOpen={Boolean(
