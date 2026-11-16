@@ -11073,6 +11073,8 @@ export function reduceGameAction(
   // V9.6 (SECTION 20AM): inside a Background-AI simulation batch one serialisation of the same live state is shared
   // (identical JSON); every call still parses its own fresh clone.
   const nextState: CanonicalGameState = JSON.parse(canonicalStateJson(state));
+  // V10.1 (SECTION 20BI): the off-switch check below trusts the settings only when the caller handed some in (a live state with no settings of its own is canonicalised with the DEFAULT ones, which would read as "everything off").
+  const v101SettingsKnown = Boolean(state && typeof state === 'object' && (state as { gameSettings?: unknown }).gameSettings && (state as { gameSettings?: unknown }).gameSettings !== DEFAULT_GAME_SETTINGS);
   // V9.7 (SECTION 20AO): with canonicalActionRoutingV97 on, the working copy keeps the crisis-chain and public-stability
   // slices, which canonicalStateFromLiveRuntime never copied (so crisis handlers started from defaults). Off: V9.6.
   v97CarryCrisisSlices(state, nextState);
@@ -11209,6 +11211,8 @@ export function reduceGameAction(
 
         case 'start_infrastructure_project':
         case 'build_infrastructure': {
+          // V10.1 (SECTION 20BI): a V10.1 match that switched infrastructure off refuses the human's build too (the rival already obeyed the switch); older matches replay exactly as before.
+          if (v101WorldReducerBlock(nextState, v101SettingsKnown ? gameSettings : null, action.type)) break;
           const reg = action.targetRegion || action.parameters?.region || actor?.currentRegion || 'NSW';
           const type = (action.parameters?.infrastructureType || 'trade_depot') as InfrastructureProjectType;
           const cost = action.investmentAmount || action.price || action.parameters?.capitalAmount || action.parameters?.cost || 350;
@@ -11646,6 +11650,8 @@ export function reduceGameAction(
         // Phase 4: Regional Economic Development & Infrastructure
         case 'accept_regional_contract':
         case 'acceptContract': {
+          // V10.1 (SECTION 20BI): a V10.1 match that switched contracts off refuses accepting one (fulfilling one already accepted is never refused).
+          if (v101WorldReducerBlock(nextState, v101SettingsKnown ? gameSettings : null, action.type)) break;
           const contractId = action.parameters?.contractId || action.item;
           const regContracts = nextState.regionalContracts || (nextState as ExtendedGameState).gameState?.regionalContracts;
           if (contractId && regContracts?.[contractId]) {
@@ -11698,6 +11704,8 @@ export function reduceGameAction(
 
         case 'invest_infrastructure_project':
         case 'investInfrastructure': {
+          // V10.1 (SECTION 20BI): a V10.1 match that switched infrastructure off refuses investing (nothing is spent; the canonical failure path reports it).
+          if (v101WorldReducerBlock(nextState, v101SettingsKnown ? gameSettings : null, action.type)) break;
           const projectId = action.parameters?.projectId;
           const investment = action.investmentAmount || action.price || action.parameters?.amount || 1000;
           if (projectId && nextState.infrastructureProjects?.[projectId] && actor && actor.money >= investment) {
@@ -103240,7 +103248,7 @@ export interface GIWorld {
   observed: GIObservedEvent[];
   primaryRivalId: string | null;
   teammateIds: string[];
-  settings: { fogOfWar: boolean; aiMemoryFullInspection: boolean; experienceLevel: string };
+  settings: { fogOfWar: boolean; aiMemoryFullInspection: boolean; experienceLevel: string; /** V10.1 (SECTION 20BI): present in a V10.1 match; which world systems it switched off (Ask-AI then offers no fund / accept option for them). */ worldSwitchedOff?: V101WorldOff };
   /** The human's own Co-Pilot session and visible ledger events (for "what is Co-Pilot doing?"). */
   session?: CoPilotTakeoverSession | null;
   ledgerEvents?: any[];
@@ -103983,6 +103991,7 @@ export function buildGIOption(kind: GIOptionKind, clause: string, world: GIWorld
       if (!block && (p.status === 'active' || p.remaining <= 0)) block = `${p.title} is already fully funded.`;
       if (!block && p.status === 'locked') block = `${p.title} is locked.`;
       if (!block && cash < step) block = `The smallest funding step is $${step.toLocaleString('en-AU')} (you have $${cash.toLocaleString('en-AU')}).`;
+      if (world.settings?.worldSwitchedOff?.infra) block = v101WorldOffReason('infra'); // V10.1 (SECTION 20BI): not offered while the match has infrastructure switched off
       return {
         id: `opt_fund_${p.id}`,
         kind,
@@ -104001,7 +104010,7 @@ export function buildGIOption(kind: GIOptionKind, clause: string, world: GIWorld
       if (!contract) return null;
       const c = world.contracts.find(x => x.id === contract.id);
       if (!c) return null;
-      const block = notTurn || c.blocker;
+      const block = (world.settings?.worldSwitchedOff?.contracts ? v101WorldOffReason('contracts') : null) || notTurn || c.blocker; // V10.1 (SECTION 20BI): not offered while the match has contracts switched off
       return {
         id: `opt_contract_${c.id}`,
         kind,
@@ -121498,12 +121507,12 @@ export function describeDiplomaticTerm(t: DiplomaticTerm, names: Record<string, 
   return t.kind;
 }
 
-export function describeDealDuration(deal: Pick<DiplomaticDeal, 'duration' | 'expirationTurn'>): string {
+export function describeDealDuration(deal: Pick<DiplomaticDeal, 'duration' | 'expirationTurn'>, word: 'day' | 'round' = 'round'): string { // V10.1 (SECTION 20BI): `word` is "day" where the HUD counts days
   const d = deal.duration;
   switch (d.kind) {
     case 'this_turn': return 'This turn only';
-    case 'turns': return `${d.turns} turn${d.turns === 1 ? '' : 's'}${deal.expirationTurn !== null ? ` (through Round ${deal.expirationTurn})` : ''}`;
-    case 'until_turn': return `Until Round ${d.turn}`;
+    case 'turns': return `${d.turns} turn${d.turns === 1 ? '' : 's'}${deal.expirationTurn !== null ? ` (through ${v101TimeWordCap(word)} ${deal.expirationTurn})` : ''}`;
+    case 'until_turn': return `Until ${v101TimeWordCap(word)} ${d.turn}`;
     case 'until_broken': return 'Until either side breaks it';
     case 'match': return 'For the rest of the match';
     case 'until_region_changes': return `Until ${d.regionId} changes control`;
@@ -121846,6 +121855,8 @@ export interface DiplomacyWorldView {
   names: Record<string, string>;
   gi3: GI3StrategyState | null;
   teamMode: boolean;
+  /** V10.1 (SECTION 20BI): "day" in a V10.0+ one-on-one match, else "round" (the word for the numbers in this view's text). */
+  timeWord?: 'day' | 'round';
   /** Guardian / Co-Pilot protected cash reserve (financial-safety warnings only — never strategy judgement). */
   reserveFloor?: number | null;
 }
@@ -122013,7 +122024,7 @@ export function composeDiplomacyAnswer(query: DNQuery, gw: GIWorld, ctx: GIConve
         say(`d_${d.id}`, describeDealShort(d, view.names), [
           ...d.terms.filter(t => t.actorId === p).map(t => dnClaim(`You: ${describeDiplomaticTerm(t, view.names)}${t.kind === 'pay_cash' && t.status === 'satisfied' ? ' — paid' : ''}.`)),
           ...d.terms.filter(t => t.actorId !== p).map(t => dnClaim(`${view.names[t.actorId] || t.actorId}: ${describeDiplomaticTerm(t, view.names)}.`)),
-          dnClaim(left !== null ? `Remaining: ${left} turn${left === 1 ? '' : 's'} (expires after Round ${d.expirationTurn}).` : `Duration: ${describeDealDuration(d)}.`),
+          dnClaim(left !== null ? `Remaining: ${left} turn${left === 1 ? '' : 's'} (expires after ${v101TimeWordCap(view.timeWord)} ${d.expirationTurn}).` : `Duration: ${describeDealDuration(d, view.timeWord)}.`),
           dnClaim(`Status: ${d.compliance === 'at_risk' ? 'At risk' : 'Compliant'}.`)
         ]);
       });
@@ -122057,7 +122068,7 @@ export function composeDiplomacyAnswer(query: DNQuery, gw: GIWorld, ctx: GIConve
       title = 'Agreement timing';
       const ds = active.filter(d => withCp(d) && (!query.regionId || d.terms.some(t => t.regionId === query.regionId)));
       if (!ds.length) say('none', null, [dnClaim('No matching active agreement.')]);
-      ds.forEach(d => say(`e_${d.id}`, null, [dnClaim(d.expirationTurn !== null ? `The ${describeDealShort(d, view.names)} expires after Round ${d.expirationTurn} (${Math.max(0, d.expirationTurn - view.world.turn + 1)} turn${d.expirationTurn - view.world.turn + 1 === 1 ? '' : 's'} left).` : `The ${describeDealShort(d, view.names)} is open-ended: ${describeDealDuration(d)}.`)]));
+      ds.forEach(d => say(`e_${d.id}`, null, [dnClaim(d.expirationTurn !== null ? `The ${describeDealShort(d, view.names)} expires after ${v101TimeWordCap(view.timeWord)} ${d.expirationTurn} (${Math.max(0, d.expirationTurn - view.world.turn + 1)} turn${d.expirationTurn - view.world.turn + 1 === 1 ? '' : 's'} left).` : `The ${describeDealShort(d, view.names)} is open-ended: ${describeDealDuration(d, view.timeWord)}.`)]));
       break;
     }
     case 'break':
@@ -122918,7 +122929,7 @@ export const DiplomacyPanel: React.FC<{ binding: DiplomacyBinding; isDark?: bool
                 <button type="button" className={dnBtn} onClick={() => { const a = binding.extend(d.id, 2); if (a) setDraftDeal(a, ['extension proposal — the current agreement stays active until they accept']); }}>Renegotiate</button>
                 <button type="button" className={dnBtn} onClick={() => setConfirmTerminate(d.id)}>Terminate</button>
               </div>
-              {whyOpen === d.id && <div className="opacity-80">{d.history.slice(-4).map((h, i) => <div key={i}>Round {h.turn}: {h.text}</div>)}</div>}
+              {whyOpen === d.id && <div className="opacity-80">{d.history.slice(-4).map((h, i) => <div key={i}>{v101TimeWordCap(v.timeWord)} {h.turn}: {h.text}</div>)}</div>}
               {confirmTerminate === d.id && (
                 <div role="alertdialog" aria-label="Terminate agreement" className="rounded border border-red-500/60 p-2 mt-1 space-y-1">
                   <div>Ask {v.names[d.participants.find(x => x !== p) || ''] || 'them'} for a mutual termination (no trust cost if they agree), or withdraw unilaterally (costs trust and reliability).</div>
@@ -124115,6 +124126,8 @@ export interface WorldReactionWorldView {
   viewerTeamId: string | null;
   names: Record<string, string>;
   inputs: SWRInputs | null;
+  /** V10.1 (SECTION 20BI): "day" in a V10.0+ one-on-one match, else "round". */
+  timeWord?: 'day' | 'round';
 }
 
 export type SWRQueryTopic = 'what_changed' | 'why' | 'my_action' | 'windows' | 'preview';
@@ -124199,7 +124212,7 @@ export function composeWorldReactionAnswer(query: SWRQuery, gw: GIWorld, raw: st
       title = 'Strategic windows'; shape = 'status';
       const wins = st.windows.filter(w => w.status === 'open' && w.observers.includes(viewer));
       if (!wins.length) say('none', null, [swClaim('No strategic windows are open right now.')]);
-      else say('open', null, wins.map(w => swClaim(`${w.reason}${w.expiresTurn !== null ? ` Open until round ${w.expiresTurn}.` : ''}`, w.type === 'diplomatic_safety' || w.type === 'contract_completion' ? 'fact' : 'inference', w.confidence === 'high' ? 'high' : 'moderate')));
+      else say('open', null, wins.map(w => swClaim(`${w.reason}${w.expiresTurn !== null ? ` Open until ${v.timeWord === 'day' ? 'day' : 'round'} ${w.expiresTurn}.` : ''}`, w.type === 'diplomatic_safety' || w.type === 'contract_completion' ? 'fact' : 'inference', w.confidence === 'high' ? 'high' : 'moderate')));
       say('note', null, [swClaim('A window is an opportunity, not a guarantee of any outcome.', 'caveat')]);
       break;
     }
@@ -124290,7 +124303,7 @@ export const WorldConsequenceChainStrip: React.FC<{ state: WorldReactionState | 
   );
 };
 
-export const WorldChangesPanel: React.FC<{ state: WorldReactionState | null; viewerId: string; viewerTeamId?: string | null; turn: number; names?: Record<string, string>; onWhy: (eventId: string) => void; onAsk: (q: string) => void }> = ({ state, viewerId, viewerTeamId = null, turn, names = {}, onWhy, onAsk }) => {
+export const WorldChangesPanel: React.FC<{ state: WorldReactionState | null; viewerId: string; viewerTeamId?: string | null; timeWord?: 'day' | 'round'; turn: number; names?: Record<string, string>; onWhy: (eventId: string) => void; onAsk: (q: string) => void }> = ({ state, viewerId, viewerTeamId = null, timeWord, turn, names = {}, onWhy, onAsk }) => {
   const you = (t: string) => personalizeWorldText(t, names[viewerId], viewerTeamId ? names[viewerTeamId] : null);
   if (!state) return null;
   const changes = summarizeWorldChanges(state, viewerId, turn - 1, 5);
@@ -124300,7 +124313,7 @@ export const WorldChangesPanel: React.FC<{ state: WorldReactionState | null; vie
     <section aria-labelledby="swr-changes-heading" className="rounded-xl border border-slate-600/50 p-3 text-xs space-y-2" data-testid="swr-changes">
       <h3 id="swr-changes-heading" className="font-bold text-sm">🌏 What changed since your last turn</h3>
       {changes.map((e, i) => <div key={e.id} className="flex gap-2"><span className="flex-1">{i + 1}. {you(e.strategicMeaning)}{e.claimKind === 'inference' ? ' (inferred)' : ''}</span><button type="button" className="underline opacity-80" onClick={() => onWhy(e.id)}>Why?</button></div>)}
-      {wins.length > 0 && <div data-testid="swr-windows"><div className="font-semibold uppercase opacity-70">Open windows</div>{wins.map(w => <div key={w.id}>⏳ {you(w.reason)}{w.expiresTurn !== null ? ` (until round ${w.expiresTurn})` : ''}</div>)}</div>}
+      {wins.length > 0 && <div data-testid="swr-windows"><div className="font-semibold uppercase opacity-70">Open windows</div>{wins.map(w => <div key={w.id}>⏳ {you(w.reason)}{w.expiresTurn !== null ? ` (until ${timeWord === 'day' ? 'day' : 'round'} ${w.expiresTurn})` : ''}</div>)}</div>}
       <button type="button" className="underline" onClick={() => onAsk('What did my last move change?')}>What did my last move change?</button>
     </section>
   );
@@ -125757,6 +125770,8 @@ export interface LivingRegionsWorldView {
   /** Owner keys that count as "you" (player id, and the player's team id in team modes). */
   viewerKeys: string[];
   names: Record<string, string>;
+  /** V10.1 (SECTION 20BI): the word for the numbers in this view's text ("day" in a V10.0+ one-on-one match, else "round"). */
+  timeWord?: 'day' | 'round';
 }
 
 export type LRQueryTopic = 'status' | 'value' | 'fastest' | 'decline' | 'growth_why' | 'needs' | 'contract_why' | 'rival_invested' | 'infra_problems' | 'invest_where' | 'project_preview' | 'national';
@@ -125890,7 +125905,7 @@ export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GICompo
       const open = reg.needs.filter(n => n.status === 'open');
       if (open.length) say('needs', 'Needs', open.slice(0, 2).map(n => lrClaimOf(`${LR_NEED_LABEL[n.category]} (${n.severity}): ${n.reason}.`, 'calculated')));
       const recent = reg.history.filter(h => gw.turn - h.turn <= 4).slice(-3);
-      if (recent.length) say('changed', 'Recent history', recent.map(h => lrClaimOf(`Round ${h.turn}: ${personalizeWorldText(h.text, v.names[v.viewerId])}`, 'fact')));
+      if (recent.length) say('changed', 'Recent history', recent.map(h => lrClaimOf(`${v101TimeWordCap(v.timeWord)} ${h.turn}: ${personalizeWorldText(h.text, v.names[v.viewerId])}`, 'fact')));
       break;
     }
     case 'value': {
@@ -125905,7 +125920,7 @@ export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GICompo
         say('actor', `Why ${v.names[query.actorKey] || query.actorKey} cares`, [lrClaimOf(val.reasons.length ? `${v.names[query.actorKey] || query.actorKey} likely values it for: ${val.reasons.join('; ')}.` : `Nothing visible marks ${reg.name} as special to ${v.names[query.actorKey] || query.actorKey}.`, 'inference')]);
         if (s.fogOfWar) say('fog', null, [lrClaimOf('Fog of war hides exact rival investment; this is based on control, public infrastructure and regional condition only.', 'inference', 'high')]);
       }
-      if (reg.core.ownerKey) say('core', null, [lrClaimOf(v.viewerKeys.includes(reg.core.ownerKey) ? `${reg.name} is one of your core regions — losing it would cost more than its deposits.` : `${reg.name} appears to be ${who(reg.core.ownerKey)}'s core region (held since round ${reg.core.controlSince}); expect it to be defended hard.`, 'inference')]);
+      if (reg.core.ownerKey) say('core', null, [lrClaimOf(v.viewerKeys.includes(reg.core.ownerKey) ? `${reg.name} is one of your core regions — losing it would cost more than its deposits.` : `${reg.name} appears to be ${who(reg.core.ownerKey)}'s core region (held since ${v.timeWord === 'day' ? 'day' : 'round'} ${reg.core.controlSince}); expect it to be defended hard.`, 'inference')]);
       break;
     }
     case 'fastest': {
@@ -125925,7 +125940,7 @@ export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GICompo
       const actually = growingQ ? LR_MOM_RANK[reg.momentum.band] >= 3 : LR_MOM_RANK[reg.momentum.band] <= 1;
       say('now', null, [lrClaimOf(`${reg.name}'s momentum is ${LR_MOMENTUM_LABEL[reg.momentum.band].toLowerCase()} (economy ${LR_ECON_LABEL[reg.economy.band].toLowerCase()}).${actually ? '' : ` It is not currently ${growingQ ? 'growing' : 'declining'}.`}`, 'calculated')]);
       const drivers = reg.evidence.slice().reverse().filter(e => growingQ ? !/crisis|fell/.test(e.text) : /crisis|fell|failed/.test(e.text) || e.effect === 'crisis').filter((e, i, arr) => arr.findIndex(x => x.text === e.text && x.turn === e.turn) === i).slice(0, 3);
-      if (drivers.length) say('drivers', 'Drivers (from the record)', drivers.map(d => lrClaimOf(`Round ${d.turn}: ${d.text}.`, 'fact')));
+      if (drivers.length) say('drivers', 'Drivers (from the record)', drivers.map(d => lrClaimOf(`${v101TimeWordCap(v.timeWord)} ${d.turn}: ${d.text}.`, 'fact')));
       const hist = reg.history.filter(h => /project|contract|crisis|momentum|specialization/.test(h.kind)).slice(-3);
       if (hist.length) say('chain', 'How it unfolded', [lrClaimOf(hist.map(h => h.text.replace(/\.$/, '')).join(' → ') + '.', 'fact')]);
       const bn = reg.risks.find(x => x.kind === 'infrastructure_bottleneck' || x.kind === 'market_exposure' || x.kind === 'overdependence');
@@ -125970,7 +125985,7 @@ export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GICompo
         return { r, amount, controls, core, visible: pres.length > 0 };
       }).filter(x => x.visible || x.core).sort((a, b) => Number(b.core) - Number(a.core) || b.amount - a.amount || Number(b.controls) - Number(a.controls) || a.r.regionId.localeCompare(b.r.regionId));
       if (!rows.length) say('none', null, [lrClaimOf(`You can't see any ${name} holdings right now.`, 'fact')]);
-      else say('rank', null, rows.slice(0, 3).map((x, i) => lrClaimOf(`${i + 1}. ${x.r.name}${x.core ? ' — appears to be its core region' : ''}${x.controls ? `; controlled since round ${x.r.core.controlSince}` : ''}${!s.fogOfWar && x.amount ? `; $${x.amount.toLocaleString('en-AU')} deposited` : ''}.`, x.core ? 'inference' : 'fact')));
+      else say('rank', null, rows.slice(0, 3).map((x, i) => lrClaimOf(`${i + 1}. ${x.r.name}${x.core ? ' — appears to be its core region' : ''}${x.controls ? `; controlled since ${v.timeWord === 'day' ? 'day' : 'round'} ${x.r.core.controlSince}` : ''}${!s.fogOfWar && x.amount ? `; $${x.amount.toLocaleString('en-AU')} deposited` : ''}.`, x.core ? 'inference' : 'fact')));
       if (s.fogOfWar) say('fog', null, [lrClaimOf('Fog of war: exact rival deposits are hidden, so this uses control and regional history only.', 'inference', 'high')]);
       break;
     }
@@ -126056,7 +126071,7 @@ export const LivingRegionCard: React.FC<{ view: LivingRegionsWorldView | null; r
         </div>
       )}
       {showHistory && (
-        <ol className="space-y-0.5" data-testid="lr-history">{reg.history.length ? reg.history.slice().reverse().slice(0, 6).map((h, i) => <li key={`${h.turn}_${i}`}><span className="opacity-60">Round {h.turn}</span> — {personalizeWorldText(h.text, view.names[view.viewerId])}</li>) : <li className="opacity-70">No regional history recorded yet (tracking began round {view.state.initializedTurn ?? '—'}).</li>}</ol>
+        <ol className="space-y-0.5" data-testid="lr-history">{reg.history.length ? reg.history.slice().reverse().slice(0, 6).map((h, i) => <li key={`${h.turn}_${i}`}><span className="opacity-60">{v101TimeWordCap(view.timeWord)} {h.turn}</span> — {personalizeWorldText(h.text, view.names[view.viewerId])}</li>) : <li className="opacity-70">No regional history recorded yet (tracking began {view.timeWord === 'day' ? 'day' : 'round'} {view.state.initializedTurn ?? '—'}).</li>}</ol>
       )}
     </section>
   );
@@ -126635,6 +126650,12 @@ export interface RFInputs {
   contributions: Record<string, Record<string, number>>;
   /** contract id → canonical faction id (from the contract's issuer). */
   contractIssuers: Record<string, string | null>;
+  /** V10.1 (SECTION 20BI): true in a V10.1 match (its requests must be ones the human could meet; reward text and contract relevance follow). */
+  v101Rules?: boolean;
+  /** V10.1 (SECTION 20BI): the most cash any human actor holds, which decides whether a "finish this project" request is within reach. */
+  humanCash?: number;
+  /** V10.1 (SECTION 20BI): "day" in a V10.0+ one-on-one match (the HUD counts days), else "round". */
+  timeWord?: 'day' | 'round';
 }
 
 export const RF_LIMITS = { factionHistory: 8, relationshipHistory: 6, requestsPerRegion: 2, openRequests: 6, requestsKept: 16, commitments: 8, coalitions: 4, coalitionsKept: 8, decisions: 10, derived: 24, priorities: 3, concerns: 2, goals: 2, factionsPerRegionView: 5 };
@@ -126892,12 +126913,15 @@ function rfRequestFor(def: RFFactionDef, f: RegionalFaction, g: FactionGoal, s: 
   const inf = f.influenceByRegion[g.regionId] || 0;
   const coalition = st.coalitions.find(c => c.status === 'active' && c.targetId === g.targetId && c.memberIds.includes(def.id)) || null;
   // Leverage: influential factions ask more and offer less; smaller ones are more generous.
-  const reward = inf >= 50 ? 'Relationship ↑ · future contract relevance ↑' : 'Relationship ↑↑ · standing opportunities ↑ · future contract relevance ↑';
+  // V10.1 (SECTION 20BI): the reward says what a fulfilled request really does (relationship +12 with that group, nothing else); "standing opportunities" and "future contract relevance" were promises no rule kept.
+  const reward = V101_REWARD_RELATIONSHIP;
   const base = { factionId: def.id, regionId: g.regionId, issuedTurn: s.turn, status: 'open' as const, fulfilledBy: null, resolvedTurn: null, coalitionId: coalition?.id || null };
   if (g.type === 'build_infrastructure') {
     const p = s.lr.projects.find(x => x.id === g.targetId && (x.status === 'unlocked' || x.status === 'under_construction'));
     const need = reg.needs.find(n => n.status === 'open' && (LR_PROJECT_PROFILE[p?.projectType || '']?.capacity[LR_NEED_CAPACITY[n.category] as keyof LRCapacity] || 0) > 0);
     if (!p || !need || LR_SEV_RANK[need.severity] < 3) return null;
+    // V10.1 (SECTION 20BI): a V10.1 match's factions only ask for a project the human could pay for (what is left is within twice the cash in hand); the old request was unwinnable ($60k-$220k against $1k-$1.5k opening cash, a 3-4 day deadline).
+    if (s.v101Rules && !v101FundRequestReachable(p.remainingCost, s.humanCash ?? 0)) return null;
     const urgent = need.severity === 'critical';
     return { ...base, id: `req_${def.id}_${p.id}_${s.turn}`, type: 'fund_project', targetId: p.id, title: `Complete ${p.title}`, why: `${need.reason}.`, reward, deadlineTurn: s.turn + (urgent ? 3 : 4), urgency: urgent ? 'urgent' : 'normal', contributionsAtIssue: { ...(s.contributions[p.id] || {}) } };
   }
@@ -126911,12 +126935,12 @@ function rfRequestFor(def: RFFactionDef, f: RegionalFaction, g: FactionGoal, s: 
   if (g.type === 'increase_stability' && g.targetId) {
     const c = s.lr.contracts.find(x => x.id === g.targetId && x.status === 'available');
     if (!c) return null;
-    return { ...base, id: `req_${def.id}_${c.id}_${s.turn}`, type: 'assist_crisis', targetId: c.id, title: `Deliver crisis relief: "${c.title}"`, why: `${reg.conditions.find(x => x.kind === 'crisis_active')?.label || 'A crisis'} is hitting ${reg.name}.`, reward: 'Relationship ↑↑ · regional goodwill ↑', deadlineTurn: s.turn + 3, urgency: 'urgent', contributionsAtIssue: {} };
+    return { ...base, id: `req_${def.id}_${c.id}_${s.turn}`, type: 'assist_crisis', targetId: c.id, title: `Deliver crisis relief: "${c.title}"`, why: `${reg.conditions.find(x => x.kind === 'crisis_active')?.label || 'A crisis'} is hitting ${reg.name}.`, reward: V101_REWARD_RELATIONSHIP, /* V10.1 (SECTION 20BI): honest reward text */ deadlineTurn: s.turn + 3, urgency: 'urgent', contributionsAtIssue: {} };
   }
   if (g.type === 'oppose_project' && g.targetId) {
     const p = s.lr.projects.find(x => x.id === g.targetId && x.status === 'under_construction');
     if (!p || inf < 30) return null;
-    return { ...base, id: `req_${def.id}_avoid_${p.id}_${s.turn}`, type: 'avoid_project', targetId: p.id, title: `Don't fund ${p.title}`, why: `${def.name} opposes it: ${def.policyInterests.includes('automation_skeptic') ? 'it is automation-heavy and threatens local jobs' : 'it conflicts with its priorities'}.`, reward: 'Relationship ↑ with this group (others may disagree)', deadlineTurn: s.turn + 4, urgency: 'normal', contributionsAtIssue: { ...(s.contributions[p.id] || {}) } };
+    return { ...base, id: `req_${def.id}_avoid_${p.id}_${s.turn}`, type: 'avoid_project', targetId: p.id, title: `Don't fund ${p.title}`, why: `${def.name} opposes it: ${def.policyInterests.includes('automation_skeptic') ? 'it is automation-heavy and threatens local jobs' : 'it conflicts with its priorities'}.`, reward: V101_REWARD_AVOID, /* V10.1 (SECTION 20BI): honest reward text */ deadlineTurn: s.turn + 4, urgency: 'normal', contributionsAtIssue: { ...(s.contributions[p.id] || {}) } };
   }
   return null;
 }
@@ -127122,7 +127146,7 @@ export function rfAdvanceRound(stateIn: RegionalFactionsState, s: RFInputs): { s
       st.requests = [...st.requests, req];
       st.factions[def.id] = { ...st.factions[def.id], lastRequestTurn: turn };
       st.diagnostics.requestsIssued += 1; issuedThisRound += 1;
-      derived.push(rfDerive({ kind: 'faction_request_issued', regionId: req.regionId, factionId: def.id, actorId: null, text: `${def.name} asks: ${req.title} (by round ${req.deadlineTurn}).`, significance: req.urgency === 'urgent' ? 'major' : 'meaningful', public: true, evidence: [req.why] }, turn, null));
+      derived.push(rfDerive({ kind: 'faction_request_issued', regionId: req.regionId, factionId: def.id, actorId: null, text: `${def.name} asks: ${req.title} (by ${s.timeWord === 'day' ? 'day' : 'round'} ${req.deadlineTurn}).`, significance: req.urgency === 'urgent' ? 'major' : 'meaningful', public: true, evidence: [req.why] }, turn, null));
       break;
     }
   });
@@ -127225,7 +127249,7 @@ export function sanitizeRegionalFactionsState(raw: unknown): RegionalFactionsSta
 
 // ---- Factions → consumers (each system keeps its own decision) ---------------------------------------
 
-export interface RegionalFactionsWorldView { state: RegionalFactionsState; inputs: RFInputs | null; viewerId: string; viewerKeys: string[]; names: Record<string, string> }
+export interface RegionalFactionsWorldView { state: RegionalFactionsState; inputs: RFInputs | null; viewerId: string; viewerKeys: string[]; names: Record<string, string>; /** V10.1 (SECTION 20BI): "day" in a V10.0+ one-on-one match, else "round". */ timeWord?: 'day' | 'round' }
 
 /** Active factions in a region, most influential first (bounded for views). */
 export function rfFactionsInRegion(st: RegionalFactionsState, code: string, limit = RF_LIMITS.factionsPerRegionView): Array<{ def: RFFactionDef; f: RegionalFaction; influence: number }> {
@@ -127348,7 +127372,7 @@ export function annotateContextualActionsWithFactions(set: ContextualActionSet, 
     const text = `${c.label} ${c.description}`.toLowerCase();
     const r = open.find(x => text.includes(titleOf(x.targetId).toLowerCase()));
     let rel = c.relevance; const reasons = [...c.reasons];
-    if (r) { rel += 5; reasons.push(`Faction: ${RF_DEF_BY_ID[r.factionId].name} requested this (due round ${r.deadlineTurn})`); }
+    if (r) { rel += 5; reasons.push(`Faction: ${RF_DEF_BY_ID[r.factionId].name} requested this (due ${inputs.timeWord === 'day' ? 'day' : 'round'} ${r.deadlineTurn})`); } // V10.1 (SECTION 20BI): the HUD says Day
     st.preferences.focus.forEach(fid => { const def = RF_DEF_BY_ID[fid]; if (def && def.preferredContractTypes.some(t => text.includes(t.replace(/_/g, ' '))) ) { rel += 3; reasons.push(`Focus: builds support with ${def.name}`); } });
     st.preferences.avoid.forEach(fid => { const def = RF_DEF_BY_ID[fid]; if (def && r && r.factionId === fid) { rel -= 4; reasons.push(`You chose not to support ${def.name}`); } });
     return rel === c.relevance ? c : { ...c, relevance: rel, reasons: Array.from(new Set(reasons)).slice(0, 6) };
@@ -127357,7 +127381,8 @@ export function annotateContextualActionsWithFactions(set: ContextualActionSet, 
 }
 
 /** Contract relevance from the issuing faction's influence, priorities and your relationship (canonical contracts). */
-export function rfContractRelevance(st: RegionalFactionsState | null | undefined, contract: { id?: string; issuingFactionId?: string | null; issuingFaction?: string | null; issuingRegionId?: string | null; regionId?: string | null }, viewerId: string): { score: number; factionId: string | null; reasons: string[] } {
+// V10.1 (SECTION 20BI): `opts.relationshipTerm` (a V10.1 match) adds a small, bounded lift for contracts from a group that likes the viewer (and a small drop for one that does not): the viewer's relationship divided by ten, within +-5, shown in the reasons. Off: V10.0's score exactly.
+export function rfContractRelevance(st: RegionalFactionsState | null | undefined, contract: { id?: string; issuingFactionId?: string | null; issuingFaction?: string | null; issuingRegionId?: string | null; regionId?: string | null }, viewerId: string, opts?: { relationshipTerm?: boolean }): { score: number; factionId: string | null; reasons: string[] } {
   const fid = contract.issuingFactionId || resolveFactionIdFromIssuer(contract.issuingFaction) || null;
   const f = fid ? st?.factions[fid] : null;
   if (!f || !fid) return { score: 0, factionId: fid, reasons: [] };
@@ -127367,6 +127392,7 @@ export function rfContractRelevance(st: RegionalFactionsState | null | undefined
   let score = Math.round(inf / 5);
   if (st!.requests.some(r => r.status === 'open' && r.targetId === contract.id)) { score += 15; reasons.push('an open faction request'); }
   if (f.priorities.some(p => p.targetId === contract.id)) { score += 6; reasons.push('a current faction priority'); }
+  if (opts?.relationshipTerm) { const term = rfClamp(Math.round(rel / 10), -V101_RELATIONSHIP_RELEVANCE_BOUND, V101_RELATIONSHIP_RELEVANCE_BOUND); if (term !== 0) { score += term; reasons.push(`${term > 0 ? 'their good opinion of you' : 'their poor opinion of you'} (${term > 0 ? '+' : ''}${term})`); } }
   return { score: Math.min(40, score), factionId: fid, reasons };
 }
 
@@ -127488,6 +127514,7 @@ export function composeFactionAnswer(query: RFQuery, gw: GIWorld): GIComposePart
   const v = gw.factions!;
   const s = v.inputs!;
   const st = v.state;
+  const tw = v.timeWord === 'day' ? 'day' : 'round'; // V10.1 (SECTION 20BI): the word the HUD uses for these numbers
   const sections: GIAnswerSection[] = [];
   const buttons: GameIntelligenceButton[] = [];
   const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
@@ -127521,7 +127548,7 @@ export function composeFactionAnswer(query: RFQuery, gw: GIWorld): GIComposePart
       const rel = f.relationshipsByActor[me];
       title = `How ${def.name} sees you`; shape = 'explanation';
       say('now', null, [rfClaim(`${def.name} is ${rfRelationshipLabel(rel?.value || 0).toLowerCase()} toward you.`, 'calculated')]);
-      if (rel?.history.length) say('evidence', 'Why (their record of you)', rel.history.slice().reverse().slice(0, 4).map(h => rfClaim(`Round ${h.turn}: ${h.delta > 0 ? '+' : '−'} ${h.text}.`, 'fact')));
+      if (rel?.history.length) say('evidence', 'Why (their record of you)', rel.history.slice().reverse().slice(0, 4).map(h => rfClaim(`${v101TimeWordCap(tw)} ${h.turn}: ${h.delta > 0 ? '+' : '−'} ${h.text}.`, 'fact')));
       else say('evidence', null, [rfClaim('You have no meaningful history with them yet — their view comes only from your standing in their home region.', 'inference', 'high')]);
       const opp = f.priorities.filter(p => p.goalType === 'oppose_project' || p.goalType === 'limit_overdevelopment');
       if (opp.length) say('tension', 'Current tension', opp.slice(0, 2).map(p => rfClaim(`${p.label} (${p.cause}).`, 'inference')));
@@ -127533,7 +127560,7 @@ export function composeFactionAnswer(query: RFQuery, gw: GIWorld): GIComposePart
       say('pri', 'Priorities', f.priorities.length ? f.priorities.map((p, i) => rfClaim(`${i + 1}. ${p.label} — ${p.cause}.`, 'calculated')) : [rfClaim(`${def.name} has no pressing priority right now (${f.status}).`, 'calculated')]);
       if (f.concerns.length) say('con', 'Concerns', f.concerns.map(c => rfClaim(`${c.label} (${c.severity}): ${c.cause}.`, 'calculated')));
       const reqs = st.requests.filter(r => r.status === 'open' && r.factionId === def.id);
-      if (reqs.length) say('req', 'Open request', reqs.map(r => rfClaim(`${r.title} by round ${r.deadlineTurn}. Reward: ${r.reward}.`, 'fact')));
+      if (reqs.length) say('req', 'Open request', reqs.map(r => rfClaim(`${r.title} by ${tw} ${r.deadlineTurn}. Reward: ${v101RewardText(r.reward)}.`, 'fact')));
       say('cares', 'What they care about', [rfClaim(`Supports ${def.supportedSectors.join(', ')}${def.opposedSectors.length ? `; resists ${def.opposedSectors.join(', ')}` : ''}. Backs ${def.preferredInfrastructure.map(t => t.replace(/_/g, ' ')).join(', ') || 'no specific infrastructure'}${def.opposedInfrastructure.length || def.policyInterests.includes('automation_skeptic') ? `; opposes ${[...def.opposedInfrastructure.map(t => t.replace(/_/g, ' ')), ...(def.policyInterests.includes('automation_skeptic') ? ['automation-heavy projects'] : [])].join(', ')}` : ''}.`, 'fact')]);
       break;
     }
@@ -127574,14 +127601,14 @@ export function composeFactionAnswer(query: RFQuery, gw: GIWorld): GIComposePart
       const regs = f.activeRegions.slice().sort((a, b) => (f.influenceByRegion[b] || 0) - (f.influenceByRegion[a] || 0));
       say('now', null, regs.slice(0, 3).map(code => rfClaim(`${regName(code)}: ${rfInfluenceLabel(f.influenceByRegion[code] || 0)} — ${rfInfluenceWhy(def, f, code, s)}.`, 'calculated')));
       const shifts = st.derived.filter(d => d.factionId === def.id && d.kind === 'faction_influence_shift').slice(-2);
-      if (shifts.length) say('shifts', 'Recent shifts', shifts.map(d => rfClaim(`Round ${d.turn}: ${d.text} (${d.evidence[0] || ''})`, 'fact')));
+      if (shifts.length) say('shifts', 'Recent shifts', shifts.map(d => rfClaim(`${v101TimeWordCap(tw)} ${d.turn}: ${d.text} (${d.evidence[0] || ''})`, 'fact')));
       break;
     }
     case 'improve': {
       if (!def || !f) break;
       title = `Improving relations with ${def.name}`; shape = 'recommendation';
       const ideas: GIClaim[] = [];
-      st.requests.filter(r => r.status === 'open' && r.factionId === def.id).forEach(r => ideas.push(rfClaim(`Answer their request: ${r.title} (by round ${r.deadlineTurn}).`, 'fact')));
+      st.requests.filter(r => r.status === 'open' && r.factionId === def.id).forEach(r => ideas.push(rfClaim(`Answer their request: ${r.title} (by ${tw} ${r.deadlineTurn}).`, 'fact')));
       s.lr.contracts.filter(c => c.status === 'available' && (s.contractIssuers[c.id] === def.id || def.preferredContractTypes.includes(c.contractType))).slice(0, 2).forEach(c => ideas.push(rfClaim(`Complete “${c.title}”${s.contractIssuers[c.id] === def.id ? ' (their own contract)' : ''}.`, 'fact')));
       s.lr.projects.filter(p => (p.status === 'unlocked' || p.status === 'under_construction') && p.regionId && f.activeRegions.includes(p.regionId) && RF_STANCE_WEIGHT[rfProjectStance(def, p.projectType, p.regionId, s.regions)] > 0).slice(0, 2).forEach(p => ideas.push(rfClaim(`Fund ${p.title} (they ${rfProjectStance(def, p.projectType, p.regionId!, s.regions) === 'strongly_supports' ? 'strongly ' : ''}support it).`, 'fact')));
       say('ideas', null, ideas.length ? ideas.slice(0, 4) : [rfClaim(`Nothing they want is open right now; their priorities are: ${f.priorities.map(p => p.label).join('; ') || 'none'}.`, 'calculated')]);
@@ -127604,7 +127631,9 @@ export function composeFactionAnswer(query: RFQuery, gw: GIWorld): GIComposePart
 export const RegionStakeholdersPanel: React.FC<{
   view: RegionalFactionsWorldView | null; regionId: string; turn: number;
   onCommit: (requestId: string) => void; onChoose: (d: RFDilemma, optionId: string) => void; onFund?: (projectId: string) => void; onAsk?: (q: string) => void;
-}> = ({ view, regionId, turn, onCommit, onChoose, onFund, onAsk }) => {
+  /** V10.1 (SECTION 20BI): with these two, "Fund now" opens an amount chooser and a confirm step instead of spending all the cash at once (onFund is then not used). */
+  fundPlanFor?: (projectId: string) => V101FundPlan | null; onFundAmount?: (projectId: string, amount: number) => void;
+}> = ({ view, regionId, turn, onCommit, onChoose, onFund, onAsk, fundPlanFor, onFundAmount }) => {
   const [open, setOpen] = useState<string | null>(null);
   if (!view || !view.inputs) return null;
   const st = view.state; const s = view.inputs;
@@ -127632,10 +127661,12 @@ export const RegionStakeholdersPanel: React.FC<{
               </button>
               {req && (
                 <div className="mt-1 rounded border border-indigo-400/40 p-1" data-testid="rf-request">
-                  <div><span className="font-semibold">Request:</span> {req.title} — by round {req.deadlineTurn}{req.urgency === 'urgent' ? ' (urgent)' : ''}</div>
-                  <div className="opacity-80">Why: {req.why} Possible reward: {req.reward}</div>
+                  <div><span className="font-semibold">Request:</span> {req.title} — by {view.timeWord === 'day' ? 'day' : 'round'} {req.deadlineTurn}{req.urgency === 'urgent' ? ' (urgent)' : ''}</div>
+                  <div className="opacity-80">Why: {req.why} Possible reward: {v101RewardText(req.reward)}</div>
+                  {(() => { const plan = req.type === 'fund_project' && fundPlanFor ? fundPlanFor(req.targetId) : null; return plan ? <div className="opacity-80" data-testid="v101-fund-need">Still needed: ${plan.remaining.toLocaleString('en-AU')} · you have ${plan.cash.toLocaleString('en-AU')}</div> : null; })()}
                   {committed ? <div className="text-emerald-300">You committed to this.</div> : <button type="button" className="underline" onClick={() => onCommit(req.id)}>Commit</button>}
-                  {req.type === 'fund_project' && onFund && <button type="button" className="underline ml-2" onClick={() => onFund(req.targetId)}>Fund now</button>}
+                  {/* V10.1 (SECTION 20BI): a V10.1 match chooses and confirms the amount; the V10.0 button is kept as it was, but now says what it does. */}
+                  {req.type === 'fund_project' && (fundPlanFor && onFundAmount ? (() => { const plan = fundPlanFor(req.targetId); return plan ? <V101FundNowChooser key={req.id} plan={plan} onConfirm={a => onFundAmount(req.targetId, a)} /> : null; })() : onFund && <button type="button" className="underline ml-2" title="Puts all your cash (up to what the project still needs) in at once" onClick={() => onFund(req.targetId)}>Fund now</button>)}
                 </div>
               )}
               {expanded && (
@@ -127683,10 +127714,10 @@ export const FactionsPlayStrip: React.FC<{ view: RegionalFactionsWorldView | nul
   if (!due.length && !fresh.length) return null;
   return (
     <div className="rounded-xl border border-indigo-500/50 bg-indigo-500/5 p-2 text-xs space-y-1" data-testid="rf-play-strip" aria-label="Faction requests and commitments">
-      {due.length > 0 && <div data-testid="rf-commitments"><span className="font-semibold">Faction commitments: </span>{due.slice(0, 3).map(c => `${RF_DEF_BY_ID[c.factionId].name} — ${c.promise} (${c.dueTurn - turn <= 0 ? 'due now' : `due in ${c.dueTurn - turn} round${c.dueTurn - turn === 1 ? '' : 's'}`})`).join(' · ')}</div>}
+      {due.length > 0 && <div data-testid="rf-commitments"><span className="font-semibold">Faction commitments: </span>{due.slice(0, 3).map(c => `${RF_DEF_BY_ID[c.factionId].name} — ${c.promise} (${c.dueTurn - turn <= 0 ? 'due now' : `due in ${c.dueTurn - turn} ${view.timeWord === 'day' ? 'day' : 'round'}${c.dueTurn - turn === 1 ? '' : 's'}`})`).join(' · ')}</div>}
       {fresh.map(r => (
         <div key={r.id} className="flex items-start gap-2">
-          <div className="flex-1"><span className="font-semibold">🏛 {RF_DEF_BY_ID[r.factionId].name}:</span> {r.title} by round {r.deadlineTurn}{r.urgency === 'urgent' ? ' (urgent)' : ''}<div className="opacity-80">{r.why}</div></div>
+          <div className="flex-1"><span className="font-semibold">🏛 {RF_DEF_BY_ID[r.factionId].name}:</span> {r.title} by {view.timeWord === 'day' ? 'day' : 'round'} {r.deadlineTurn}{r.urgency === 'urgent' ? ' (urgent)' : ''}<div className="opacity-80">{r.why}</div></div>
           <button type="button" className="underline" onClick={() => onCommit(r.id)}>Commit</button>
           <button type="button" className="underline" onClick={() => onView(r.regionId)}>View</button>
           <button type="button" className="opacity-60 hover:opacity-100" aria-label="Dismiss faction request" onClick={() => setDismissed(x => [...x, r.id])}>✕</button>
@@ -128348,7 +128379,8 @@ export function v9NotificationClass(n: { type?: string; message?: string; notifi
 
 export interface V9RegionContext { code: string; name: string; headline: string; lines: Array<{ label: string; value: string }>; stakeholders: string[]; suggestion: string | null; contract: string | null; whyQuestions: string[] }
 
-export function buildV9RegionContext(code: string, lr: LivingRegionsWorldView | null, rf: RegionalFactionsWorldView | null, standing: number | null): V9RegionContext | null {
+// V10.1 (SECTION 20BI): `off` names the world systems this match switched off; their suggestions ("Suggested development", "Relevant contract", an "Infrastructure gap" opportunity) are not offered. Default: nothing off, as before.
+export function buildV9RegionContext(code: string, lr: LivingRegionsWorldView | null, rf: RegionalFactionsWorldView | null, standing: number | null, off: V101WorldOff = V101_NOT_OFF): V9RegionContext | null {
   const reg = lr?.state.regions[code];
   const s = lr?.inputs || null;
   if (!reg) return null;
@@ -128358,15 +128390,15 @@ export function buildV9RegionContext(code: string, lr: LivingRegionsWorldView | 
   const rivalry = reg.risks.find(x => x.kind === 'high_rivalry');
   lines.push({ label: 'Rival pressure', value: rivalry ? (rivalry.severity === 'high' ? 'High' : 'Moderate') : 'Low' });
   const need = reg.needs.find(n => n.status === 'open'); if (need) lines.push({ label: 'Current need', value: `${LR_NEED_LABEL[need.category]} (${need.severity})` });
-  const opp = reg.opportunities[0]; if (opp) lines.push({ label: 'Opportunity', value: opp.label });
+  const opp = reg.opportunities.find(o => { const sys = V101_OPPORTUNITY_SYSTEM[o.kind]; return !(sys && off[sys]); }); if (opp) lines.push({ label: 'Opportunity', value: opp.label }); // V10.1 (SECTION 20BI): not an opportunity that points at a switched-off system
   const risk = reg.risks.find(x => x.kind !== 'high_rivalry'); if (risk) lines.push({ label: 'Risk', value: risk.label });
   const stakeholders = rf && rf.inputs ? rfFactionsInRegion(rf.state, code, 3).filter(x => x.influence >= 30).slice(0, 2).map(x => {
     const mine = rfVisibleRelationship(rf.state, x.def.id, rf.viewerId, rf.viewerKeys, rf.inputs!.fogOfWar);
     const rivals = rf.inputs!.actors.filter(a => !rf.viewerKeys.includes(a.id)).map(a => ({ a, v: rfVisibleRelationship(rf.state, x.def.id, a.id, rf.viewerKeys, rf.inputs!.fogOfWar) })).find(r => r.v.band && ['positive', 'strong', 'trusted'].includes(r.v.band));
     return `${x.def.name} — ${rfInfluenceLabel(x.influence).toLowerCase()} influence; ${rivals ? `leans ${rivals.a.name}` : mine.band && ['positive', 'strong', 'trusted'].includes(mine.band) ? 'supports you' : mine.band ? RF_REL_LABEL[mine.band].toLowerCase() + ' toward you' : 'unknown'}`;
   }) : [];
-  const project = need && s ? s.projects.find(p => p.regionId === code && (p.status === 'unlocked' || p.status === 'under_construction') && (LR_PROJECT_PROFILE[p.projectType]?.capacity[LR_NEED_CAPACITY[need.category] as keyof LRCapacity] || 0) > 0) : null;
-  const contract = s ? s.contracts.filter(c => c.regionId === code && c.status === 'available').map(c => ({ c, rel: lrContractRelevance(lr!.state, c).score })).sort((a, b) => b.rel - a.rel)[0] : null;
+  const project = need && s && !off.infra ? s.projects.find(p => p.regionId === code && (p.status === 'unlocked' || p.status === 'under_construction') && (LR_PROJECT_PROFILE[p.projectType]?.capacity[LR_NEED_CAPACITY[need.category] as keyof LRCapacity] || 0) > 0) : null;
+  const contract = s && !off.contracts ? s.contracts.filter(c => c.regionId === code && c.status === 'available').map(c => ({ c, rel: lrContractRelevance(lr!.state, c).score })).sort((a, b) => b.rel - a.rel)[0] : null;
   return {
     code, name: reg.name, headline: `${LR_MOMENTUM_LABEL[reg.momentum.band]} · ${reg.identity.label}`, lines: lines.slice(0, 6), stakeholders,
     suggestion: project ? `Suggested development: ${project.title}` : null, contract: contract && contract.rel >= 10 ? `Relevant contract: ${contract.c.title}` : null,
@@ -128585,7 +128617,7 @@ const V9CohesionPlayView: React.FC<{ c: V9Cohesion; theme: any; h: V9PlayHandler
 export const V9CohesionPlay = React.memo(withRenderCount('V9CohesionPlay', V9CohesionPlayView));
 
 /** ONE coherent selected-region story (Living Regions + stakeholders + rival pressure + contracts + infrastructure). */
-export const V9RegionContextPanel: React.FC<{ ctx: V9RegionContext | null; theme: any; onAsk: (q: string) => void; onTravel?: () => void; onContracts?: () => void; onNegotiate?: () => void; onInvest?: () => void; more: React.ReactNode }> = ({ ctx, theme, onAsk, onTravel, onContracts, onNegotiate, onInvest, more }) => {
+export const V9RegionContextPanel: React.FC<{ ctx: V9RegionContext | null; theme: any; onAsk: (q: string) => void; onTravel?: () => void; onContracts?: () => void; onNegotiate?: () => void; onInvest?: () => void; investOffReason?: string | null; contractsOffReason?: string | null; more: React.ReactNode }> = ({ ctx, theme, onAsk, onTravel, onContracts, onNegotiate, onInvest, investOffReason, contractsOffReason, more }) => {
   const [open, setOpen] = useState(false);
   if (!ctx) return null;
   return (
@@ -128598,6 +128630,9 @@ export const V9RegionContextPanel: React.FC<{ ctx: V9RegionContext | null; theme
         {onTravel && <button type="button" className={`${theme.button} px-3 py-1 rounded-lg font-bold`} onClick={onTravel}>Travel</button>}
         {onInvest && <button type="button" className={`${theme.buttonSecondary} px-3 py-1 rounded-lg`} onClick={onInvest}>Invest</button>}
         {onContracts && <button type="button" className={`${theme.buttonSecondary} px-3 py-1 rounded-lg`} onClick={onContracts}>Contracts</button>}
+        {/* V10.1 (SECTION 20BI): a switched-off system gets a one-line reason, not a button that opens a dead screen. */}
+        {!onInvest && investOffReason && <span className="opacity-75" data-testid="v101-invest-off">Invest: {investOffReason}</span>}
+        {!onContracts && contractsOffReason && <span className="opacity-75" data-testid="v101-contracts-off">Contracts: {contractsOffReason}</span>}
         {onNegotiate && <button type="button" className={`${theme.buttonSecondary} px-3 py-1 rounded-lg`} onClick={onNegotiate}>Negotiate</button>}
         <button type="button" className="underline" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? 'Less' : 'More'}</button>
       </div>
@@ -209052,7 +209087,236 @@ export function runV101AdviceSelfTests(): V9SelfTestResult[] {
 // SECTION 20BI: V10.1 WORLD LAYER HONESTY — ADVICE AND OFF-SWITCHES THAT AGREE WITH THE MATCH
 // ============================================================================
 // <<V101-SLOT WORLD begin>>
-// (work package WORLD: replace everything between the two markers; keep the markers and the exported suite function below.)
+// (work package WORLD, SECTION 20BI. What a V10.1 match's world layer says and does, in one place.)
+//
+// W1 Dead-end advice (every match). regionalContractsEnabled and stateInfrastructureEnabled default to OFF, yet the world
+//    state is still seeded with 11 contracts and 32 projects (the seeding is left alone: other systems read them), so a
+//    default match told the player "Infrastructure gap: X", "Suggested development: X", "New opportunity: infrastructure -
+//    View projects" and faction requests to fund or finish things the match switched off. The advice and the faction
+//    requests are filtered at the PRESENTATION layer (the views the screens read), never in the simulation: Living Regions
+//    and Factions compute exactly what they computed. Text only, so it applies to every match.
+// W2 Off-switches that hold (V10.1 matches only). The region panel's Invest / Contracts buttons, the faction "Fund now",
+//    Ask-AI's fund_project / accept_contract and both modals now answer "switched off" in a V10.1 match, and the canonical
+//    reducer refuses the invest / start / accept actions when the match switched the system off (the rival already did).
+//    A V10.0 or older match, and a match started with the classic rules, keep every entry point as it was.
+// W3 Fund now (V10.1 matches). "Fund now" put ALL the player's cash into the project with no amount, no confirmation and
+//    no refund. It now offers one funding step, a quarter of what is still needed, or the most the player can afford, and
+//    asks for a confirmation that states the dollars and what remains. Nothing is pre-chosen as "all cash". A faction no
+//    longer asks for a project the player could not pay for even with twice the cash in hand.
+// W4 One project list (V10.1 matches). World Reaction saw the first 16 projects, Living Regions (and Factions) the first
+//    24, National Systems all 32. All three now read the same list, in the same order, with one generous cap.
+// W5 Honest rewards and labels. A request's reward says what it does (relationship with that group, nothing else); a V10.1
+//    match's Contracts list also gives a small, bounded lift to contracts from a group that likes you. In a V10.0+ one-on-one
+//    match the world systems count in days, so their text says "day", as the HUD does.
+// Nothing here draws a random number or reads a clock. Suite v101wl (runV101WorldSelfTests).
+
+// ---- W1/W2: which world systems the match switched off -----------------------------------------------------------------
+export type V101WorldSystem = 'infra' | 'contracts';
+export interface V101WorldOff { infra: boolean; contracts: boolean }
+const V101_WORLD_SETTING_KEY: Record<V101WorldSystem, string> = { infra: 'stateInfrastructureEnabled', contracts: 'regionalContractsEnabled' };
+export const V101_NOT_OFF: V101WorldOff = { infra: false, contracts: false };
+
+/** True only when the match has this system switched off (a setting that is missing, as in a sparse fixture, is not "off"). */
+export function worldSystemOff(settings: unknown, system: V101WorldSystem): boolean {
+  return v99SwitchedOff(settings, V101_WORLD_SETTING_KEY[system]);
+}
+export function v101WorldOff(settings: unknown): V101WorldOff {
+  return { infra: worldSystemOff(settings, 'infra'), contracts: worldSystemOff(settings, 'contracts') };
+}
+
+/** The screens and actions that lead into a switched-off system, and the system each belongs to. */
+export type V101WorldEntry = 'region_invest' | 'region_contracts' | 'faction_fund' | 'infrastructure_modal' | 'contracts_modal' | 'ask_fund_project' | 'ask_accept_contract';
+export const V101_WORLD_ENTRY_SYSTEM: Record<V101WorldEntry, V101WorldSystem> = {
+  region_invest: 'infra', faction_fund: 'infra', infrastructure_modal: 'infra', ask_fund_project: 'infra',
+  region_contracts: 'contracts', contracts_modal: 'contracts', ask_accept_contract: 'contracts'
+};
+
+/** One line the screens show where a switched-off system's entry point would have been. */
+export function v101WorldOffReason(system: V101WorldSystem): string {
+  return `${system === 'infra' ? 'State infrastructure projects are' : 'Regional contracts are'} switched off in this match. Turn them on in Settings > Competition to use them.`;
+}
+
+/**
+ * The one gate every player-facing entry point asks. A V10.1 match (rules stamp 1010+) whose settings switched the system
+ * off gets { allowed: false, reason }; a V10.0 or older match, and one started with the classic rules, is always allowed
+ * (it keeps playing move for move as it did).
+ */
+export function v101WorldEntryGate(gameState: unknown, settings: unknown, entry: V101WorldEntry): { allowed: boolean; reason: string | null } {
+  const system = V101_WORLD_ENTRY_SYSTEM[entry];
+  if (!system || !isV101Match(gameState) || !worldSystemOff(settings, system)) return { allowed: true, reason: null };
+  return { allowed: false, reason: v101WorldOffReason(system) };
+}
+
+/**
+ * The reducer-side check, for the canonical actions that spend on or enter a switched-off system: start / build a project,
+ * invest in one, accept a contract. Only a V10.1 match refuses (the canonical state carries the live match as .gameState, a
+ * live state carries its own stamp), so an old save and its replay run exactly as before. Fulfilling a contract already
+ * accepted is never refused. Returns the reason, or null when the action may go on.
+ */
+export function v101WorldReducerBlock(state: unknown, settings: unknown, caseLabel: string): string | null {
+  const nested = state && typeof state === 'object' ? (state as { gameState?: unknown }).gameState : null;
+  if (!isV101Match(state) && !isV101Match(nested)) return null;
+  if (caseLabel === 'invest_infrastructure_project' || caseLabel === 'investInfrastructure' || caseLabel === 'start_infrastructure_project' || caseLabel === 'build_infrastructure') return worldSystemOff(settings, 'infra') ? v101WorldOffReason('infra') : null;
+  if (caseLabel === 'accept_regional_contract' || caseLabel === 'acceptContract') return worldSystemOff(settings, 'contracts') ? v101WorldOffReason('contracts') : null;
+  return null;
+}
+
+/** Faction request kinds that need a system: building or avoiding a project needs infrastructure, contract work needs contracts. */
+const V101_REQUEST_SYSTEM: Record<string, V101WorldSystem> = { fund_project: 'infra', avoid_project: 'infra', complete_contract: 'contracts', assist_crisis: 'contracts' };
+const V101_OPPORTUNITY_SYSTEM: Record<string, V101WorldSystem> = { infrastructure_gap: 'infra', contract_wave: 'contracts' };
+
+/**
+ * Living Regions as the screens should read it: the opportunities that point at a switched-off system ("Infrastructure
+ * gap: X", "Relevant contracts") are left out. Needs, momentum and every number stay; the stored state is never touched.
+ * Nothing switched off: the very same object comes back.
+ */
+export function v101WorldPresentLr<T extends LivingRegionsState | null | undefined>(state: T, off: V101WorldOff): T {
+  if (!state || (!off.infra && !off.contracts)) return state;
+  const regions: Record<string, DynamicRegionalState> = {};
+  Object.keys(state.regions).forEach(code => {
+    const reg = state.regions[code];
+    const kept = reg.opportunities.filter(o => { const sys = V101_OPPORTUNITY_SYSTEM[o.kind]; return !(sys && off[sys]); });
+    regions[code] = kept.length === reg.opportunities.length ? reg : { ...reg, opportunities: kept };
+  });
+  return { ...state, regions } as T;
+}
+/** The inputs behind that view: no project (or contract) to suggest when the system is off. The simulation keeps its own. */
+export function v101WorldPresentLrInputs<T extends LRInputs | null | undefined>(inputs: T, off: V101WorldOff): T {
+  if (!inputs || (!off.infra && !off.contracts)) return inputs;
+  return { ...inputs, projects: off.infra ? [] : inputs.projects, contracts: off.contracts ? [] : inputs.contracts } as T;
+}
+/** Regional Factions as the screens should read it: requests that ask for a switched-off system's work are not shown. */
+export function v101WorldPresentRf<T extends RegionalFactionsState | null | undefined>(state: T, off: V101WorldOff): T {
+  if (!state || (!off.infra && !off.contracts)) return state;
+  const requests = state.requests.filter(r => { const sys = V101_REQUEST_SYSTEM[r.type]; return !(sys && off[sys]); });
+  return requests.length === state.requests.length ? state : { ...state, requests } as T;
+}
+export function v101WorldPresentRfInputs<T extends RFInputs | null | undefined>(inputs: T, off: V101WorldOff): T {
+  if (!inputs || (!off.infra && !off.contracts)) return inputs;
+  return { ...inputs, lr: v101WorldPresentLrInputs(inputs.lr, off), regions: v101WorldPresentLr(inputs.regions, off) } as T;
+}
+
+/** What a modal shows instead of its screen when its system is switched off in a V10.1 match. */
+export const V101WorldSwitchedOffCard: React.FC<{ title: string; reason: string; zIndex?: number; onClose: () => void }> = ({ title, reason, zIndex, onClose }) => (
+  <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4" style={zIndex !== undefined ? { zIndex } : undefined} onClick={onClose} data-testid="v101-world-off-card">
+    <div className="bg-gray-900 border border-slate-500/50 rounded-xl p-6 max-w-md w-full shadow-2xl text-white space-y-3" role="dialog" aria-label={`${title} is switched off`} onClick={e => e.stopPropagation()}>
+      <h2 className="text-lg font-bold">{title}</h2>
+      <p className="text-sm">{reason}</p>
+      <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded text-white text-xs font-semibold">Close</button>
+    </div>
+  </div>
+);
+
+// ---- W4: one project list --------------------------------------------------------------------------------------------------
+/** Generous cap on the projects the world systems read (a fresh match holds 32; players can add more). */
+export const V101_WORLD_PROJECT_CAP = 96;
+/**
+ * The projects a world system reads. A V10.1 match: every project, in the order the match holds them, up to the shared cap
+ * (the same list for World Reaction, Living Regions and National Systems). Any older match: its old fixed slice
+ * (`legacyCap`; 16 for World Reaction, 24 for Living Regions), which changes those systems' hashes and outcomes if altered.
+ */
+export function v101WorldProjects(gameState: unknown, rawProjects: unknown, legacyCap: number): unknown[] {
+  const all = (Array.isArray(rawProjects) ? rawProjects : rawProjects && typeof rawProjects === 'object' ? Object.values(rawProjects as Record<string, unknown>) : []).filter(Boolean);
+  return all.slice(0, isV101Match(gameState) ? V101_WORLD_PROJECT_CAP : legacyCap);
+}
+
+// ---- W3: "Fund now" ---------------------------------------------------------------------------------------------------------
+/** One funding step: the same $50,000 increment Ask-AI and the Infrastructure screen use. */
+export const V101_FUND_STEP = 50000;
+/** A faction asks for a project only while what is still needed is within this many times the human's cash. */
+export const V101_FUND_REACH_FACTOR = 2;
+export interface V101FundOption { id: 'step' | 'quarter' | 'max'; label: string; amount: number; affordable: boolean }
+export interface V101FundPlan { projectId: string; title: string; remaining: number; cash: number; options: V101FundOption[]; defaultAmount: number | null }
+
+/** Can the human plausibly meet a request to finish a project that still needs `remaining`? Used when a faction issues one. */
+export function v101FundRequestReachable(remaining: number, humanCash: number): boolean {
+  return Number.isFinite(remaining) && remaining > 0 && remaining <= Math.max(0, Number.isFinite(humanCash) ? humanCash : 0) * V101_FUND_REACH_FACTOR;
+}
+
+/**
+ * What "Fund now" offers: one funding step, a quarter of what is still needed, or the most the player can afford. Amounts are
+ * whole dollars, never more than the cash or the remaining cost, and the pre-selected one (defaultAmount) is never all of the
+ * player's cash: when only "most I can afford" is within reach nothing is pre-selected.
+ */
+export function v101FundPlan(project: { id?: unknown; title?: unknown; totalCost?: unknown; totalInvestedMoney?: unknown } | null | undefined, cashIn: unknown): V101FundPlan | null {
+  if (!project || !project.id) return null;
+  const cash = Math.max(0, Math.floor(Number(cashIn) || 0));
+  const remaining = Math.max(0, Math.floor((Number(project.totalCost) || 0) - (Number(project.totalInvestedMoney) || 0)));
+  const money = (n: number) => `$${n.toLocaleString('en-AU')}`;
+  const raw: Array<{ id: V101FundOption['id']; label: string; amount: number }> = [
+    { id: 'step', label: 'One funding step', amount: Math.min(V101_FUND_STEP, remaining) },
+    { id: 'quarter', label: 'A quarter of what is left', amount: Math.min(remaining, Math.ceil(remaining * 0.25)) },
+    { id: 'max', label: cash >= remaining ? 'Finish it' : 'Most I can afford', amount: Math.min(cash, remaining) }
+  ];
+  const seen = new Set<number>();
+  const options: V101FundOption[] = [];
+  raw.forEach(o => { if (o.amount > 0 && !seen.has(o.amount)) { seen.add(o.amount); options.push({ ...o, label: `${o.label} (${money(o.amount)})`, affordable: o.amount <= cash }); } });
+  const preselect = options.find(o => o.id !== 'max' && o.affordable && o.amount < cash);
+  return { projectId: String(project.id), title: String(project.title || project.id), remaining, cash, options, defaultAmount: preselect ? preselect.amount : null };
+}
+/** True when `amount` is a whole-dollar sum the player holds and the project still needs. */
+export function v101FundAmountValid(plan: V101FundPlan, amount: number): boolean {
+  return Number.isInteger(amount) && amount > 0 && amount <= plan.cash && amount <= plan.remaining;
+}
+/** The sentence the confirm step shows: the dollars, what is left of the player's cash and what the project still needs afterwards. */
+export function v101FundConfirmText(plan: V101FundPlan, amount: number): string {
+  const money = (n: number) => `$${n.toLocaleString('en-AU')}`;
+  return `Put ${money(amount)} into ${plan.title}${amount >= plan.cash ? ' (all of your cash)' : ''}? You would keep ${money(Math.max(0, plan.cash - amount))}, and ${money(Math.max(0, plan.remaining - amount))} would still be needed. Money put in is not refunded.`;
+}
+/** The "Fund now" control: one button that opens the amounts, then a confirm step. Nothing is spent until "Confirm". */
+export const V101FundNowChooser: React.FC<{ plan: V101FundPlan; onConfirm: (amount: number) => void; initialOpen?: boolean; initialPicked?: number | null }> = ({ plan, onConfirm, initialOpen, initialPicked }) => {
+  const [open, setOpen] = useState(Boolean(initialOpen));
+  const [picked, setPicked] = useState<number | null>(initialPicked === undefined ? plan.defaultAmount : initialPicked);
+  if (!open) return <button type="button" className="underline ml-2" onClick={() => setOpen(true)} data-testid="v101-fund-open">Fund now</button>;
+  return (
+    <div className="mt-1 rounded border border-amber-400/50 p-1 space-y-1" data-testid="v101-fund-chooser">
+      <div>You have ${plan.cash.toLocaleString('en-AU')}. ${plan.remaining.toLocaleString('en-AU')} is still needed for {plan.title}. Choose an amount:</div>
+      <div className="flex flex-wrap gap-1">
+        {plan.options.map(o => <button key={o.id} type="button" disabled={!o.affordable} className={`px-2 py-0.5 rounded border ${picked === o.amount ? 'border-amber-300 font-bold' : 'border-slate-500/60'} ${o.affordable ? '' : 'opacity-50'}`} aria-pressed={picked === o.amount} onClick={() => setPicked(o.amount)} data-testid={`v101-fund-${o.id}`}>{o.label}{o.affordable ? '' : ' - not enough cash'}</button>)}
+        {plan.options.length === 0 && <span className="opacity-80">Nothing left to fund.</span>}
+      </div>
+      {picked !== null && v101FundAmountValid(plan, picked) && (
+        <div data-testid="v101-fund-confirm">
+          <div>{v101FundConfirmText(plan, picked)}</div>
+          <button type="button" className="underline" onClick={() => { onConfirm(picked); setOpen(false); }} data-testid="v101-fund-confirm-button">Confirm</button>
+          <button type="button" className="underline ml-2" onClick={() => setPicked(null)}>Change amount</button>
+        </div>
+      )}
+      <button type="button" className="underline opacity-80" onClick={() => { setOpen(false); setPicked(plan.defaultAmount); }}>Cancel</button>
+    </div>
+  );
+};
+
+// ---- W5: honest rewards and labels --------------------------------------------------------------------------------------------
+/** What a fulfilled request really gives: the group's view of you rises by 12 (no cash, no standing, no unlock). */
+export const V101_REWARD_RELATIONSHIP = 'Relationship +12 with this group (no cash). Rival diplomacy weighs it when valuing this region';
+export const V101_REWARD_AVOID = 'Relationship +8 with this group if you commit and keep your word (others may disagree)';
+/** Reward strings older saves hold, and the true sentence each is shown as. */
+const V101_LEGACY_REWARDS: Record<string, string> = {
+  'Relationship ↑ · future contract relevance ↑': V101_REWARD_RELATIONSHIP,
+  'Relationship ↑↑ · standing opportunities ↑ · future contract relevance ↑': V101_REWARD_RELATIONSHIP,
+  'Relationship ↑↑ · regional goodwill ↑': V101_REWARD_RELATIONSHIP,
+  'Relationship ↑ with this group (others may disagree)': V101_REWARD_AVOID
+};
+/** The reward line to show for a request: a stored promise that no rule keeps is shown as what the rules really give. */
+export function v101RewardText(stored: unknown): string {
+  const text = typeof stored === 'string' ? stored : '';
+  return V101_LEGACY_REWARDS[text] || text;
+}
+/** The word the world systems' round numbers are shown in: "day" in a V10.0+ one-on-one match (the number IS the day), else "round". */
+export function v101TimeWord(gameState: unknown): 'day' | 'round' {
+  if (!isV100Match(gameState)) return 'round';
+  const mode = gameState && typeof gameState === 'object' && typeof (gameState as { selectedMode?: unknown }).selectedMode === 'string' ? (gameState as { selectedMode: string }).selectedMode : null;
+  return isTeamModeSelection(mode) ? 'round' : 'day';
+}
+/** "day" / "round" in a sentence, or "Day" / "Round" at the start of one. */
+export function v101TimeWordCap(word: string | null | undefined): string {
+  const w = word === 'day' ? 'day' : 'round';
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+/** Largest bound on how far a group's regard for the player moves its contracts up or down in the Contracts list. */
+export const V101_RELATIONSHIP_RELEVANCE_BOUND = 5;
+
 export function runV101WorldSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   return results;
@@ -239676,6 +239940,9 @@ function dispatchGameSettingsChange(
 
   const handleFundInfrastructure = useCallback((projectId: string, amount: number) => {
     if (v96BlockHumanAction('Infrastructure funding')) return;
+    // V10.1 (SECTION 20BI): one gate for every way a player puts money into a project (faction "Fund now", the Infrastructure screen): a V10.1 match that switched infrastructure off says so and spends nothing.
+    const v101FundGate = v101WorldEntryGate(gameState, gameSettings, 'faction_fund');
+    if (!v101FundGate.allowed) { addNotification?.(v101FundGate.reason || '', 'warning', true); return; }
     const target: any = (gameState.infrastructureProjects as any)?.[projectId];
     if (target?.status === 'locked') {
       // V9.3: competing projects share a site — the canonical action refuses a locked project; say why.
@@ -239704,7 +239971,7 @@ function dispatchGameSettingsChange(
         addNotification(`Invested $${amount.toLocaleString('en-AU')} into project ${projectId}`, 'success', true);
       }
     }
-  }, [gameState, player.id, player.teamId, addNotification]);
+  }, [gameState, gameSettings.stateInfrastructureEnabled, player.id, player.teamId, addNotification]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLaunchExpedition = useCallback((targetId: string, riskChoice: ExpeditionRiskChoice = 'balanced') => {
     if (v96BlockHumanAction('Launching an expedition')) return;
@@ -240918,7 +241185,7 @@ function dispatchGameSettingsChange(
       observed,
       primaryRivalId: primaryOpponentActor?.id ? String(primaryOpponentActor.id) : (actors.find(a => a.relation === 'rival')?.id || null),
       teammateIds: actors.filter(a => a.relation === 'teammate').map(a => a.id),
-      settings: { fogOfWar: fog, aiMemoryFullInspection: gameSettings.aiMemoryFullInspectionEnabled === true, experienceLevel: getIntentPresentationLevel(gameSettings) },
+      settings: { fogOfWar: fog, aiMemoryFullInspection: gameSettings.aiMemoryFullInspectionEnabled === true, experienceLevel: getIntentPresentationLevel(gameSettings), ...(isV101Match(gameState) ? { worldSwitchedOff: v101WorldOff(gameSettings) } : {}) }, // V10.1 (SECTION 20BI): a V10.1 match tells Ask-AI which world systems are off
       session: takeoverSession,
       ledgerEvents: ((gameState.gameActivityLedger?.events || []) as any[]).slice(-40),
       team: teamOsViewRef.current,
@@ -241492,7 +241759,7 @@ function dispatchGameSettingsChange(
     persistBackgroundAI(dismissBackgroundIntervention(sanitizeBackgroundAIState(bgStateRef.current), key), null, 'player');
   }, [persistBackgroundAI]);
   /** Contextual Actions shown to the player carry Background AI metadata; the canonical set is unchanged. */
-  const v9ActionSetView = useMemo(() => filterActionSetForFirstRun(annotateContextualActionsWithFactions(annotateContextualActionsWithRegions(annotateContextualActionsWithWorld(annotateContextualActionsWithBackground(v9ActionSet, bgLive), gameState.worldReaction, String(player?.id || 'player')), gameState.livingRegions), rfStateRef.current, rfViewRef.current?.inputs || null), wp8State), [v9ActionSet, bgLive, gameState.livingRegions, gameState.regionalFactions, gameState.worldReaction, player?.id, wp8State]);
+  const v9ActionSetView = useMemo(() => filterActionSetForFirstRun(annotateContextualActionsWithFactions(annotateContextualActionsWithRegions(annotateContextualActionsWithWorld(annotateContextualActionsWithBackground(v9ActionSet, bgLive), gameState.worldReaction, String(player?.id || 'player')), v101WorldPresentLr(gameState.livingRegions, v101WorldOff(gameSettings))), v101WorldPresentRf(rfStateRef.current, v101WorldOff(gameSettings)), rfViewRef.current?.inputs || null), wp8State), [v9ActionSet, bgLive, gameState.livingRegions, gameSettings.stateInfrastructureEnabled, gameSettings.regionalContractsEnabled, gameState.regionalFactions, gameState.worldReaction, player?.id, wp8State]);
 
   // ---- Settings Intelligence 2.0: live wiring --------------------------------------------------------
   // Reads settings + read-only gameplay evidence; every change it proposes becomes a SmartSettingsPlan the
@@ -241760,7 +242027,7 @@ function dispatchGameSettingsChange(
 
   const dnPlayerWorld = useMemo(() => buildDnWorld(String(player?.id || 'player')), [buildDnWorld, player?.id]);
   const dnReserveFloor = Number(gameSettings.coPilotSettings?.spendingCaps?.minimumCashReserve || 0) || null;
-  const dnView: DiplomacyWorldView = useMemo(() => ({ enabled: dnEnabled && dnCounterparts.length > 0, state: dnState, world: dnPlayerWorld, playerId: String(player?.id || 'player'), names: dnNames, gi3: gi3Live, teamMode: isTeamMode, reserveFloor: dnReserveFloor }), [dnEnabled, dnCounterparts.length, dnState, dnPlayerWorld, player?.id, dnNames, gi3Live, isTeamMode, dnReserveFloor]);
+  const dnView: DiplomacyWorldView = useMemo(() => ({ enabled: dnEnabled && dnCounterparts.length > 0, state: dnState, world: dnPlayerWorld, playerId: String(player?.id || 'player'), names: dnNames, gi3: gi3Live, teamMode: isTeamMode, reserveFloor: dnReserveFloor, timeWord: v101TimeWord(gameState) }), [dnEnabled, dnCounterparts.length, dnState, dnPlayerWorld, player?.id, dnNames, gi3Live, isTeamMode, dnReserveFloor, gameState.rulesVersion, gameState.selectedMode]); // V10.1 (SECTION 20BI): the HUD says Day, so the world systems' numbers are labelled with the same word
   dnViewRef.current = dnView;
   const [dnExchange, setDnExchange] = useState<DiplomacyExchange | null>(null);
   const [dnBreachPrompt, setDnBreachPrompt] = useState<{ lines: string[]; dealId: string; proceed: () => void } | null>(null);
@@ -242125,7 +242392,8 @@ function dispatchGameSettingsChange(
     Object.entries(teamsById || {}).forEach(([tid, t]: [string, any]) => { ownerNames[tid] = String(t?.name || (tid === TEAM_PLAYER_ID ? 'Your team' : 'Rival team')); ownerTeams[tid] = tid; });
     const inv = (a: any) => { const out: Record<string, number> = {}; (Array.isArray(a?.inventory) ? a.inventory : []).forEach((it: any) => { const k = typeof it === 'string' ? it : String(it?.name || ''); if (k) out[k] = (out[k] || 0) + 1; }); return out; };
     const rawProjects = gameState.infrastructureProjects || {};
-    const projects = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).slice(0, 16).map((p: any) => { const total = Number(p.totalCost || p.fundingGoal || 0); const inv2 = Number(p.totalInvestedMoney ?? p.currentFunding ?? 0); return { id: String(p.id), title: String(p.title || p.name || p.id), regionId: p.regionId ? String(p.regionId) : null, status: p.projectType && /^(active|upgraded)$/.test(String(p.status)) ? 'completed' : String(p.status || 'planned'), progress: total > 0 ? Math.max(0, Math.min(1, inv2 / total)) : /complet/.test(String(p.status)) ? 1 : 0 }; });
+    // V10.1 (SECTION 20BI): a V10.1 match reads the shared project list (up to 96); an older match keeps its first 16 (the slice changes hashes and outcomes).
+    const projects = v101WorldProjects(gameState, rawProjects, 16).map((p: any) => { const total = Number(p.totalCost || p.fundingGoal || 0); const inv2 = Number(p.totalInvestedMoney ?? p.currentFunding ?? 0); return { id: String(p.id), title: String(p.title || p.name || p.id), regionId: p.regionId ? String(p.regionId) : null, status: p.projectType && /^(active|upgraded)$/.test(String(p.status)) ? 'completed' : String(p.status || 'planned'), progress: total > 0 ? Math.max(0, Math.min(1, inv2 / total)) : /complet/.test(String(p.status)) ? 1 : 0 }; });
     let contracts: SWRInputs['contracts'] = [];
     try { contracts = listRegionalContracts(gameState).slice(0, 16).map((c: any) => ({ id: String(c.id), title: String(c.title || c.name || c.id), regionId: c.regionId ? String(c.regionId) : null, status: String(c.status || 'available'), rewardMoney: Number(c.rewardMoney ?? c.reward ?? c.payout ?? 0), turnsRemaining: typeof c.turnsRemaining === 'number' ? c.turnsRemaining : null, assignedActorId: c.assignedActorId ? String(c.assignedActorId) : null })); } catch { contracts = []; }
     const teams: SWRInputs['teams'] = isTeamMode ? Object.entries(teamsById || {}).map(([tid, t]: [string, any]) => {
@@ -242161,11 +242429,11 @@ function dispatchGameSettingsChange(
       ownerNames, ownerTeams, prices, basePrices, projects, contracts, teams, gi3: gi3In, deals, stability: stab, crises,
       win: String(gameSettings.winCondition) === 'regions' ? { metric: 'regions', target: REGION_CONTROL_MAJORITY, byOwner } : null
     };
-  }, [dnAllActors, dnNames, teamsById, gameState.selectedMode, gameState.regionDeposits, gameState.infrastructureProjects, gameState.regionalContracts, gameState.resourcePrices, gameState.publicStabilityState, gameState.crisisChainState, gameState.day, dnRound, gameSettings.fogOfWarEnabled, gameSettings.publicStabilityEnabled, gameSettings.dynamicCrisisChainsEnabled, gameSettings.winCondition, gameSettings.totalDays, gi3Live, dnState, isTeamMode, teamOsView?.state.contract?.revision, teamOsEnemyView?.state.contract?.revision, player?.id]);
+  }, [dnAllActors, dnNames, teamsById, gameState.selectedMode, gameState.rulesVersion, gameState.regionDeposits, gameState.infrastructureProjects, gameState.regionalContracts, gameState.resourcePrices, gameState.publicStabilityState, gameState.crisisChainState, gameState.day, dnRound, gameSettings.fogOfWarEnabled, gameSettings.publicStabilityEnabled, gameSettings.dynamicCrisisChainsEnabled, gameSettings.winCondition, gameSettings.totalDays, gi3Live, dnState, isTeamMode, teamOsView?.state.contract?.revision, teamOsEnemyView?.state.contract?.revision, player?.id]);
   const swrSnapshot = useMemo(() => buildStrategicSnapshot(swrInputs), [swrInputs]);
   const swrPrevSnapRef = useRef<SWRSnapshot | null>(null);
   const swrOwnerToActor = useCallback((k: string) => (isTeamMode ? (dnLeadOfTeam(k) || k) : k), [isTeamMode, dnLeadOfTeam]);
-  swrViewRef.current = swrEnabled ? { state: swrState, viewerId: String(player?.id || 'player'), viewerTeamId: player?.teamId ? String(player.teamId) : null, names: swrInputs.ownerNames, inputs: swrInputs } : null;
+  swrViewRef.current = swrEnabled ? { state: swrState, viewerId: String(player?.id || 'player'), viewerTeamId: player?.teamId ? String(player.teamId) : null, names: swrInputs.ownerNames, inputs: swrInputs, timeWord: v101TimeWord(gameState) } : null; // V10.1 (SECTION 20BI): the time word for the view's text
 
 
   // ---- Living Regions 2.0: live wiring ----------------------------------------------------------------
@@ -242177,7 +242445,8 @@ function dispatchGameSettingsChange(
     const devs = (gameState.regionalDevLevels || {}) as Record<string, any>;
     const stab = gameSettings.publicStabilityEnabled && gameState.publicStabilityState ? (gameState.publicStabilityState.regionalStability || {}) as Record<string, number> : null;
     const rawProjects = gameState.infrastructureProjects || {};
-    const projects = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).slice(0, 24).map((p: any) => {
+    // V10.1 (SECTION 20BI): the same shared project list as World Reaction and National Systems in a V10.1 match; an older match keeps its first 24.
+    const projects = v101WorldProjects(gameState, rawProjects, 24).map((p: any) => {
       const total = Number(p.totalCost || 0); const inv = Number(p.totalInvestedMoney || 0);
       return { id: String(p.id), title: String(p.title || p.id), regionId: p.regionId ? String(p.regionId) : null, projectType: String(p.projectType || ''), status: String(p.status || 'locked'), progress: total > 0 ? Math.max(0, Math.min(1, inv / total)) : 0, remainingCost: Math.max(0, total - inv), completionTurn: typeof p.completionTurn === 'number' ? p.completionTurn : null };
     });
@@ -242197,9 +242466,15 @@ function dispatchGameSettingsChange(
       windows: swrState.windows.map(w => ({ id: w.id, type: w.type, subject: w.subject, status: w.status, expiresTurn: w.expiresTurn, reason: w.reason })),
       winRegionsTarget: swrInputs.win?.target ?? null
     };
-  }, [swrInputs, swrState.windows, gameState.regionalDevLevels, gameState.publicStabilityState, gameState.infrastructureProjects, gameState.regionalContracts, gameState.crisisChainState, gameState.standingPerActor, gameSettings.publicStabilityEnabled, gameSettings.dynamicCrisisChainsEnabled, gameSettings.regionalStandingEnabled, gameSettings.fogOfWarEnabled, dnRound]);
+  }, [swrInputs, swrState.windows, gameState.rulesVersion, gameState.regionalDevLevels, gameState.publicStabilityState, gameState.infrastructureProjects, gameState.regionalContracts, gameState.crisisChainState, gameState.standingPerActor, gameSettings.publicStabilityEnabled, gameSettings.dynamicCrisisChainsEnabled, gameSettings.regionalStandingEnabled, gameSettings.fogOfWarEnabled, dnRound]);
   const lrViewerKeys = useMemo(() => [String(player?.id || 'player'), ...(isTeamMode && player?.teamId ? [String(player.teamId)] : [])], [player?.id, player?.teamId, isTeamMode]);
-  lrViewRef.current = swrEnabled && lrState ? { state: lrState, inputs: lrInputs, viewerId: String(player?.id || 'player'), viewerKeys: lrViewerKeys, names: swrInputs.ownerNames } : null;
+  // V10.1 (SECTION 20BI): the screens read Living Regions and Factions through a view that leaves out advice and requests for a system this
+  // match switched off (every match; text only). The simulation, the AI and the stored state keep reading the full state.
+  const v101WorldOffNow = useMemo(() => v101WorldOff(gameSettings), [gameSettings.stateInfrastructureEnabled, gameSettings.regionalContractsEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  const v101TimeWordNow = v101TimeWord(gameState);
+  const lrPresentState = useMemo(() => v101WorldPresentLr(lrState, v101WorldOffNow), [lrState, v101WorldOffNow]);
+  const lrPresentInputs = useMemo(() => v101WorldPresentLrInputs(lrInputs, v101WorldOffNow), [lrInputs, v101WorldOffNow]);
+  lrViewRef.current = swrEnabled && lrState ? { state: lrPresentState || lrState, inputs: lrPresentInputs, viewerId: String(player?.id || 'player'), viewerKeys: lrViewerKeys, names: swrInputs.ownerNames, timeWord: v101TimeWordNow } : null;
   const lrInputsRef = useRef(lrInputs); lrInputsRef.current = lrInputs;
   // Rival AI: regional valuation as a bounded scoring input (uses only public regional state + the AI's own holdings).
   lrDecisionAdjustRef.current = swrEnabled && lrState ? (actorId: string, decisions: any[]) => {
@@ -242249,10 +242524,15 @@ function dispatchGameSettingsChange(
     (Array.isArray(raw) ? raw : Object.values(raw)).forEach((p: any) => { if (p && p.contributions && typeof p.contributions === 'object') contributions[String(p.id)] = { ...p.contributions }; });
     const issuers: Record<string, string | null> = {};
     try { listRegionalContracts(gameState).forEach((c: any) => { issuers[String(c.id)] = c.issuingFactionId || resolveFactionIdFromIssuer(c.issuingFaction); }); } catch { /* no contracts */ }
-    return { turn: dnRound, fogOfWar: Boolean(gameSettings.fogOfWarEnabled), lr: lrInputs, regions: lrState || initializeLivingRegions(lrInputs), actors: swrInputs.actors.map(a => ({ id: a.id, name: a.name, teamId: a.teamId, isHuman: a.isHuman })), contributions, contractIssuers: issuers };
-  }, [lrInputs, lrState, gameState.infrastructureProjects, gameState.regionalContracts, swrInputs.actors, dnRound, gameSettings.fogOfWarEnabled]);
+    // V10.1 (SECTION 20BI): the rules stamp, the human's cash and the time word travel with the inputs (rfRequestFor / the request text have no match in scope).
+    const v101Rules = isV101Match(gameState);
+    const humanCash = swrInputs.actors.filter(a => a.isHuman).reduce((m, a) => Math.max(m, a.money), 0);
+    return { turn: dnRound, fogOfWar: Boolean(gameSettings.fogOfWarEnabled), lr: lrInputs, regions: lrState || initializeLivingRegions(lrInputs), actors: swrInputs.actors.map(a => ({ id: a.id, name: a.name, teamId: a.teamId, isHuman: a.isHuman })), contributions, contractIssuers: issuers, ...(v101Rules ? { v101Rules, humanCash } : {}), timeWord: v101TimeWord(gameState) };
+  }, [lrInputs, lrState, gameState.infrastructureProjects, gameState.regionalContracts, gameState.rulesVersion, gameState.selectedMode, swrInputs.actors, dnRound, gameSettings.fogOfWarEnabled]);
   const rfInputsRef = useRef(rfInputs); rfInputsRef.current = rfInputs;
-  rfViewRef.current = swrEnabled && rfState ? { state: rfState, inputs: rfInputs, viewerId: String(player?.id || 'player'), viewerKeys: lrViewerKeys, names: swrInputs.ownerNames } : null;
+  const rfPresentState = useMemo(() => v101WorldPresentRf(rfState, v101WorldOffNow), [rfState, v101WorldOffNow]);
+  const rfPresentInputs = useMemo(() => v101WorldPresentRfInputs(rfInputs, v101WorldOffNow), [rfInputs, v101WorldOffNow]);
+  rfViewRef.current = swrEnabled && rfState ? { state: rfPresentState || rfState, inputs: rfPresentInputs, viewerId: String(player?.id || 'player'), viewerKeys: lrViewerKeys, names: swrInputs.ownerNames, timeWord: v101TimeWordNow } : null;
   const persistRegionalFactions = useCallback((next: RegionalFactionsState) => {
     const clean = sanitizeRegionalFactionsState(next);
     rfStateRef.current = clean;
@@ -242270,7 +242550,7 @@ function dispatchGameSettingsChange(
     if (next === st) return;
     const r = next.requests.find(x => x.id === requestId);
     persistRegionalFactions(next);
-    if (r) appendGameActivityLedgerEvent('decision', { actorId: rfPlayerId, eventType: 'factions_commitment', summary: `Committed to ${RF_DEF_BY_ID[r.factionId]?.name}: ${r.title} by round ${r.deadlineTurn}.` } as any);
+    if (r) appendGameActivityLedgerEvent('decision', { actorId: rfPlayerId, eventType: 'factions_commitment', summary: `Committed to ${RF_DEF_BY_ID[r.factionId]?.name}: ${r.title} by ${v101TimeWord(gameState)} ${r.deadlineTurn}.` } as any); // V10.1 (SECTION 20BI): the HUD says Day
   }, [rfPlayerId, dnRound, persistRegionalFactions, appendGameActivityLedgerEvent]);
   const rfChoose = useCallback((d: RFDilemma, optionId: string) => {
     const st = rfStateRef.current; if (!st) return;
@@ -242282,9 +242562,17 @@ function dispatchGameSettingsChange(
   const rfFund = useCallback((projectId: string) => {
     const p: any = (gameState.infrastructureProjects as any)?.[projectId];
     if (!p) return;
+    // V10.1 (SECTION 20BI): this is the V10.0 button (all cash, no preview); a V10.1 match uses the amount chooser below (rfFundAmount) instead.
     const amount = Math.max(0, Math.min(Number(player?.money || 0), Number(p.totalCost || 0) - Number(p.totalInvestedMoney || 0)));
     if (amount > 0) handleFundInfrastructure(projectId, amount);
   }, [gameState.infrastructureProjects, player?.money, handleFundInfrastructure]);
+  /** V10.1 (SECTION 20BI): "Fund now" with a chosen, confirmed amount: re-checked against the cash and the cost still needed, then the same canonical investment. */
+  const rfFundAmount = useCallback((projectId: string, amount: number) => {
+    const plan = v101FundPlan((gameState.infrastructureProjects as any)?.[projectId], player?.money);
+    if (!plan || !v101FundAmountValid(plan, amount)) { addNotification?.('That amount is more than you hold or more than the project still needs.', 'warning', true); return; }
+    handleFundInfrastructure(projectId, amount);
+  }, [gameState.infrastructureProjects, player?.money, handleFundInfrastructure, addNotification]);
+  const rfFundPlanFor = useCallback((projectId: string) => v101FundPlan((gameState.infrastructureProjects as any)?.[projectId], player?.money), [gameState.infrastructureProjects, player?.money]);
 
 
   const persistWorldReaction = useCallback((next: WorldReactionState) => {
@@ -242486,9 +242774,10 @@ function dispatchGameSettingsChange(
     [icEnabled, icPersisted, icSectorKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const nsModifiersLive = useMemo(() => mergeCapabilityModifiers(nsScenarioModifiers, icModifiers.national), [nsScenarioModifiers, icModifiers]);
   const nsInputs = useMemo<NationalSystemsInputs>(() => buildNationalSystemsInputs({
-    turn: lrInputs.turn, lr: lrState, projects: gameState.infrastructureProjects as any,
+    // V10.1 (SECTION 20BI): a V10.1 match gives National Systems the same shared project list the other two world systems read.
+    turn: lrInputs.turn, lr: lrState, projects: (isV101Match(gameState) ? v101WorldProjects(gameState, gameState.infrastructureProjects, V101_WORLD_PROJECT_CAP) : gameState.infrastructureProjects) as any,
     crises: (gameState.crisisChainState?.activeCrisisChains || []) as any[], modifiers: nsModifiersLive
-  }), [lrInputs.turn, lrState, gameState.infrastructureProjects, gameState.crisisChainState, nsModifiersLive]);
+  }), [lrInputs.turn, lrState, gameState.infrastructureProjects, gameState.rulesVersion, gameState.crisisChainState, nsModifiersLive]);
   const nsHash = useMemo(() => nationalSystemsInputHash(nsInputs), [nsInputs]);
   const nsState = useMemo<NationalSystemsState | null>(() => (nsEnabled ? computeNationalSystems(nsInputs, nsPersistedRef.current, { emit: false }).state : null),
     [nsEnabled, nsHash, nsPersisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -243842,7 +244131,7 @@ function dispatchGameSettingsChange(
     const contracts = gameSettings.regionalContractsEnabled ? listRegionalContracts(gameState) : [];
     const active = contracts.find((c: any) => c.status === 'active' && String(c.assignedActorId) === pid) || null;
     const reachable = contracts.find((c: any) => c.status === 'available' && Number(c.requirements?.requiredMoney || 0) <= cash * 2) || null;
-    const regionCtx = lrViewRef.current ? buildV9RegionContext(region, lrViewRef.current, rfViewRef.current, null) : null;
+    const regionCtx = lrViewRef.current ? buildV9RegionContext(region, lrViewRef.current, rfViewRef.current, null, v101WorldOff(gameSettings)) : null; // V10.1 (SECTION 20BI): no suggestion for a switched-off system
     const needLine = regionCtx?.lines.find(l => l.label === 'Current need');
     const lost = (swrState?.events || []).filter(e => e.kind === 'region_lost' && e.tags.includes(`loser:${pid}`) && dnRound - e.turn <= 1).slice(-1)[0];
     const dnOpp = dnObservations.find(o => o.kind === 'proposal' || o.kind === 'opportunity');
@@ -243863,7 +244152,7 @@ function dispatchGameSettingsChange(
       winLabel: v9CohesionInputs.win.label, winMetric: String(gameSettings.winCondition), leading, daysLeft: Math.max(0, Number(gameSettings.totalDays || 30) - Number(gameState.day || 1)),
       rivalName: getActorDisplayName(isTeamMode ? 'ai' : 'ai') || 'your rival', teamMode: isTeamMode, teamMission: v9CohesionInputs.team?.mission || null, teamRole: v9CohesionInputs.team?.you || null,
       contractsEnabled: Boolean(gameSettings.regionalContractsEnabled), contractAvailableTitle: reachable?.title || null, contractActiveTitle: active?.title || null,
-      infrastructureEnabled: Boolean(regionCtx?.suggestion), infrastructureHint: regionCtx?.suggestion && needLine ? `${REGIONS[region]?.name || region} has a ${needLine.value.toLowerCase()} need. ${regionCtx.suggestion}.` : null, investmentsEnabled: Boolean(gameSettings.investmentsEnabled),
+      infrastructureEnabled: !worldSystemOff(gameSettings, 'infra') && Boolean(regionCtx?.suggestion), /* V10.1 (SECTION 20BI): the Infrastructure lesson is not taught while the match has infrastructure switched off */ infrastructureHint: regionCtx?.suggestion && needLine ? `${REGIONS[region]?.name || region} has a ${needLine.value.toLowerCase()} need. ${regionCtx.suggestion}.` : null, investmentsEnabled: Boolean(gameSettings.investmentsEnabled),
       loanCount: (player?.loans || []).length, loansPossible: (player?.loans || []).length < MAX_ACTIVE_LOANS, liquidityProblem: cash < 300,
       decisionActive: Boolean(v9Cohesion.decision), criticalActive: v9Cohesion.focus.source === 'critical', copilotControlling: playerControlState.copilotHoldsControl,
       playerBusy: Boolean(uiState.showTravelModal || uiState.showMarket || uiState.showResourceMarket || uiState.showRegionalContractsModal || uiState.showSettings || uiState.showChallenges || uiState.showShop || uiState.showCoPilotProposalModal),
@@ -260205,7 +260494,7 @@ function dispatchGameSettingsChange(
     const v9RegionContextFor = (code: string | null | undefined): V9RegionContext | null => {
       if (!code) return null;
       const st = lrInputs.standing?.[String(player?.id || 'player')]?.[code];
-      return buildV9RegionContext(code, lrViewRef.current, rfViewRef.current, typeof st === 'number' ? st : null);
+      return buildV9RegionContext(code, lrViewRef.current, rfViewRef.current, typeof st === 'number' ? st : null, v101WorldOff(gameSettings)); // V10.1 (SECTION 20BI): no suggestion for a switched-off system
     };
 
     const glCardHandlers = (m: { conceptId: string; category: LearningCategory } | null, onClose?: () => void): LearningCardHandlers => ({
@@ -260608,7 +260897,7 @@ function dispatchGameSettingsChange(
               </OptionalSurfaceBoundary>
             )}
             {swrEnabled && (
-              <WorldChangesPanel state={swrState} viewerId={swrViewerId} viewerTeamId={swrViewerTeamId} turn={dnRound} names={swrInputs.ownerNames} onWhy={showWorldExplanation} onAsk={q => void submitIntelligenceQuery(q)} />
+              <WorldChangesPanel state={swrState} viewerId={swrViewerId} viewerTeamId={swrViewerTeamId} timeWord={v101TimeWordNow} turn={dnRound} names={swrInputs.ownerNames} onWhy={showWorldExplanation} onAsk={q => void submitIntelligenceQuery(q)} />
             )}
 
             {gameSettings.opponentPersonalityEnabled === true && isCompetitiveMode && (() => {
@@ -262406,10 +262695,12 @@ function dispatchGameSettingsChange(
                       theme={themeStyles}
                       onAsk={q => void submitIntelligenceQuery(q)}
                       onTravel={focus !== player.currentRegion ? () => updateUiState({ showTravelModal: true }) : undefined}
-                      onInvest={isFirstRunVisible(wp8State, 'advanced') ? () => updateUiState({ showInfrastructureProjectsModal: true }) : undefined}
-                      onContracts={isFirstRunVisible(wp8State, 'advanced') ? () => updateUiState({ showRegionalContractsModal: true }) : undefined}
+                      onInvest={isFirstRunVisible(wp8State, 'advanced') && v101WorldEntryGate(gameState, gameSettings, 'region_invest').allowed ? () => updateUiState({ showInfrastructureProjectsModal: true }) : undefined} /* V10.1 (SECTION 20BI): a V10.1 match with infrastructure off gets a reason, not a button */
+                      onContracts={isFirstRunVisible(wp8State, 'advanced') && v101WorldEntryGate(gameState, gameSettings, 'region_contracts').allowed ? () => updateUiState({ showRegionalContractsModal: true }) : undefined}
+                      investOffReason={isFirstRunVisible(wp8State, 'advanced') ? v101WorldEntryGate(gameState, gameSettings, 'region_invest').reason : null}
+                      contractsOffReason={isFirstRunVisible(wp8State, 'advanced') ? v101WorldEntryGate(gameState, gameSettings, 'region_contracts').reason : null}
                       onNegotiate={isFirstRunVisible(wp8State, 'diplomacy') ? () => updateUiState({ showAiRivalryModal: true }) : undefined}
-                      more={<><LivingRegionCard view={lrViewRef.current} regionId={focus} onAsk={q => void submitIntelligenceQuery(q)} /><RegionStakeholdersPanel view={rfViewRef.current} regionId={focus} turn={dnRound} onCommit={rfCommit} onChoose={rfChoose} onFund={rfFund} onAsk={q => void submitIntelligenceQuery(q)} /></>}
+                      more={<><LivingRegionCard view={lrViewRef.current} regionId={focus} onAsk={q => void submitIntelligenceQuery(q)} /><RegionStakeholdersPanel view={rfViewRef.current} regionId={focus} turn={dnRound} onCommit={rfCommit} onChoose={rfChoose} onFund={v101WorldEntryGate(gameState, gameSettings, 'faction_fund').allowed ? rfFund : undefined} fundPlanFor={isV101Match(gameState) && v101WorldEntryGate(gameState, gameSettings, 'faction_fund').allowed ? rfFundPlanFor : undefined} onFundAmount={isV101Match(gameState) ? rfFundAmount : undefined} onAsk={q => void submitIntelligenceQuery(q)} /></>}
                     />
                     {nsState && (
                       <OptionalSurfaceBoundary surface="National region networks">
@@ -262469,7 +262760,7 @@ function dispatchGameSettingsChange(
                           <div>{selectedPreviewActiveEvent ? `Event: ${selectedPreviewActiveEvent.name}` : 'No active event'}</div>
                         </div>
                       </div>
-                      <div className="mt-3 space-y-2"><V9RegionContextPanel ctx={v9RegionContextFor(selectedPreviewRegionCode)} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onContracts={isFirstRunVisible(wp8State, 'advanced') ? () => updateUiState({ showRegionalContractsModal: true }) : undefined} onNegotiate={isFirstRunVisible(wp8State, 'diplomacy') ? () => updateUiState({ showAiRivalryModal: true }) : undefined} more={<><LivingRegionCard view={lrViewRef.current} regionId={selectedPreviewRegionCode} onAsk={q => void submitIntelligenceQuery(q)} /><RegionStakeholdersPanel view={rfViewRef.current} regionId={selectedPreviewRegionCode} turn={dnRound} onCommit={rfCommit} onChoose={rfChoose} onFund={rfFund} onAsk={q => void submitIntelligenceQuery(q)} /></>} /></div>
+                      <div className="mt-3 space-y-2"><V9RegionContextPanel ctx={v9RegionContextFor(selectedPreviewRegionCode)} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onContracts={isFirstRunVisible(wp8State, 'advanced') && v101WorldEntryGate(gameState, gameSettings, 'region_contracts').allowed ? () => updateUiState({ showRegionalContractsModal: true }) : undefined} contractsOffReason={isFirstRunVisible(wp8State, 'advanced') ? v101WorldEntryGate(gameState, gameSettings, 'region_contracts').reason : null} onNegotiate={isFirstRunVisible(wp8State, 'diplomacy') ? () => updateUiState({ showAiRivalryModal: true }) : undefined} more={<><LivingRegionCard view={lrViewRef.current} regionId={selectedPreviewRegionCode} onAsk={q => void submitIntelligenceQuery(q)} /><RegionStakeholdersPanel view={rfViewRef.current} regionId={selectedPreviewRegionCode} turn={dnRound} onCommit={rfCommit} onChoose={rfChoose} onFund={v101WorldEntryGate(gameState, gameSettings, 'faction_fund').allowed ? rfFund : undefined} fundPlanFor={isV101Match(gameState) && v101WorldEntryGate(gameState, gameSettings, 'faction_fund').allowed ? rfFundPlanFor : undefined} onFundAmount={isV101Match(gameState) ? rfFundAmount : undefined} onAsk={q => void submitIntelligenceQuery(q)} /></>} /></div>
                     </div>
                     <div className="flex flex-col gap-2">
                       <button
@@ -270377,11 +270668,14 @@ function dispatchGameSettingsChange(
   // Regional Contracts Modal Drawer Component
   const renderRegionalContractsModal = () => {
     if (!uiState.showRegionalContractsModal) return null;
+    // V10.1 (SECTION 20BI): a V10.1 match with contracts switched off answers "switched off" instead of opening a working screen.
+    const v101ContractsGate = v101WorldEntryGate(gameState, gameSettings, 'contracts_modal');
+    if (!v101ContractsGate.allowed) return <V101WorldSwitchedOffCard title="Regional Contracts" reason={v101ContractsGate.reason || ''} zIndex={globalUISurfaceManager.getZIndex("regional_contracts_modal")} onClose={() => updateUiState({ showRegionalContractsModal: false })} />;
     const contracts = listRegionalContracts(gameState);
     const activeContracts = contracts.filter((c: any) => c.status === 'active');
     // Living Regions ranks relevance only (the contract system still decides what exists and what it pays).
     // Faction priorities (issuer influence, open requests) add to the regional relevance — ranking only.
-    const availableContracts = contracts.filter((c: any) => c.status === 'available').map((c: any, i: number) => ({ c, i, rel: lrContractRelevance(lrState, c).score + rfContractRelevance(rfState, c, rfPlayerId).score, sel: lrFocusRegion && (c.issuingRegionId || c.regionId) === lrFocusRegion ? 1 : 0 })).sort((a: any, b: any) => b.sel - a.sel || b.rel - a.rel || a.i - b.i).map((x: any) => x.c); // V9: the selected region's contracts first (selection context carries across screens)
+    const availableContracts = contracts.filter((c: any) => c.status === 'available').map((c: any, i: number) => ({ c, i, rel: lrContractRelevance(lrState, c).score + rfContractRelevance(rfState, c, rfPlayerId, { relationshipTerm: isV101Match(gameState) }).score, /* V10.1 (SECTION 20BI): a V10.1 match adds the bounded relationship term */ sel: lrFocusRegion && (c.issuingRegionId || c.regionId) === lrFocusRegion ? 1 : 0 })).sort((a: any, b: any) => b.sel - a.sel || b.rel - a.rel || a.i - b.i).map((x: any) => x.c); // V9: the selected region's contracts first (selection context carries across screens)
     const completedContracts = contracts.filter((c: any) => c.status === 'completed' || c.status === 'failed');
 
     return (
@@ -270552,6 +270846,9 @@ function dispatchGameSettingsChange(
   // Infrastructure Projects Modal Drawer Component
   const renderInfrastructureProjectsModal = () => {
     if (!uiState.showInfrastructureProjectsModal) return null;
+    // V10.1 (SECTION 20BI): a V10.1 match with infrastructure switched off answers "switched off" instead of opening a working screen.
+    const v101InfraGate = v101WorldEntryGate(gameState, gameSettings, 'infrastructure_modal');
+    if (!v101InfraGate.allowed) return <V101WorldSwitchedOffCard title="Infrastructure & Mega-Projects" reason={v101InfraGate.reason || ''} zIndex={globalUISurfaceManager.getZIndex("infrastructure_projects_modal")} onClose={() => updateUiState({ showInfrastructureProjectsModal: false })} />;
     // Projects are stored keyed by id (Record); older states may hold an array. Either way, list them.
     const projectStore: any = gameState.infrastructureProjects || [];
     const projects: any[] = Array.isArray(projectStore) ? projectStore : Object.values(projectStore);
