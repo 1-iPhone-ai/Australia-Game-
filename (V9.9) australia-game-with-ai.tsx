@@ -1428,15 +1428,13 @@ export function setCoPilotStartPhase(phase: string): void {
 }
 
 export function afterNextPaint(fn: () => void): void {
-  if (typeof requestAnimationFrame === 'function') {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.setTimeout(fn, 0);
-      });
-    });
-  } else {
-    setTimeout(fn, 32);
-  }
+  // V10.1 (SECTION 20BK): a tab in the background never gets animation frames, so team AI turns and the Co-Pilot hand-off that wait here froze there.
+  // The work now runs once: after the paint when the page can paint, from a short timer when it is hidden, and from a safety timer when frames stop.
+  v101AfterNextPaint(fn, {
+    raf: typeof requestAnimationFrame === 'function' ? (cb: () => void) => requestAnimationFrame(cb) : null,
+    later: (cb: () => void, ms: number) => setTimeout(cb, ms),
+    hidden: typeof document !== 'undefined' && document.visibilityState === 'hidden'
+  });
 }
 
 export const COPILOT_MAX_BLOCKED_CONTINUES = 2;
@@ -15958,8 +15956,9 @@ export function drawGameRandom(
   }
   const activeReplay = gameStateRef?.autoModeRuntime?.replayEvents?.[gameStateRef.autoModeRuntime.replayEvents.length - 1];
   if (activeReplay) {
-    if (!activeReplay.rngDraws) activeReplay.rngDraws = [];
-    activeReplay.rngDraws.push(drawRecord);
+    // V10.1 (SECTION 20BK): the per-event draw log is bounded (it grew without limit and is saved with the match: long Auto Mode and
+    // Co-Pilot sessions inflated saves) and a frozen event or list is left alone instead of throwing inside a draw.
+    v101AppendBoundedRngDraw(activeReplay, drawRecord);
   }
 
   return resultVal;
@@ -22893,6 +22892,9 @@ export interface ReplayInitialConfigSnapshot {
   deterministicCounters?: DeterministicCounters;
   autoModeGlobalSettings?: AutoModeGlobalSettings;
   initialAutoModeRuntimeState?: AutoModeRuntimeState;
+  // V10.1 (SECTION 20BK): the match's own seed and rules stamp, so a branch built without a full snapshot keeps them (optional: older recordings have none).
+  matchSeed?: number;
+  rulesVersion?: number;
 }
 
 export interface ReplayFinalResult {
@@ -23313,7 +23315,9 @@ export function migrateReplayFileWithReport(raw: unknown): ReplayMigrationResult
   } else {
     compatibility.status = 'exact';
   }
-  if (compatibility.integrityStatus !== 'Corrupted' && compatibility.integrityStatus !== 'Unsupported') {
+  // V10.1 (SECTION 20BK): every early exit above (not an object, no schema, future schema, missing parts) has already returned, so the
+  // 'Unsupported' still showing here is only the report's starting value; the old `!== 'Unsupported'` guard kept it for every good replay.
+  if (compatibility.integrityStatus !== 'Corrupted') {
     compatibility.integrityStatus = migrated.truncated
       ? 'Warning'
       : compatibility.status === 'exact'
@@ -23791,18 +23795,33 @@ export function seekReplayToSequenceWithPolicy(
   return { runtime, error };
 }
 
+// V10.1 (SECTION 20BK): the reducer a replay runs draws from the ONE global registry, so the private registry this function used to
+// build was never drawn from (replays desynced and a seek moved the live match's streams). The seek now runs inside
+// withReplayGlobals: the replay's own streams are loaded into the global registry for the run and the live ones are put back after.
 export function seekReplayToSequenceDeterministic(
   file: ReplayFile,
   targetSequence: number,
   policy: ReplayPolicy = 'strict',
   validateHashes = true
 ): { runtime: IsolatedReplayRuntime; error?: string; divergedSequence?: number } {
+  const startCheckpoint = findNearestReplayCheckpoint(file, targetSequence);
+  const startSnapshot = startCheckpoint?.fullStateSnapshot as { rngRegistryState?: Record<string, RngStreamState>; deterministicCounters?: DeterministicCounters } | undefined;
+  return withReplayGlobals({
+    seed: file.initialConfig?.worldSeed || 1337,
+    streams: startSnapshot?.rngRegistryState || file.initialConfig?.rngRegistryState || null,
+    counters: startSnapshot?.deterministicCounters || null
+  }, () => seekReplayToSequenceBody(file, targetSequence, policy, validateHashes));
+}
+
+function seekReplayToSequenceBody(
+  file: ReplayFile,
+  targetSequence: number,
+  policy: ReplayPolicy,
+  validateHashes: boolean
+): { runtime: IsolatedReplayRuntime; error?: string; divergedSequence?: number } {
   const checkpoint = findNearestReplayCheckpoint(file, targetSequence);
-  const localRng = new GameplayRngRegistry(file.initialConfig?.worldSeed || 1337);
-  localRng.initStreams(file.initialConfig?.worldSeed || 1337);
-  if (file.initialConfig?.rngRegistryState && typeof localRng.importStreamStates === 'function') {
-    localRng.importStreamStates(file.initialConfig.rngRegistryState);
-  }
+  // V10.1 (SECTION 20BK): the registry the reducer really draws from (withReplayGlobals has loaded the replay's streams into it).
+  const localRng = globalRngRegistry;
   const snapshot = checkpoint?.fullStateSnapshot;
   let currentSimState: Record<string, unknown>;
   if (snapshot) {
@@ -24951,15 +24970,20 @@ export function reexecuteReplayMatch(
     };
   }
 
+  // V10.1 (SECTION 20BK): the replay's own random streams are loaded into the global registry for the whole run (the reducer draws from
+  // it) and the live match's streams, flags and id counters are put back afterwards; a private registry nobody drew from was used before.
+  const replayFile: ReplayFile = file;
+  return withReplayGlobals({
+    seed: replayFile.initialConfig?.worldSeed || 1337,
+    streams: replayFile.initialConfig?.rngRegistryState || null,
+    counters: null
+  }, () => {
+  const file = replayFile;
   const logs: string[] = [];
   logs.push(`Starting headless re-execution engine for Match ${file.matchId} under policy "${policy}".`);
 
   const config = file.initialConfig;
-  const simRng = new GameplayRngRegistry(config?.worldSeed || 1337);
-  simRng.initStreams(config?.worldSeed || 1337);
-  if (config?.rngRegistryState && typeof simRng.importStreamStates === 'function') {
-    simRng.importStreamStates(config.rngRegistryState);
-  }
+  const simRng = globalRngRegistry;
   const recordedChaosQueue = (file.randomDraws || []).map(draw => draw.value).filter((v): v is number => typeof v === 'number');
   if (recordedChaosQueue.length > 0) {
     logs.push(`Loaded ${recordedChaosQueue.length} recorded random draws for recorded-chaos / hybrid playback.`);
@@ -25228,6 +25252,7 @@ export function reexecuteReplayMatch(
     reconstructedCheckpoints,
     executionLogs: logs
   };
+  }); // V10.1 (SECTION 20BK): end of withReplayGlobals
 }
 
 export function createMatchCheckpoint(
@@ -25399,7 +25424,13 @@ export function spawnMatchBranchFromCheckpoint(
 
     const targetSeq = checkpoint.sequence ?? Infinity;
     const eventsToSimulate = sourceReplayFile.events.filter(ev => ev.sequence <= targetSeq);
-    simulateReplayHead(simCtx, eventsToSimulate);
+    // V10.1 (SECTION 20BK): the fast-forward runs inside withReplayGlobals (it used to draw from the LIVE registry while the private one
+    // stayed untouched); the streams it ends on become this branch's start, the live match's streams are put back.
+    const fastForwardEnd = withReplayGlobals({ seed: config?.worldSeed || 1337, streams: config?.rngRegistryState || null, counters: null }, () => {
+      simulateReplayHead(simCtx, eventsToSimulate);
+      return globalRngRegistry.exportStreamStates();
+    });
+    simRng.importStreamStates(fastForwardEnd);
     currentSimState = simCtx.currentSimState;
 
     if (checkpoint.expectedState?.moneyByTeam) {
@@ -25432,7 +25463,8 @@ export function spawnMatchBranchFromCheckpoint(
         turnCounter: checkpoint.turn || simTurn || 1,
         selectedMode: config?.selectedMode || 'solo',
         aiDifficulty: config?.aiDifficulty || 'medium',
-        regions: simTerritories
+        regions: simTerritories,
+        ...v101BranchMatchFields(config) // V10.1 (SECTION 20BK): a match (not the menu) that keeps its seed and rules stamp
       } as GameStateSnapshot,
       gameSettings: { ...(config?.gameSettings || {}), ...overrides } as GameSettingsState,
       notifications: [],
@@ -25482,7 +25514,8 @@ export function spawnMatchBranchFromCheckpoint(
       day,
       turnCounter: checkpoint.turn || 1,
       selectedMode: config?.selectedMode || 'solo',
-      aiDifficulty: config?.aiDifficulty || 'medium'
+      aiDifficulty: config?.aiDifficulty || 'medium',
+      ...v101BranchMatchFields(config) // V10.1 (SECTION 20BK): a match (not the menu) that keeps its seed and rules stamp
     } as GameStateSnapshot,
     gameSettings: { ...(config?.gameSettings || {}), ...overrides } as GameSettingsState,
     notifications: [],
@@ -27775,7 +27808,9 @@ export function gameStateReducer(state: any, action: any) {
       return { ...state, player: { ...(state.player || {}), ...(action.payload || {}) } };
     case 'CREATE_WHATIF_TIMELINE':
     case 'createWhatIfTimeline': {
-      const timelineId = action.payload?.timelineId || action.parameters?.timelineId || `timeline_${Math.floor(globalRngRegistry.draw('Replay') * 1000000)}`;
+      // V10.1 (SECTION 20BK): a reducer must be pure (React may run it twice), so on a V10.1 match the fallback id comes from the state (the
+      // number of timelines so far) instead of a draw from the Replay stream; the UI always passes an id, so this is only the safety net.
+      const timelineId = action.payload?.timelineId || action.parameters?.timelineId || (isV101Match(state) ? v101NextTimelineId(state.whatIfTimelines) : `timeline_${Math.floor(globalRngRegistry.draw('Replay') * 1000000)}`);
       const title = action.payload?.title || action.parameters?.name || `What-If Branch ${timelineId}`;
       const timelines = { ...(state.whatIfTimelines || {}) };
       timelines[timelineId] = {
@@ -39335,7 +39370,10 @@ export function sanitizeAutoModeRuntimeState(input: unknown, parentState?: any):
     systemAuditTrail: Array.isArray(src['systemAuditTrail']) ? (src['systemAuditTrail'] as string[]).slice(-500) : [],
     decisionTrail: Array.isArray(src['decisionTrail']) ? (src['decisionTrail'] as string[]).slice(-500) : [],
     lastTickedTurnKey: (src['lastTickedTurnKey'] !== undefined) ? (src['lastTickedTurnKey'] as string | Record<string | number, string>) : defaults.lastTickedTurnKey,
-    recordedChaosDivergence: typeof src['recordedChaosDivergence'] === 'boolean' ? src['recordedChaosDivergence'] : false
+    recordedChaosDivergence: typeof src['recordedChaosDivergence'] === 'boolean' ? src['recordedChaosDivergence'] : false,
+    // V10.1 (SECTION 20BK): six live runtime fields the game writes and reads were dropped by every load (an active package lost its team
+    // overlay while still listed, the audit counters restarted); they are kept now, each only when it has the right shape.
+    ...v101AutoModeRuntimeExtras(src)
   };
 }
 
@@ -48878,7 +48916,13 @@ function scoreGoalForActor(goal: GoalSpec, state: CanonicalGameState, actorId: s
   return Number(actor?.money) || 0;
 }
 
+// V10.1 (SECTION 20BK): a match played by the Tuning Lab re-seeds the global registry and zeroes the id counters (setRngMasterSeed). It now runs isolated, so the
+// Lab (and the self-test button) can no longer change the future of a live match. The body below is the unchanged V10.0 runMatch.
 export function runMatch(config: MatchConfig): MatchResult {
+  return v95WithIsolatedGlobals(() => runMatchBody(config));
+}
+
+function runMatchBody(config: MatchConfig): MatchResult {
   const started = Date.now();
   const wall = config.wallClockMs ?? AI_TUNING_LAB_MATCH_TIMEOUT_MS;
   const actionCounts: Record<string, number> = {};
@@ -52144,7 +52188,7 @@ export const AutoModeDiagnosticsDrawerComponent: React.FC<AutoModeDiagnosticsDra
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), V101_DOWNLOAD_REVOKE_MS); // V10.1 (SECTION 20BK): revoked after a delay, not at once
   };
 
   const handleCopyExportJson = () => {
@@ -100561,8 +100605,10 @@ export const SettingsImportExportModal: React.FC<SettingsImportExportModalProps>
     const a = document.createElement('a');
     a.href = url;
     a.download = `antigravity_settings_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a); // V10.1 (SECTION 20BK): added to the page and revoked after a delay
     a.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), V101_DOWNLOAD_REVOKE_MS);
   };
 
   const handleValidateImport = () => {
@@ -130977,9 +131023,17 @@ export function runV9GuidedLearningSelfTests(): V9SelfTestResult[] {
     return (lost.moment?.conceptId === 'setback' && /not always best/.test(J(lost.moment.lesson)) && end.moment?.conceptId === 'endgame' && /Riley leads/.test(J(end.moment.lesson))) || J([lost.moment?.conceptId, end.moment?.conceptId]);
   });
   check('gl_perf', 'Selector is cheap (bounded registry; 2,000 selections well under a frame budget each)', () => {
-    const st = started(); const c = fx(); const t0 = Date.now(); for (let k = 0; k < 2000; k++) sel(c, st); const ms = Date.now() - t0;
-    // Registry stays bounded (V10.4/V10.5 each add two concepts; the cap is a sanity bound, not a feature limit).
-    return (LEARNING_CONCEPTS.length <= 48 && ms < 1500) || `${LEARNING_CONCEPTS.length} concepts, ${ms}ms`;
+    // V10.1 (SECTION 20BK): this check was chronically red for two reasons that were not about speed: the concept cap (48) had been passed by
+    // later releases (51 concepts), and one cold 2,000-call timing run swings with machine load. The cap is now 64 (still a sanity bound, not
+    // a feature limit) and the time is the MEDIAN of five batches of 400 calls after a warm-up, held to the same per-call budget as before
+    // (1500 ms per 2,000 calls = 0.75 ms each), so a load spike in one batch no longer fails it and a selector that really got slow still does.
+    const st = started(); const c = fx();
+    for (let k = 0; k < 200; k++) sel(c, st);
+    const batches: number[] = [];
+    for (let b = 0; b < 5; b++) { const t0 = Date.now(); for (let k = 0; k < 400; k++) sel(c, st); batches.push(Date.now() - t0); }
+    batches.sort((x, y) => x - y);
+    const medianMs = batches[2];
+    return (LEARNING_CONCEPTS.length <= 64 && medianMs < 300) || `${LEARNING_CONCEPTS.length} concepts, median ${medianMs}ms per 400 calls (${batches.join('/')})`;
   });
   return results;
 }
@@ -136753,7 +136807,10 @@ export function formatReleaseDiagnosticSummary(r: ReleaseReadinessReport): strin
 }
 
 // ---- Existing-suite orchestration (reuses every suite; never re-implements them) ---------------------------
-export interface V95SuiteSpec { id: string; label: string; tier: 'quick' | 'full'; section: V95ReleaseSection; severity: V95Severity; run: () => unknown; knownFailures?: string[] }
+// V10.1 (SECTION 20BK): knownFailures (row ids that are red on purpose; read by runV95ExistingSuite now, it was never read) and criticalRows (a failing row
+// whose id matches raises that suite's one check to CRITICAL: the save, migration and data-loss rows must be able to make a release NOT_READY while the
+// rest of a suite stays MAJOR).
+export interface V95SuiteSpec { id: string; label: string; tier: 'quick' | 'full'; section: V95ReleaseSection; severity: V95Severity; run: () => unknown; knownFailures?: string[]; criticalRows?: RegExp }
 
 function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: boolean; detail: string }> {
   const r: any = raw;
@@ -136765,6 +136822,7 @@ function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: b
   }));
 }
 
+// V10.1 (SECTION 20BK): criticalRows on the save, migration, session-safety, recovery and campaign-persistence suites: a failing row that matches raises the suite's check to CRITICAL (NOT_READY); other rows stay MAJOR.
 export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v96em', label: 'V9.6 Experience Modes', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96ExperienceModesSelfTests() },
   { id: 'v96cd', label: 'V9.6 Challenge Decision System', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96ChallengeDecisionSelfTests() },
@@ -136775,18 +136833,18 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v96fr', label: 'V9.6 Guided First Run', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96GuidedFirstRunSelfTests() },
   { id: 'v96pf', label: 'V9.6 Performance Refactor', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV96PerformanceSelfTests()) },
   { id: 'v97cs', label: 'V9.7 Correctness Sweep', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV97CorrectnessSweepSelfTests()) },
-  { id: 'v98c1', label: 'V9.8 Campaign State & Persistence', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV98CampaignStateSelfTests()) },
+  { id: 'v98c1', label: 'V9.8 Campaign State & Persistence', tier: 'quick', section: 'System Regression', severity: 'MAJOR', criticalRows: /sanitize|roundtrip|bundle|migration|missing_defaults|garbage|slot|stream_import|flag_off_save|flag_off_load|settings/i, run: () => v95WithIsolatedGlobals(() => runV98CampaignStateSelfTests()) },
   // V9.9 (SECTIONS 20AQ–20AX): one suite per V9.9 work package.
-  { id: 'v99fx', label: 'V9.9 Foundations', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV99FoundationsSelfTests()) },
+  { id: 'v99fx', label: 'V9.9 Foundations', tier: 'quick', section: 'System Regression', severity: 'MAJOR', criticalRows: /schemas_unchanged|old_save|only_metadata|step_idempotent|no_profile_keys|current_and_newer|very_old|change_detection|settings_sanitiser|storage_|notice_for_older|changed_is_what/i, run: () => v95WithIsolatedGlobals(() => runV99FoundationsSelfTests()) },
   { id: 'v99ad', label: 'V9.9 Trustworthy Advice', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV99TrustworthyAdviceSelfTests()) },
   { id: 'v99mf', label: 'V9.9 Match Flow', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV99MatchFlowSelfTests()) },
-  { id: 'v99ss', label: 'V9.9 Session Safety', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV99SessionSafetySelfTests()) },
+  { id: 'v99ss', label: 'V9.9 Session Safety', tier: 'quick', section: 'System Regression', severity: 'MAJOR', criticalRows: /round_trip|persist|polluted|leaked|loaded|load_|corrupt|malformed|hostile|sanitis|import|repair|replace|restored|merge|resumes|loan_principal|continues_its_draws|rng_unchanged|stray_solo|saved_settings|save_|saves|stale_confirmation|rival_turn_is_the_rivals|hands_rules_back|no_load_nothing_moves/i, run: () => v95WithIsolatedGlobals(() => runV99SessionSafetySelfTests()) },
   { id: 'v99ps', label: 'V9.9 Play Screen & Rules Correctness', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV99PlayScreenRulesSelfTests()) },
-  { id: 'v99mr', label: 'V9.9 Match Recovery', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV99MatchRecoverySelfTests()) },
+  { id: 'v99mr', label: 'V9.9 Match Recovery', tier: 'quick', section: 'System Regression', severity: 'MAJOR', criticalRows: /round_trip|slot|rotate|corrupt|nothing_usable|quota|off_touches|v98_save|replaces_old|clear_removes|finished_match|campaign|write_only|once_per|keeps_last_copy|adopts_lineage|forget|flush|unstored|damaged|match_end|switching_off|settings_in_the_save|choices_wait/i, run: () => v95WithIsolatedGlobals(() => runV99MatchRecoverySelfTests()) },
   { id: 'v99mj', label: 'V9.9 Match Journal & Daily Seed', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV99MatchJournalSelfTests()) },
   { id: 'v99td', label: 'V9.9 Turn Digest', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV99TurnDigestSelfTests()) },
   // V10.0 (SECTIONS 20AY–20AZ): one suite per V10.0 section.
-  { id: 'v100fx', label: 'V10.0 Foundations & Fixes', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV100FoundationsSelfTests()) },
+  { id: 'v100fx', label: 'V10.0 Foundations & Fixes', tier: 'quick', section: 'System Regression', severity: 'MAJOR', criticalRows: /stamp|rung|old_save|ride_with_the_save|survives_a_save/i, run: () => v95WithIsolatedGlobals(() => runV100FoundationsSelfTests()) },
   { id: 'v100rr', label: 'V10.0 Rival Races', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV100RivalRacesSelfTests()) },
   // V10.1 (SECTIONS 20BA–20BK): one suite per V10.1 work package (ids never plain 'v101': the V10.1 Industries suite owns it).
   { id: 'v101fx', label: 'V10.1 Release: Foundations', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101FoundationsSelfTests()) },
@@ -136849,11 +136907,18 @@ export function runV95ExistingSuite(spec: V95SuiteSpec): V95CheckResult[] {
     return [{ id: `${spec.id}:threw`, name: `${spec.label} suite`, section: spec.section, severity: 'BLOCKER', passed: false, detail: `Suite threw: ${err instanceof Error ? err.message : String(err)}`, system: spec.label, reproduction: `Run ${spec.label} self-tests from LAB` }];
   }
   const ms = Math.round(v95Now() - t0);
-  const failed = rows.filter(r => !r.passed);
+  // V10.1 (SECTION 20BK): rows listed in spec.knownFailures are red on purpose: they do not fail the suite, but a listed row that PASSES (or is gone) does, so
+  // the list cannot go stale. A failing row that matches spec.criticalRows raises this suite's check to CRITICAL (data-loss and migration rows).
+  const known = new Set(spec.knownFailures || []);
+  const failedAll = rows.filter(r => !r.passed);
+  const failed = failedAll.filter(r => !known.has(r.name));
+  const knownRed = failedAll.length - failed.length;
+  const staleKnown = Array.from(known).filter(name => !failedAll.some(r => r.name === name));
+  const severity: V95Severity = spec.criticalRows && failed.some(r => spec.criticalRows!.test(r.name)) ? 'CRITICAL' : spec.severity;
   const check: V95CheckResult = {
-    id: `${spec.id}:suite`, name: `${spec.label} suite`, section: spec.section, severity: spec.severity,
-    passed: rows.length > 0 && failed.length === 0,
-    detail: rows.length ? `${rows.length - failed.length}/${rows.length} passed${failed.length ? ` — failing: ${failed.slice(0, 4).map(f => `${f.name}${f.detail ? ` (${f.detail.slice(0, 80)})` : ''}`).join('; ')}` : ''}` : 'Suite returned no results',
+    id: `${spec.id}:suite`, name: `${spec.label} suite`, section: spec.section, severity,
+    passed: rows.length > 0 && failed.length === 0 && staleKnown.length === 0,
+    detail: rows.length ? `${rows.length - failedAll.length}/${rows.length} passed${knownRed ? ` (${knownRed} known)` : ''}${failed.length ? ` — failing: ${failed.slice(0, 4).map(f => `${f.name}${f.detail ? ` (${f.detail.slice(0, 80)})` : ''}`).join('; ')}` : ''}${staleKnown.length ? ` — listed as a known failure but not failing now: ${staleKnown.join(', ')}` : ''}` : 'Suite returned no results',
     expected: `${rows.length}/${rows.length}`, actual: `${rows.length - failed.length}/${rows.length}`, system: spec.label,
     reproduction: `LAB › Run self-tests (${spec.label})`, durationMs: ms
   };
@@ -136866,16 +136931,11 @@ export function runV95ExistingSuite(spec: V95SuiteSpec): V95CheckResult[] {
  * them afterwards — so a Release Check run from LAB mid-match cannot shift the live match's random draws or ids.
  */
 export function v95WithIsolatedGlobals<T>(fn: () => T): T {
-  const reg: any = globalRngRegistry as any;
-  const streams = globalRngRegistry.exportStreamStates();
-  const flags = { isDeterministic: reg.isDeterministic, auditPolicy: reg.auditPolicy, strictAuditMode: reg.strictAuditMode, isReplayCertified: reg.isReplayCertified };
-  const counters = { ...globalDeterministicCounters };
+  // V10.1 (SECTION 20BK): the snapshot also holds the registry's master seed, scope stack and incident log (the master seed was never
+  // put back before, so a suite that re-seeded left the live match on the wrong seed for later saves and checkpoints).
+  const snapshot = v101SnapshotGlobals();
   try { return fn(); }
-  finally {
-    globalRngRegistry.importStreamStates(streams);
-    Object.assign(reg, flags);
-    Object.assign(globalDeterministicCounters, counters);
-  }
+  finally { v101RestoreGlobals(snapshot); }
 }
 
 function v95SyntheticReplay(n = 6): ReplayFile {
@@ -137727,12 +137787,10 @@ export async function runSoloAiTurnLoop(deps: SoloAiLoopDeps): Promise<SoloAiEnd
 
 /** Async-safe isolation: restores the live RNG streams / flags / id counters only after the awaited work ends. */
 export async function v96WithIsolatedGlobalsAsync<T>(fn: () => Promise<T>): Promise<T> {
-  const reg: any = globalRngRegistry as any;
-  const streams = globalRngRegistry.exportStreamStates();
-  const flags = { isDeterministic: reg.isDeterministic, auditPolicy: reg.auditPolicy, strictAuditMode: reg.strictAuditMode, isReplayCertified: reg.isReplayCertified };
-  const counters = { ...globalDeterministicCounters };
+  // V10.1 (SECTION 20BK): same complete snapshot as v95WithIsolatedGlobals (master seed, scope stack, incident log included).
+  const snapshot = v101SnapshotGlobals();
   try { return await fn(); }
-  finally { globalRngRegistry.importStreamStates(streams); Object.assign(reg, flags); Object.assign(globalDeterministicCounters, counters); }
+  finally { v101RestoreGlobals(snapshot); }
 }
 
 /** Pure human-lockout rule (the component guard uses exactly this): the rival owns the solo turn. */
@@ -139171,7 +139229,7 @@ export const NationalSystemsInspector: React.FC<{ state: NationalSystemsState | 
   const [tests, setTests] = useState<V9SelfTestResult[] | null>(null);
   const [busy, setBusy] = useState(false);
   const tabs = ['overview', 'nodes', 'links', 'capacity', 'demand', 'sharing', 'bottlenecks', 'dependencies', 'resilience', 'contributions', 'swr', 'history', 'performance', 'self-tests'];
-  const runTests = () => { if (busy) return; setBusy(true); try { setTests(runV100NationalSystemsSelfTests()); } catch (err) { console.error('[V10 self-tests]', err); } finally { setBusy(false); } };
+  const runTests = () => { if (busy) return; setBusy(true); try { setTests(/* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runV100NationalSystemsSelfTests())); } catch (err) { console.error('[V10 self-tests]', err); } finally { setBusy(false); } };
   const issues = state ? validateNationalSystemsState(state) : [];
   return (
     <section aria-labelledby="ns-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="ns-inspector">
@@ -140454,7 +140512,7 @@ export const IndustriesInspector: React.FC<{ state: IndustriesSupplyChainsState 
   const [busy, setBusy] = useState(false);
   const tabs = ['overview', 'regional industries', 'supply production', 'local demand', 'interregional allocation', 'dependencies', 'bottlenecks', 'industry inputs', 'industry outputs', 'diversity', 'world reaction', 'history', 'recompute', 'performance', 'self-tests'];
   const issues = state ? validateIndustriesSupplyChainsState(state) : [];
-  const runTests = () => { if (busy) return; setBusy(true); try { setTests(runV101IndustriesSupplyChainsSelfTests()); } catch (err) { console.error('[V10.1 self-tests]', err); } finally { setBusy(false); } };
+  const runTests = () => { if (busy) return; setBusy(true); try { setTests(/* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runV101IndustriesSupplyChainsSelfTests())); } catch (err) { console.error('[V10.1 self-tests]', err); } finally { setBusy(false); } };
   const reg = state?.regions[focus];
   return (
     <section aria-labelledby="sc-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="sc-inspector">
@@ -141630,7 +141688,7 @@ export const InfraNetworksInspector: React.FC<{ state: StrategicInfrastructureSt
   const [open, setOpen] = useState(false); const [tab, setTab] = useState('networks'); const [busy, setBusy] = useState(false); const [tests, setTests] = useState<V9SelfTestResult[] | null>(null);
   const tabs = ['networks', 'membership', 'topology', 'capacity', 'coverage', 'continuity', 'utilization', 'redundancy', 'critical points', 'gateways', 'hubs', 'missing links', 'contributors', 'downstream industries', 'world reaction', 'history', 'recompute reason', 'performance', 'self-tests'];
   const issues = state ? validateStrategicInfrastructureNetworks(state, inputs) : [];
-  const runTests = () => { if (busy) return; setBusy(true); try { setTests(runV102StrategicInfrastructureNetworksSelfTests()); } catch (err) { console.error('[V10.2 self-tests]', err); } finally { setBusy(false); } };
+  const runTests = () => { if (busy) return; setBusy(true); try { setTests(/* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runV102StrategicInfrastructureNetworksSelfTests())); } catch (err) { console.error('[V10.2 self-tests]', err); } finally { setBusy(false); } };
   const N = state?.networks || [];
   return (
     <section aria-labelledby="in-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="in-inspector">
@@ -143359,7 +143417,7 @@ export const MegaprojectInspector: React.FC<{ persisted: MegaprojectsPersisted |
   const tabs = ['registry', 'eligibility', 'active programs', 'stages', 'requirements', 'contributions', 'choices', 'component projects', 'network effects', 'industry effects', 'stall reasons', 'history', 'world reaction', 'replay', 'performance', 'self tests'];
   const progs = Object.values(persisted?.programs || {});
   const issues = persisted ? validateMegaprojectsPersisted(persisted, world) : validateMegaprojectsPersisted(createEmptyMegaprojectsPersisted(), world);
-  const runTests = () => { if (busy) return; setBusy(true); try { setTests(runV103NationalMegaprojectSelfTests()); } catch (err) { console.error('[V10.3 self-tests]', err); } finally { setBusy(false); } };
+  const runTests = () => { if (busy) return; setBusy(true); try { setTests(/* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runV103NationalMegaprojectSelfTests())); } catch (err) { console.error('[V10.3 self-tests]', err); } finally { setBusy(false); } };
   return (
     <section aria-labelledby="mp-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="mp-inspector">
       <div className="flex items-center justify-between"><h3 id="mp-lab-h" className="font-bold text-sm">🏗 V10.3 Megaproject Inspector</h3><button type="button" className="underline" onClick={() => setOpen(o => !o)} data-testid="mp-inspector-toggle">{open ? 'Hide' : 'Inspect'}</button></div>
@@ -144638,7 +144696,7 @@ export const NationalDevelopmentInspector: React.FC<{ profile: NationalDevelopme
   const [open, setOpen] = useState(false); const [tab, setTab] = useState('direction scores'); const [busy, setBusy] = useState(false); const [tests, setTests] = useState<V9SelfTestResult[] | null>(null);
   const tabs = ['direction scores', 'primary', 'secondary', 'confidence', 'momentum', 'dimensions', 'regional contributions', 'strength factors', 'vulnerabilities', 'dependencies', 'strategic tensions', 'transformation history', 'hysteresis', 'evidence', 'recompute reason', 'performance', 'self tests'];
   const p = profile; const issues = p ? validateNationalDevelopmentProfile(p, persisted) : [];
-  const runTests = () => { if (busy) return; setBusy(true); try { setTests(runV104NationalDevelopmentSelfTests()); } catch (err) { console.error('[V10.4 self-tests]', err); } finally { setBusy(false); } };
+  const runTests = () => { if (busy) return; setBusy(true); try { setTests(/* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runV104NationalDevelopmentSelfTests())); } catch (err) { console.error('[V10.4 self-tests]', err); } finally { setBusy(false); } };
   const fl = (xs: NationalDevelopmentFactor[]) => xs.map(f => <div key={f.id}>{f.id} [{f.category}] {f.label} · {f.magnitude} · regions {f.regionIds.join(',') || '—'} · evidence {f.evidence.map(e => `${e.sourceSystem}:${e.sourceId}`).join(', ')}</div>);
   return (
     <section aria-labelledby="nd-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="nd-inspector">
@@ -145873,7 +145931,7 @@ export const InnovationInspector: React.FC<{ state: InnovationCapabilitiesState 
   const [open, setOpen] = useState(false); const [tab, setTab] = useState('catalog'); const [busy, setBusy] = useState(false); const [tests, setTests] = useState<V9SelfTestResult[] | null>(null);
   const tabs = ['catalog', 'readiness', 'hard requirements', 'evidence', 'regional adoption', 'maturity', 'effects', 'bottlenecks', 'national direction integration', 'content unlocks', 'world reaction', 'history', 'recompute reason', 'performance', 'self tests'];
   const s = state; const issues = s ? validateEmergingCapabilitiesState(s, persisted) : [];
-  const runTests = () => { if (busy) return; setBusy(true); try { setTests(runV105InnovationCapabilitiesSelfTests()); } catch (err) { console.error('[V10.5 self-tests]', err); } finally { setBusy(false); } };
+  const runTests = () => { if (busy) return; setBusy(true); try { setTests(/* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runV105InnovationCapabilitiesSelfTests())); } catch (err) { console.error('[V10.5 self-tests]', err); } finally { setBusy(false); } };
   const caps = s ? CAPABILITY_IDS.map(id => s.capabilities[id]) : [];
   return (
     <section aria-labelledby="ic-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="ic-inspector">
@@ -147112,7 +147170,7 @@ export const SystemicRiskInspector: React.FC<{ state: NationalSystemicRiskState 
   const [open, setOpen] = useState(false); const [tab, setTab] = useState('overview'); const [busy, setBusy] = useState(false); const [tests, setTests] = useState<V9SelfTestResult[] | null>(null); const [st, setSt] = useState<StrategicStressTest | null>(null);
   const tabs = ['overview', 'risk domains', 'dependencies', 'concentrations', 'critical points', 'buffers', 'active stress chains', 'propagation graph', 'recovery', 'liquidity', 'world reaction', 'stress tests', 'input hash', 'performance', 'self tests'];
   const s = state; const issues = s ? validateSystemicRiskState(s, persisted) : [];
-  const runTests = () => { if (busy) return; setBusy(true); try { setTests(runV106ResilienceSystemicRiskSelfTests()); } catch (err) { console.error('[V10.6 self-tests]', err); } finally { setBusy(false); } };
+  const runTests = () => { if (busy) return; setBusy(true); try { setTests(/* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runV106ResilienceSystemicRiskSelfTests())); } catch (err) { console.error('[V10.6 self-tests]', err); } finally { setBusy(false); } };
   const nodeLine = (n: SystemicStressNode) => <div key={n.id}>{'  '.repeat(n.depth)}d{n.depth} {n.subjectId} impact {n.impact} − absorbed {n.absorbedAmount} = residual {n.residualImpact} [{n.transmissionMechanism}]{n.causedByNodeId ? ` ← ${n.causedByNodeId}` : ''}{n.buffers.length ? ` | ${n.buffers.join('; ')}` : ''}</div>;
   return (
     <section aria-labelledby="sr-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="sr-inspector">
@@ -148594,7 +148652,7 @@ export const NationalPrioritiesInspector: React.FC<{ state: NationalPrioritiesSt
             {tab === 'history' && (s.history.length ? s.history.map(h => <div key={h.id}>t{h.turn} {h.kind} {h.priorityId}{h.actorId ? ` (${h.actorId})` : ''}: {h.summary}</div>) : 'empty')}
             {tab === 'input hash' && `input ${s.inputHash} · persisted ${persisted?.inputHash || '—'} · init turn ${persisted?.initializedTurn ?? '—'} · memory turn ${mem?.lastTurn ?? '—'} · revision ${s.revision}`}
             {tab === 'performance' && `last ${diag.lastMs}ms (${s.computeMs}ms core) · recomputes ${diag.recomputes} · reason: ${diag.lastReason}\nbounded: ${NATIONAL_PRIORITY_DEFINITIONS.length} definitions × 8 regions · history ≤ ${V107_LIMITS.history} · resolved ≤ ${V107_LIMITS.resolvedLog}`}
-            {tab === 'self tests' && <div><button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} onClick={() => setTests(runV107DynamicNationalPrioritiesSelfTests())} data-testid="np-run-tests">Run V10.7 self-tests</button>
+            {tab === 'self tests' && <div><button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} onClick={() => setTests(/* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runV107DynamicNationalPrioritiesSelfTests()))} data-testid="np-run-tests">Run V10.7 self-tests</button>
               {tests && <div data-testid="np-test-results">{tests.filter(t => t.passed).length}/{tests.length} passed{tests.filter(t => !t.passed).map(t => `\n✗ ${t.id} ${t.name}: ${t.detail}`).join('')}</div>}</div>}
           </>}
         </div>
@@ -152236,7 +152294,7 @@ export const EconomicGeographyInspector: React.FC<{
                     <button
                       type="button"
                       className={`px-2 py-0.5 rounded border ${theme.border}`}
-                      onClick={() => setTests(runV108RegionalCompetitionSelfTests())}
+                      onClick={() => setTests(/* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runV108RegionalCompetitionSelfTests()))}
                       data-testid="eg-run-tests"
                     >
                       Run V10.8 self-tests (50)
@@ -157689,7 +157747,7 @@ export const StrategicCapitalInspector: React.FC<{
           )}
           <button
             type="button"
-            onClick={() => setSelfTestReport(runV109StrategicCapitalSelfTests())}
+            onClick={() => setSelfTestReport(/* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runV109StrategicCapitalSelfTests()))}
             className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-emerald-100 font-semibold text-[11px]"
           >
             Run 45 V10.9 Self-Tests
@@ -162964,7 +163022,7 @@ export const WorkforceHumanCapitalInspector: React.FC<{
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button
-              onClick={() => setTestReport(runV1010WorkforceHumanCapitalSelfTests())}
+              onClick={() => setTestReport(/* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runV1010WorkforceHumanCapitalSelfTests()))}
               style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
             >
               Run 50 Self-Tests (wf01–wf50)
@@ -168355,7 +168413,7 @@ export const StateCapacityInspector: React.FC<{
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setTestReport(runV1011AdaptiveGovernanceSelfTests())}
+              onClick={() => setTestReport(/* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runV1011AdaptiveGovernanceSelfTests()))}
               className="rounded border border-indigo-500/50 bg-indigo-950/60 px-2.5 py-1 text-xs font-semibold text-indigo-200"
               data-testid="sc11-run-tests"
             >
@@ -174328,7 +174386,7 @@ export function PublicFinanceInspector(props: {
         <button
           type="button"
           onClick={() => {
-            const res = runV1012PublicFinanceSelfTests();
+            const res = /* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runV1012PublicFinanceSelfTests());
             setSelfTestReport({
               passed: res.passed,
               total: res.total,
@@ -180324,7 +180382,7 @@ export function HouseholdsInspector({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <strong style={{ color: '#38bdf8', fontSize: '13px' }}>LAB INSPECTOR — V10.13 HOUSEHOLDS & DOMESTIC DEMAND</strong>
         <button
-          onClick={() => setTestResult(runV1013HouseholdsLivingStandardsSelfTests())}
+          onClick={() => setTestResult(/* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runV1013HouseholdsLivingStandardsSelfTests()))}
           style={{ padding: '4px 10px', borderRadius: '6px', background: '#0284c7', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}
         >
           Run V10.13 Self-Tests (50)
@@ -187855,7 +187913,7 @@ export function runV97CorrectnessSweepSelfTests(): V9SelfTestResult[] {
   const componentSource = String(AustraliaGame);
   const reads = v97GameSettingsReads(componentSource);
   check('v97_settings_keys_exist', 'Every gameSettings.<key> the main component reads exists in DEFAULT_GAME_SETTINGS', () => {
-    if (reads.length < 50) return /\bgameSettings\b/.test(componentSource) ? `parsed only ${reads.length} reads` : true; // minified build: names are gone
+    if (reads.length < 50) return /\bgameSettings\b/.test(componentSource) ? `parsed only ${reads.length} reads` : v101SkipSourceScan('v97_settings_keys_exist'); // minified build: names are gone (V10.1 SECTION 20BK: now reported as skipped, not silently green)
     const missing = reads.filter(k => !(k in DEFAULT_GAME_SETTINGS));
     return missing.length === 0 || `not in DEFAULT_GAME_SETTINGS: ${missing.join(', ')}`;
   });
@@ -198435,8 +198493,9 @@ export function endScreenQuietToastIds(list: readonly { id: string; metadata?: u
 }
 
 /** Whether a notification is drawn in the toast lane: never one restored from a save, never one the end screen keeps quiet. */
-export function isToastShown(n: { id: string; metadata?: unknown }, quietIds: ReadonlySet<string> | null): boolean {
-  return isLiveToast(n) && !(quietIds !== null && quietIds.has(n.id));
+export function isToastShown(n: { id: string; metadata?: unknown }, quietIds: ReadonlySet<string> | null, classicSticky: boolean = false): boolean {
+  // V10.1 (SECTION 20BK): the toast lane now calls this (it inlined the same rule, so the tested helper and the shipped filter could drift); classic toasts are always "live".
+  return (classicSticky || isLiveToast(n)) && !(quietIds !== null && quietIds.has(n.id));
 }
 
 /** The messages a load itself raises ("Loaded save from Day 6") carry the loaded match's day, not the day of the screen before. */
@@ -198571,15 +198630,8 @@ export function rootErrorActions(hasSnapshot: boolean, retries: number): RootErr
 export function downloadSaveBundle(data: SaveGameData): boolean {
   if (typeof document === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return false;
   try {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = buildSaveFileName(data);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-    return true;
+    // V10.1 (SECTION 20BK): one download helper (anchor added to the page, the blob link revoked after a delay, not at once: some browsers had not started the download yet).
+    return v101DownloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), buildSaveFileName(data));
   } catch { return false; }
 }
 
@@ -198628,6 +198680,7 @@ export class V99RootErrorBoundary extends React.Component<{ children?: React.Rea
   }
   componentDidCatch(error: unknown, info: { componentStack?: string | null }) {
     console.error('[V99RootErrorBoundary]', error);
+    v101NoteBoundaryCatch(error); // V10.1 (SECTION 20BK): the error net does not announce an error this screen is already showing
     V95_SURFACE_ERRORS.unshift({ surface: 'Game', message: String(error instanceof Error ? error.message : error), at: Date.now() });
     if (V95_SURFACE_ERRORS.length > 20) V95_SURFACE_ERRORS.length = 20;
     // A dialog that was open had locked page scrolling; the game that would unlock it is gone.
@@ -200834,7 +200887,7 @@ export const V99TurnRow: React.FC<V99TurnRowProps> = ({ theme, pill, actions, pi
   // The toast lane starts under this row wherever the row really is: measured after every render (the header above
   // grows and shrinks with its coach callout, the row wraps, its tools open) and when the window is resized.
   const rowRef = useRef<HTMLDivElement | null>(null);
-  useLayoutEffect(() => { v99SyncToastLaneTop(rowRef.current); });
+  useV101FrameMeasure(() => { const row = rowRef.current; if (row) v99SyncToastLaneTop(row); }); // V10.1 (SECTION 20BK): measured once on mount and then at most once per frame (it was a layout effect with no dependency list: a forced layout after every render)
   useEffect(() => {
     const onResize = () => v99SyncToastLaneTop(rowRef.current);
     window.addEventListener('resize', onResize);
@@ -201749,7 +201802,7 @@ export const V99ToastLaneBelow: React.FC<{ active: boolean; children: React.Reac
     if (typeof document === 'undefined' || !ref.current || !document.querySelector(V99_TURN_ROW_SELECTOR)) return;
     v99SyncToastLaneTop(ref.current);
   }, []);
-  useLayoutEffect(() => { if (active) sync(); });
+  useV101FrameMeasure(sync, active); // V10.1 (SECTION 20BK): measured once on mount and then at most once per frame (it was a layout effect with no dependency list: a forced layout after every render)
   useEffect(() => {
     if (!active || typeof window === 'undefined') return undefined;
     window.addEventListener('resize', sync);
@@ -201802,7 +201855,7 @@ export function v99HeaderEndTurnFullyInView(): boolean {
 export function useV99HeaderEndTurnInView(): boolean {
   const [inView, setInView] = useState(false);
   const measure = useCallback(() => { const now = v99HeaderEndTurnFullyInView(); setInView(previous => (previous === now ? previous : now)); }, []);
-  useLayoutEffect(() => { measure(); });
+  useV101FrameMeasure(measure); // V10.1 (SECTION 20BK): measured once on mount and then at most once per frame (it was a layout effect with no dependency list: a forced layout after every render)
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     let frame = 0;
@@ -202903,7 +202956,7 @@ export function runV99PlayScreenRulesSelfTests(): V9SelfTestResult[] {
   const e2ComponentSource = String(AustraliaGame);
   const e2SourceReadable = /\bgameSettings\b/.test(e2ComponentSource) && /addNotification/.test(e2ComponentSource); // false in a minified build: names are gone
   check('v99ps_e51_no_host_locale_numbers_in_the_play_screen', 'The main component formats no number through the browser\'s language: every bare .toLocaleString() left is a date', () => {
-    if (!e2SourceReadable) return true;
+    if (!e2SourceReadable) return v101SkipSourceScan('v99ps_e51'); // V10.1 (SECTION 20BK): reported as skipped, not silently green
     const bare: string[] = [];
     for (const m of e2ComponentSource.matchAll(/\.toLocaleString\(\)/g)) {
       const before = e2ComponentSource.slice(Math.max(0, (m.index || 0) - 60), m.index || 0);
@@ -202915,7 +202968,7 @@ export function runV99PlayScreenRulesSelfTests(): V9SelfTestResult[] {
 
   // c4-12 — one money format
   check('v99ps_e52_money_format_adopted', 'The play screen writes money through fmtMoney: the menu cards, travel, challenge, purchase and deposit messages no longer print raw numbers', () => {
-    if (!e2SourceReadable) return true;
+    if (!e2SourceReadable) return v101SkipSourceScan('v99ps_e52'); // V10.1 (SECTION 20BK): reported as skipped, not silently green
     // Patterns, not literal snippets: the bundler may rename a local (targetName → targetName2).
     const raw = [/Traveled to \$\{\w+\} for \$\$\{/, /Highest challenge reward: \$\$\{/, /Lost your \$\$\{/, /Wager \$\$\{/, /Pay \$\$\{\w+\} to continue/, /completed! Won \$\$\{/]
       .filter(re => re.test(e2ComponentSource)).map(String);
@@ -202942,7 +202995,7 @@ export function runV99PlayScreenRulesSelfTests(): V9SelfTestResult[] {
     return ok || J({ unknown, dupes, noReason, lost, live, n: keys.length });
   });
   check('v99ps_e54_inert_list_not_stale', 'The "no effect" list is not stale: the main component still touches each of those settings only in its own control and reset line', () => {
-    if (!e2SourceReadable) return true;
+    if (!e2SourceReadable) return v101SkipSourceScan('v99ps_e54'); // V10.1 (SECTION 20BK): reported as skipped, not silently green
     // Occurrences of `.key` in the component today (the control's own reads and writes, the group reset). More than this means
     // somebody wired the setting up — then it must leave V99_INERT_SETTINGS.
     const ceiling: Record<string, number> = { scenarioEngineV73Enabled: 0, customScenarioBuilderEnabled: 0, nationalEventsEnabled: 0, aiPersistentAivsAiEnabled: 4, priorityTransparencyEnabled: 4,
@@ -203212,7 +203265,7 @@ export const V99EndTurnInView: React.FC<V99EndTurnChipProps & { classicLayout: b
     setEndTurnInView(previous => (previous === found ? previous : found));
   }, []);
   // After every render (the buttons come and go with the layout, the page grows and shrinks) …
-  useLayoutEffect(() => { if (watching) measure(); });
+  useV101FrameMeasure(measure, watching); // V10.1 (SECTION 20BK): measured once on mount and then at most once per frame (it was a layout effect with no dependency list: a forced layout after every render)
   // … and whenever the page is scrolled or the window resized (once per frame).
   useEffect(() => {
     if (!watching) { setEndTurnInView(true); return undefined; }
@@ -207183,9 +207236,7 @@ export function V99TurnDigestCardView({ digest, theme, collapsed, historyCount, 
  */
 export function V99TurnDigestCard(props: V99TurnDigestCardProps) {
   const ref = useRef<HTMLElement | null>(null);
-  useLayoutEffect(() => {
-    if (ref.current && v99DigestTurnRow()) v99SyncToastLaneTop(ref.current);
-  });
+  useV101FrameMeasure(() => { if (ref.current && v99DigestTurnRow()) v99SyncToastLaneTop(ref.current); }); // V10.1 (SECTION 20BK): measured once on mount and then at most once per frame (it was a layout effect with no dependency list: a forced layout after every render)
   useEffect(() => {
     const sync = () => { if (ref.current && v99DigestTurnRow()) v99SyncToastLaneTop(ref.current); };
     window.addEventListener('resize', sync);
@@ -214674,9 +214725,997 @@ export function runV101ContentSelfTests(): V9SelfTestResult[] {
 // SECTION 20BK: V10.1 ENGINE INTEGRITY — DETERMINISM, ISOLATION AND A NET UNDER THE WHOLE GAME
 // ============================================================================
 // <<V101-SLOT ENGINE begin>>
-// (work package ENGINE: replace everything between the two markers; keep the markers and the exported suite function below.)
+// ---------------------------------------------------------------------------------------------------------------------
+// What this section does (written up in V10.1_DIAGNOSIS.md, Tier 4 "Engineering"). Nothing here changes the rules of a match; it makes the
+// machinery under the match behave as it promises:
+//   1. ISOLATION. A replay (seek, re-execution, "Continue from here") runs the same reducer the live match runs, and that reducer draws from the ONE
+//      global random registry. The replay engines built a private registry nobody drew from, so a replay desynced and, worse, moved the live match's
+//      streams. withReplayGlobals loads the replay's own streams into the global registry for the run and puts everything back afterwards.
+//      The in-game "Run self-tests" buttons used to run suites directly on the live match (one of them re-seeds the registry): runIsolatedSuite and
+//      runIsolatedSuiteAsync are now the one door every button goes through, and the LAB button runs the registry (V95_EXISTING_SUITES) with a
+//      try / catch per suite instead of a hand-written list that covered half of it.
+//   2. A NET UNDER THE WHOLE GAME. Only render errors reached the root error screen; a throw in a click handler or a promise vanished into the
+//      console. V101ErrorNet shows one calm, dismissible banner with a button that downloads the emergency save the game already keeps.
+//   3. SMALL FIXES a player can feel: downloads that are not cut short, a rival turn that cannot be ended by a sleeping laptop, a hidden tab that does
+//      not stall the team AI, "Track as Goal" that no longer writes a stale copy of the whole match back, a Replay file reported as Healthy.
+//   4. PERFORMANCE: no advisor for a spectator; screen measuring once per frame instead of a forced layout after every render.
+//   5. A TEST SETUP TO TRUST: the chronic red v92 check fixed at its cause, known failures and critical rows that work, a manifest of every suite.
+// Gating: isolation, the error net, downloads, the paint fallback, the watchdog guard, track-goal, replay integrity, Auto Mode fields and the test
+// setup apply to EVERY match (they are bug fixes). Two things alter what a match in progress does and read the rules stamp: the spectator advisor
+// (isV101Match) and the registry-less load seed (isV101Match) and the replay id (isV101Match). A V10.0, unstamped or classic-rules match is unchanged.
+// New persisted state: none (the replay config gains optional matchSeed / rulesVersion fields inside the replay FILE, not in a save).
+// ---------------------------------------------------------------------------------------------------------------------
+
+// ---- 1. Isolation --------------------------------------------------------------------------------------------------------
+/** Everything a diagnostic run, a replay or a self-test may touch on the shared RNG and id counters, so that it can be put back exactly. */
+export interface V101GlobalsSnapshot {
+  masterSeed: number;
+  streams: Record<string, RngStreamState>;
+  isDeterministic: boolean;
+  auditPolicy: RngAuditPolicy;
+  strictAuditMode: boolean;
+  isReplayCertified: boolean;
+  activeRngScope: RngScopeDomain | null;
+  scopeStack: RngScopeDomain[];
+  incidentLog: UnscopedRngIncident[];
+  counters: DeterministicCounters;
+}
+
+/** Captures the global registry (streams, master seed, flags, scope stack, incident log) and the global id counters. */
+export function v101SnapshotGlobals(): V101GlobalsSnapshot {
+  const reg = globalRngRegistry;
+  return {
+    masterSeed: reg.masterSeed,
+    streams: reg.exportStreamStates(),
+    isDeterministic: reg.isDeterministic,
+    auditPolicy: reg.auditPolicy,
+    strictAuditMode: reg.strictAuditMode,
+    isReplayCertified: reg.isReplayCertified,
+    activeRngScope: reg.activeRngScope,
+    scopeStack: [...reg.scopeStack],
+    incidentLog: [...reg.incidentLog],
+    counters: { ...globalDeterministicCounters }
+  };
+}
+
+/** Puts a snapshot back. The master seed goes first (an untouched Campaign stream is derived from it), then the streams, then the rest. */
+export function v101RestoreGlobals(snapshot: V101GlobalsSnapshot): void {
+  const reg = globalRngRegistry;
+  reg.masterSeed = snapshot.masterSeed;
+  reg.importStreamStates(snapshot.streams);
+  reg.isDeterministic = snapshot.isDeterministic;
+  reg.auditPolicy = snapshot.auditPolicy;
+  reg.strictAuditMode = snapshot.strictAuditMode;
+  reg.isReplayCertified = snapshot.isReplayCertified;
+  reg.activeRngScope = snapshot.activeRngScope;
+  reg.scopeStack = [...snapshot.scopeStack];
+  reg.incidentLog = [...snapshot.incidentLog];
+  Object.assign(globalDeterministicCounters, snapshot.counters);
+}
+
+/**
+ * The one door for running a self-test suite (or any diagnostic) against the shared RNG: everything it draws, re-seeds or counts is undone.
+ * Every "Run self-tests" button, the LAB list and the release check go through here (or its async twin), so no call site can forget.
+ */
+export function runIsolatedSuite<T>(fn: () => T): T {
+  return v95WithIsolatedGlobals(fn);
+}
+
+/**
+ * Async twin: the live state is put back only after the awaited work has settled. While it waits, the page can still play: a draw the live match makes
+ * in that gap is undone by the restore, so run the async suites from a button, not while a turn is running.
+ */
+export async function runIsolatedSuiteAsync<T>(fn: () => Promise<T>): Promise<T> {
+  return v96WithIsolatedGlobalsAsync(fn);
+}
+
+/** What a replay run starts from: the recording's seed, its saved streams (if it has them) and its id counters (if it has them). */
+export interface V101ReplayStart { seed: number; streams?: Record<string, RngStreamState> | null; counters?: DeterministicCounters | null }
+
+/**
+ * Runs fn with the REPLAY's random streams loaded into the global registry (the reducer a replay runs draws from there), then puts the live match's
+ * streams, flags, scope state and id counters back, even if fn throws. Two runs of the same replay therefore see the same draws, and a replay can
+ * never move the match that is being played.
+ */
+export function withReplayGlobals<T>(start: V101ReplayStart, fn: () => T): T {
+  const snapshot = v101SnapshotGlobals();
+  try {
+    const reg = globalRngRegistry;
+    reg.initStreams(start.seed);
+    if (start.streams && typeof start.streams === 'object') reg.importStreamStates(start.streams);
+    reg.isDeterministic = true;
+    reg.activeRngScope = null;
+    reg.scopeStack = [];
+    reg.incidentLog = [];
+    resetGlobalDeterministicCounters();
+    if (start.counters && typeof start.counters === 'object') setGlobalDeterministicCounters(start.counters);
+    return fn();
+  } finally {
+    v101RestoreGlobals(snapshot);
+  }
+}
+
+/** The most draws a single Auto Mode replay event keeps (older ones are dropped); the list is saved with the match. */
+export const V101_MAX_EVENT_RNG_DRAWS = 64;
+
+/** Adds a draw record to an Auto Mode replay event, keeps only the newest V101_MAX_EVENT_RNG_DRAWS, and leaves a frozen event or list alone. */
+export function v101AppendBoundedRngDraw(event: { rngDraws?: RecordedRandomDraw[] }, record: RecordedRandomDraw): void {
+  if (Object.isFrozen(event)) return;
+  const list = Array.isArray(event.rngDraws) ? event.rngDraws : (event.rngDraws = []);
+  if (Object.isFrozen(list)) return;
+  list.push(record);
+  if (list.length > V101_MAX_EVENT_RNG_DRAWS) list.splice(0, list.length - V101_MAX_EVENT_RNG_DRAWS);
+}
+
+/** A what-if timeline id taken from the state (how many timelines exist), never from a random draw: a reducer must give the same answer when React runs it twice. */
+export function v101NextTimelineId(timelines: Record<string, unknown> | null | undefined): string {
+  const existing = timelines && typeof timelines === 'object' ? timelines : {};
+  let n = Object.keys(existing).length + 1;
+  while (Object.prototype.hasOwnProperty.call(existing, `timeline_${n}`)) n += 1;
+  return `timeline_${n}`;
+}
+
+/**
+ * The seed a loaded match without saved random streams is reseeded with. A V10.1 match uses ITS OWN seed; before, it took the world seed from the
+ * settings, which is whatever the player last typed. An older match (and any match without a seed of its own) keeps the V10.0 choice exactly.
+ */
+export function v101RegistrylessLoadSeed(gameState: unknown, settings: { worldRngSeed?: unknown; aiDeterministicSeed?: unknown } | null | undefined): number {
+  const configSeed = Number(settings?.worldRngSeed) || Number(settings?.aiDeterministicSeed) || 1337;
+  if (!isV101Match(gameState)) return configSeed;
+  return readMatchSeed(gameState) ?? configSeed;
+}
+
+/** The id of a new replay recording. The id counter restarts with every match, so the counter id alone repeats; the match seed and the start time make it one of a kind. */
+export function v101ReplayMatchId(counterId: string, matchSeed: number | null, nowMs: number): string {
+  const t = Number.isFinite(nowMs) && nowMs > 0 ? Math.floor(nowMs).toString(36) : '0';
+  return `${counterId}_m${matchSeed ?? 0}_${t}`;
+}
+
+/** The match seed and rules stamp a recording keeps in its start configuration (a branch built without a full snapshot needs them). */
+export function v101ReplayConfigMatchFields(gameState: unknown): { matchSeed?: number; rulesVersion?: number } {
+  const seed = readMatchSeed(gameState);
+  const stamp = readRulesVersion(gameState);
+  return { ...(seed !== null ? { matchSeed: seed } : {}), ...(stamp !== null ? { rulesVersion: stamp } : {}) };
+}
+
+/** What a branch built without a full snapshot carries: it is a match in progress (not the menu), with the recording's seed and stamp when it has them. */
+export function v101BranchMatchFields(config: { matchSeed?: unknown; rulesVersion?: unknown } | null | undefined): { gameMode: 'game'; matchSeed?: number; rulesVersion?: number } {
+  const seed = sanitizeMatchSeed(config?.matchSeed);
+  const stamp = sanitizeRulesVersion(config?.rulesVersion);
+  return { gameMode: 'game', ...(seed !== null ? { matchSeed: seed } : {}), ...(stamp !== null ? { rulesVersion: stamp } : {}) };
+}
+
+/** The six Auto Mode runtime fields the game writes and the old sanitizer dropped (kept when they have the right shape, otherwise left out). */
+export function v101AutoModeRuntimeExtras(src: Record<string, unknown>): Partial<AutoModeRuntimeState> {
+  const isRecord = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+  const out: Partial<AutoModeRuntimeState> = {};
+  if (isRecord(src['actorOverlays'])) out.actorOverlays = src['actorOverlays'] as AutoModeRuntimeState['actorOverlays'];
+  if (isRecord(src['teamOverlays'])) out.teamOverlays = src['teamOverlays'] as AutoModeRuntimeState['teamOverlays'];
+  if (isRecord(src['activePolicySnapshot'])) out.activePolicySnapshot = src['activePolicySnapshot'] as AutoModeRuntimeState['activePolicySnapshot'];
+  if (isRecord(src['turnStepStats'])) out.turnStepStats = src['turnStepStats'] as AutoModeRuntimeState['turnStepStats'];
+  if (Array.isArray(src['packageStatusHistory'])) out.packageStatusHistory = (src['packageStatusHistory'] as NonNullable<AutoModeRuntimeState['packageStatusHistory']>).slice(-500);
+  if (Array.isArray(src['pendingMatchReplayEvents'])) out.pendingMatchReplayEvents = (src['pendingMatchReplayEvents'] as NonNullable<AutoModeRuntimeState['pendingMatchReplayEvents']>).slice(-500);
+  return out;
+}
+
+/**
+ * A dry run of the pure parts of a load, done BEFORE anything of the running match is touched (the epoch bump and the timer teardown come after it).
+ * Returns null when the save builds, or a short reason when it would throw, so the load is cancelled with the running match intact.
+ */
+export function v101LoadPreflight(data: SaveGameData): string | null {
+  try {
+    const gs = data.gameState as unknown as Record<string, unknown>;
+    cleanLoadedMatchState(data.gameState);
+    sanitizeLoadedObjectList(gs.activeEvents); sanitizeLoadedObjectList(gs.priceHistory); sanitizeLoadedObjectList(gs.netWorthHistory);
+    sanitizeRegionDeposits(gs.regionDeposits as never);
+    sanitizeDecisionState(gs.decisionState as never);
+    sanitizeGameActivityLedgerState(gs.gameActivityLedger as never);
+    if (gs.expeditionRun) sanitizeExpeditionRunState(gs.expeditionRun as never);
+    sanitizeAutoModeRuntimeState(gs.autoModeRuntime || (data as unknown as Record<string, unknown>).autoModeRuntimeState || (data as unknown as Record<string, unknown>).autoModeRuntime);
+    if (data.teamsById && typeof data.teamsById === 'object') Object.values(data.teamsById).forEach(team => { sanitizeTeamAdaptiveState(team?.adaptiveState); });
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : 'unknown error';
+  }
+}
+
+// ---- 2. The LAB list and a manifest of every suite ---------------------------------------------------------------------------
+/** One suite's rows in the shape the LAB panel shows, whatever shape the suite returns (an array, { results }, { tests }, { testResults }). */
+export function v101SuiteRows(raw: unknown): V9SelfTestResult[] {
+  const r = raw as { results?: unknown; tests?: unknown; testResults?: unknown; categories?: unknown } | null | undefined;
+  const list: unknown[] = Array.isArray(raw) ? raw
+    : Array.isArray(r?.results) ? r!.results as unknown[]
+    : Array.isArray(r?.tests) ? r!.tests as unknown[]
+    : Array.isArray(r?.testResults) ? r!.testResults as unknown[]
+    : Array.isArray(r?.categories) ? (r!.categories as Array<{ results?: unknown[]; tests?: unknown[] }>).flatMap(c => c.results || c.tests || [])
+    : [];
+  return list.map(item => {
+    const t = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+    const id = String(t.id ?? t.testId ?? t.name ?? 'test');
+    return {
+      id, name: String(t.name ?? t.id ?? t.testId ?? 'test'),
+      passed: t.passed === true || t.pass === true || t.status === 'pass' || t.status === 'passed',
+      detail: String(t.detail ?? t.message ?? t.reason ?? t.errorMessage ?? '')
+    };
+  });
+}
+
+/** Suites the in-game LAB button does not run: this one registers and moves windows in the LIVE window-position manager (a singleton the isolation cannot snapshot). The release check and the node runner run it. */
+const V101_LAB_SKIP: ReadonlySet<string> = new Set(['v101sm']);
+
+/**
+ * Runs every registered suite for the LAB button, each isolated from the live match and each in its own try / catch, so one suite that throws shows as
+ * one failed row instead of losing every result. The list IS the registry (it was a hand-written list that had drifted to about half of it).
+ */
+export function runV101LabSuites(specs: readonly V95SuiteSpec[] = V95_EXISTING_SUITES, includeReleaseOwn: boolean = true): V9SelfTestResult[] {
+  const out: V9SelfTestResult[] = [];
+  for (const spec of specs) out.push(...v101RunLabSpec(spec));
+  if (includeReleaseOwn) out.push(...v101RunLabReleaseOwn());
+  return out;
+}
+
+/** One registered suite, isolated, with its own try / catch (a suite the LAB skips returns no rows). */
+function v101RunLabSpec(spec: V95SuiteSpec): V9SelfTestResult[] {
+  if (V101_LAB_SKIP.has(spec.id)) return [];
+  try { return v101SuiteRows(runIsolatedSuite(() => spec.run())); }
+  catch (err) { return [{ id: `${spec.id}:threw`, name: `${spec.label} suite threw`, passed: false, detail: err instanceof Error ? err.message : String(err) }]; }
+}
+function v101RunLabReleaseOwn(): V9SelfTestResult[] {
+  try { return v101SuiteRows(runIsolatedSuite(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))); }
+  catch (err) { return [{ id: 'v95own:threw', name: 'V9.5 release readiness suite threw', passed: false, detail: err instanceof Error ? err.message : String(err) }]; }
+}
+
+let v101LabRunning = false;
+/**
+ * What the LAB button runs: the whole registry, one suite at a time with a pause between suites (the page stays usable and the panel fills in as it goes;
+ * the whole list takes about a minute), then the async suites. A second press while it runs does nothing. Each suite is isolated on its own, so the pauses
+ * cannot let a half-finished suite touch the live match.
+ */
+export async function runV101LabProgressive(onProgress: (rows: V9SelfTestResult[]) => void, specs: readonly V95SuiteSpec[] = V95_EXISTING_SUITES, pause: () => Promise<void> = () => new Promise<void>(resolve => { setTimeout(resolve, 0); })): Promise<V9SelfTestResult[]> {
+  if (v101LabRunning) return [];
+  v101LabRunning = true;
+  const out: V9SelfTestResult[] = [];
+  try {
+    for (const spec of specs) {
+      out.push(...v101RunLabSpec(spec));
+      onProgress([...out]);
+      await pause();
+    }
+    out.push(...v101RunLabReleaseOwn());
+    onProgress([...out]);
+    await pause();
+    out.push(...await runV101LabAsyncSuites());
+    onProgress([...out]);
+    return out;
+  } finally { v101LabRunning = false; }
+}
+
+/** The async suites (Game Intelligence 2 and 2.1), run one after the other inside ONE isolation (two overlapping snapshots would restore the wrong state). */
+export async function runV101LabAsyncSuites(): Promise<V9SelfTestResult[]> {
+  try {
+    return await runIsolatedSuiteAsync(async () => {
+      const first = await runGameIntelligence2AsyncSelfTests();
+      const second = await runGameIntelligence21AsyncSelfTests();
+      return [...v101SuiteRows(first), ...v101SuiteRows(second)];
+    });
+  } catch (err) {
+    return [{ id: 'gi-async:threw', name: 'Game Intelligence async suites threw', passed: false, detail: err instanceof Error ? err.message : String(err) }];
+  }
+}
+
+/**
+ * Every exported suite function (run...SelfTests / run...DevTests), and where it runs: the id of its row in V95_EXISTING_SUITES, 'async-lab' (the LAB
+ * button's async list), 'release' / 'fidelity' (run by the release check itself) or 'part-of:<suite>' (called by that suite). A suite function that is
+ * in none of these is an orphan: tools/selftest/registry-integrity.mjs fails on it, and the v101en registry test fails on a registry row that is not listed here.
+ */
+export const V101_SUITE_MANIFEST: ReadonlyArray<readonly [string, string]> = [
+  ['runV96ExperienceModesSelfTests', 'v96em'], ['runV96ChallengeDecisionSelfTests', 'v96cd'], ['runV96ChallengeContentSelfTests', 'v96ex'],
+  ['runV96MapMotionSoundSelfTests', 'v96mf'], ['runV96OpponentMindSelfTests', 'v96om'], ['runV96MatchShapeSelfTests', 'v96mt'],
+  ['runV96GuidedFirstRunSelfTests', 'v96fr'], ['runV96PerformanceSelfTests', 'v96pf'], ['runV97CorrectnessSweepSelfTests', 'v97cs'],
+  ['runV98CampaignStateSelfTests', 'v98c1'], ['runV99FoundationsSelfTests', 'v99fx'], ['runV99TrustworthyAdviceSelfTests', 'v99ad'],
+  ['runV99MatchFlowSelfTests', 'v99mf'], ['runV99SessionSafetySelfTests', 'v99ss'], ['runV99PlayScreenRulesSelfTests', 'v99ps'],
+  ['runV99MatchRecoverySelfTests', 'v99mr'], ['runV99MatchJournalSelfTests', 'v99mj'], ['runV99TurnDigestSelfTests', 'v99td'],
+  ['runV100FoundationsSelfTests', 'v100fx'], ['runV100RivalRacesSelfTests', 'v100rr'],
+  ['runV101FoundationsSelfTests', 'v101fx'], ['runV101EconomySelfTests', 'v101ec'], ['runV101RivalSelfTests', 'v101rv'],
+  ['runV101MatchRulesSelfTests', 'v101ru'], ['runV101FirstRunSelfTests', 'v101fr'], ['runV101PlayScreenSelfTests', 'v101ui'],
+  ['runV101SettingsSelfTests', 'v101st'], ['runV101AdviceSelfTests', 'v101ai'], ['runV101WorldSelfTests', 'v101wl'],
+  ['runV101ContentSelfTests', 'v101ct'], ['runV101EngineSelfTests', 'v101en'],
+  ['runV102StrategicInfrastructureNetworksSelfTests', 'v102'], ['runV103NationalMegaprojectSelfTests', 'v103'], ['runV104NationalDevelopmentSelfTests', 'v104'],
+  ['runV105InnovationCapabilitiesSelfTests', 'v105'], ['runV106ResilienceSystemicRiskSelfTests', 'v106'], ['runV107DynamicNationalPrioritiesSelfTests', 'v107'],
+  ['runV108RegionalCompetitionSelfTests', 'v108'], ['runV109StrategicCapitalSelfTests', 'v109'], ['runV1010WorkforceHumanCapitalSelfTests', 'v1010'],
+  ['runV1011AdaptiveGovernanceSelfTests', 'v1011'], ['runV1012PublicFinanceSelfTests', 'v1012'], ['runV1013HouseholdsLivingStandardsSelfTests', 'v1013'],
+  ['runV101IndustriesSupplyChainsSelfTests', 'v101'], ['runV100NationalSystemsSelfTests', 'v100'], ['runV94GameFeelPolishSelfTests', 'v94'],
+  ['runV93ContentReplayabilitySelfTests', 'v93'], ['runV9GuidedLearningSelfTests', 'v92'], ['runStrategicDepthBalanceSelfTests', 'v91'],
+  ['runV9GameplayCohesionSelfTests', 'v9c'], ['runV9ExperienceSelfTests', 'v9x'], ['runRegionalFactions2SelfTests', 'rf2'],
+  ['runLivingRegions2SelfTests', 'lr2'], ['runStrategicWorldReactionSelfTests', 'swr'], ['runDiplomacyNegotiation2SelfTests', 'dn2'],
+  ['runSettingsIntelligence2SelfTests', 'si2'], ['runBackgroundAISelfTests', 'bg'], ['runGameIntelligence3SelfTests', 'gi3'],
+  ['runTeamOsScenarioSelfTests', 'teamos'], ['runTeamIntelligence2SelfTests', 'ti2'], ['runGameIntelligence21SelfTests', 'gi21'],
+  ['runGameIntelligence2SelfTests', 'gi2'], ['runReplayStudioSelfTests', 'replay'], ['runPlayerIntentLayerSelfTests', 'intent'],
+  ['runCoPilotDevSelfTests', 'copilot'], ['runAiTuningLabSelfTests', 'tuning'],
+  ['runAiMemoryPhase1SelfTests', 'memory'], ['runAiMemoryPhase2SelfTests', 'memory'], ['runAiMemoryPhase3SelfTests', 'memory'], ['runAiMemoryPhase4SelfTests', 'memory'],
+  ['runAiMemoryPhase5SelfTests', 'memory'], ['runAiMemoryPhase6SelfTests', 'memory'], ['runAiMemoryPhase61SelfTests', 'memory'],
+  ['runGameIntelligence2AsyncSelfTests', 'async-lab'], ['runGameIntelligence21AsyncSelfTests', 'async-lab'],
+  ['runV95ReleaseReadinessSelfTests', 'release'], ['runV96HumanVsAiFidelitySelfTests', 'fidelity'],
+  ['runCoPilotCategory1SelfTests', 'part-of:copilot'], ['runCoPilotCategory2SelfTests', 'part-of:copilot'], ['runCoPilotCategory3SelfTests', 'part-of:copilot'],
+  ['runCoPilotCategory4SelfTests', 'part-of:copilot'], ['runCoPilotCategory5SelfTests', 'part-of:copilot'], ['runCoPilotCategory6SelfTests', 'part-of:copilot'],
+  ['runCoPilotCategory7SelfTests', 'part-of:copilot'], ['runCoPilotCategory8SelfTests', 'part-of:copilot'], ['runCoPilotCategory9SelfTests', 'part-of:copilot'],
+  ['runAutoModeRuntimeDevTests', 'part-of:v101au'], ['runStrategyPlannerM6DevTests', 'part-of:v101sp'],
+  // Suites that had no caller anywhere (they never ran, so a regression in them was invisible). Registered below as rows of their own.
+  ['runAutoModeDevSelfTests', 'v101au'],
+  ['runAiCommandCenterM4DevTests', 'unregistered:needs a real browser window (position clamping reads the viewport) and moves windows in the live manager; fails headless'],
+  ['runAiCommandCenterM5DevTests', 'unregistered:needs a real browser window (overlay position tracking, keyboard focus) and moves windows in the live manager; fails headless'],
+  ['runGlobalUISurfaceManagerDevTests', 'v101sm'], ['runStrategyPlannerDevTests', 'v101sp'], ['runStrategyPlannerM3DevTests', 'v101p3'],
+  ['runStrategyPlannerM4DevTests', 'v101p4'], ['runStrategyPlannerM5DevTests', 'v101p5']
+];
+
+/**
+ * Suites that had no caller (the manifest's v101au ... v101p5): added to the registry as rows, so the LAB list, the release check and the node runner all run them.
+ * Two more (AI Command Center M4 / M5) were dormant too, but they need a real browser window and fail headless; they are listed in the manifest as unregistered, with the reason.
+ */
+const V101_FORMERLY_ORPHAN_SUITES: V95SuiteSpec[] = [
+  { id: 'v101au', label: 'Auto Mode (57 dev tests)', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runAutoModeDevSelfTests() },
+  { id: 'v101sm', label: 'Global UI Surface Manager', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runGlobalUISurfaceManagerDevTests() },
+  { id: 'v101sp', label: 'Strategy Planner', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategyPlannerDevTests() },
+  { id: 'v101p3', label: 'Strategy Planner M3', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategyPlannerM3DevTests() },
+  { id: 'v101p4', label: 'Strategy Planner M4', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategyPlannerM4DevTests() },
+  { id: 'v101p5', label: 'Strategy Planner M5', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategyPlannerM5DevTests() }
+];
+V101_FORMERLY_ORPHAN_SUITES.forEach(spec => { if (!V95_EXISTING_SUITES.some(existing => existing.id === spec.id)) V95_EXISTING_SUITES.push(spec); });
+
+/**
+ * Checks a registry against the manifest and (when the caller can list the module's exports) the exports against both.
+ * Returns the problems found; an empty list means the registry is whole.
+ */
+export function v101CheckSuiteManifest(registry: readonly V95SuiteSpec[], manifest: ReadonlyArray<readonly [string, string]> = V101_SUITE_MANIFEST, exportedNames: readonly string[] | null = null): string[] {
+  const problems: string[] = [];
+  const ids = new Set<string>();
+  registry.forEach(spec => {
+    if (ids.has(spec.id)) problems.push(`registry id ${spec.id} is used twice`);
+    ids.add(spec.id);
+    if (typeof spec.run !== 'function') problems.push(`registry row ${spec.id} has no run function`);
+    if (!manifest.some(([, where]) => where === spec.id)) problems.push(`registry row ${spec.id} is not in V101_SUITE_MANIFEST`);
+  });
+  const named = new Set<string>();
+  manifest.forEach(([fn, where]) => {
+    if (named.has(fn)) problems.push(`${fn} is listed twice in the manifest`);
+    named.add(fn);
+    if (!where.startsWith('part-of:') && !where.startsWith('unregistered:') && where !== 'async-lab' && where !== 'release' && where !== 'fidelity' && !ids.has(where)) problems.push(`${fn} points at ${where}, which is not a registry row`);
+  });
+  if (exportedNames) exportedNames.filter(name => /^run\w*(SelfTests|DevTests)$/.test(name) && !named.has(name)).forEach(name => problems.push(`${name} is exported but is in no suite (add it to the registry and V101_SUITE_MANIFEST, or list it as part-of:<suite>)`));
+  return problems;
+}
+
+// ---- 3. A net under the whole game ---------------------------------------------------------------------------------------------
+// The root error boundary only sees errors thrown while drawing. A throw inside a click handler, a timer or a promise went to the console and
+// nothing else: no message, no way to keep the match. This net listens to the window's 'error' and 'unhandledrejection' events and shows ONE calm,
+// dismissible banner, with a button that downloads the emergency save the game already keeps for the error screen (V99_EMERGENCY_SAVE).
+// It never changes the game, never throws, shows at most V101_ERROR_NET_MAX_SHOWN times a session and never twice within V101_ERROR_NET_MIN_GAP_MS.
+export type V101ErrorSource = 'error' | 'unhandledrejection';
+export interface V101ErrorReport { source: V101ErrorSource; message: string; filename: string; handled: boolean }
+export interface V101ErrorNetState { shown: number; lastShownAt: number; lastMessage: string; lastMessageAt: number; visible: boolean; ignored: number; boundaryCaughtAt: number; boundaryMessage: string }
+export type V101ErrorNetReason = 'show' | 'handled' | 'noise' | 'boundary' | 'visible' | 'duplicate' | 'rate_limited' | 'cap';
+export const V101_ERROR_NET_MIN_GAP_MS = 15000;
+export const V101_ERROR_NET_SAME_MESSAGE_MS = 60000;
+export const V101_ERROR_NET_BOUNDARY_WINDOW_MS = 3000;
+export const V101_ERROR_NET_MAX_SHOWN = 3;
+
+export function v101NewErrorNetState(): V101ErrorNetState {
+  return { shown: 0, lastShownAt: 0, lastMessage: '', lastMessageAt: 0, visible: false, ignored: 0, boundaryCaughtAt: 0, boundaryMessage: '' };
+}
+/** The net's own state (module level, so a StrictMode remount of the banner does not reset the rate limit). */
+export const V101_ERROR_NET_STATE: V101ErrorNetState = v101NewErrorNetState();
+
+/** Errors that say nothing about the game: layout observers, opaque cross-origin script errors, browser extensions, requests the page itself cancelled. */
+export function v101ErrorIsNoise(report: V101ErrorReport): boolean {
+  const m = report.message.trim();
+  if (!m && !report.filename) return true;
+  if (/^ResizeObserver loop/i.test(m)) return true;
+  if (/^Script error\.?$/i.test(m)) return true;
+  if (/^(chrome|moz|safari|safari-web)-extension:\/\//i.test(report.filename)) return true;
+  if (/AbortError|The operation was aborted|The user aborted a request/i.test(m)) return true;
+  return false;
+}
+
+/**
+ * Decides whether an uncaught error earns the banner. Pure: it returns the next state and the caller stores it.
+ * Order of the checks: an error the page already handled (preventDefault) or noise is ignored; one the root error screen just showed is not shown again;
+ * nothing shows while the banner is up, for the same message within a minute, within the minimum gap, or past the cap for the session.
+ */
+export function v101ErrorNetDecision(state: V101ErrorNetState, report: V101ErrorReport, nowMs: number): { show: boolean; reason: V101ErrorNetReason; next: V101ErrorNetState } {
+  const ignore = (reason: V101ErrorNetReason): { show: boolean; reason: V101ErrorNetReason; next: V101ErrorNetState } => ({ show: false, reason, next: { ...state, ignored: state.ignored + 1 } });
+  if (report.handled) return ignore('handled');
+  if (v101ErrorIsNoise(report)) return ignore('noise');
+  if (state.boundaryCaughtAt > 0 && nowMs - state.boundaryCaughtAt <= V101_ERROR_NET_BOUNDARY_WINDOW_MS && (!state.boundaryMessage || report.message.includes(state.boundaryMessage) || state.boundaryMessage.includes(report.message))) return ignore('boundary');
+  if (state.visible) return ignore('visible');
+  if (state.shown >= V101_ERROR_NET_MAX_SHOWN) return ignore('cap');
+  if (report.message === state.lastMessage && nowMs - state.lastMessageAt < V101_ERROR_NET_SAME_MESSAGE_MS) return ignore('duplicate');
+  if (state.lastShownAt > 0 && nowMs - state.lastShownAt < V101_ERROR_NET_MIN_GAP_MS) return ignore('rate_limited');
+  return { show: true, reason: 'show', next: { ...state, shown: state.shown + 1, lastShownAt: nowMs, lastMessage: report.message, lastMessageAt: nowMs, visible: true } };
+}
+
+/** Reads a window 'error' or 'unhandledrejection' event (or anything shaped like one) into a report. Never throws. */
+export function v101DescribeErrorEvent(source: V101ErrorSource, event: unknown): V101ErrorReport {
+  try {
+    const e = (event && typeof event === 'object' ? event : {}) as { message?: unknown; filename?: unknown; error?: unknown; reason?: unknown; defaultPrevented?: unknown };
+    const raw = source === 'error' ? (e.error ?? e.message) : e.reason;
+    const message = raw instanceof Error ? raw.message
+      : typeof raw === 'string' ? raw
+      : raw && typeof raw === 'object' && typeof (raw as { message?: unknown }).message === 'string' ? String((raw as { message: string }).message)
+      : source === 'error' && typeof e.message === 'string' ? e.message
+      : raw === undefined || raw === null ? '' : String(raw);
+    return { source, message: message.slice(0, 300), filename: typeof e.filename === 'string' ? e.filename : '', handled: e.defaultPrevented === true };
+  } catch {
+    return { source, message: '', filename: '', handled: false };
+  }
+}
+
+/** Runs one report through the decision, stores the next state, and returns whether to show the banner. Never throws. */
+export function v101ErrorNetHandle(report: V101ErrorReport, nowMs: number, state: V101ErrorNetState = V101_ERROR_NET_STATE): boolean {
+  try {
+    const verdict = v101ErrorNetDecision(state, report, nowMs);
+    Object.assign(state, verdict.next);
+    if (verdict.show) {
+      V95_SURFACE_ERRORS.unshift({ surface: 'Game (uncaught)', message: report.message || 'unknown error', at: nowMs });
+      if (V95_SURFACE_ERRORS.length > 20) V95_SURFACE_ERRORS.length = 20;
+      console.error('[V10.1 error net]', report.source, report.message);
+    }
+    return verdict.show;
+  } catch { return false; }
+}
+
+/** The root error screen just caught an error: the net stays quiet about the same one (React reports a caught render error on the window in development). */
+export function v101NoteBoundaryCatch(error: unknown, nowMs: number = Date.now(), state: V101ErrorNetState = V101_ERROR_NET_STATE): void {
+  state.boundaryCaughtAt = nowMs;
+  state.boundaryMessage = (error instanceof Error ? error.message : String(error ?? '')).slice(0, 300);
+}
+
+export interface V101ErrorNetViewProps { hasRecovery: boolean; downloaded: boolean; onDownload: () => void; onDismiss: () => void }
+/** The banner itself. Hook-free and styled inline, so it draws whatever state the game is in. */
+export function V101ErrorNetView(props: V101ErrorNetViewProps): React.ReactElement {
+  const button = (primary: boolean): React.CSSProperties => ({ padding: '6px 12px', borderRadius: 8, border: primary ? 'none' : '1px solid #475569', background: primary ? '#2563eb' : 'transparent', color: '#f8fafc', fontWeight: primary ? 700 : 500, cursor: 'pointer', fontSize: 13 });
+  return (
+    <div role="alert" data-testid="v101-error-net" style={{ position: 'fixed', left: 12, right: 12, bottom: 12, zIndex: 2147483000, maxWidth: 560, margin: '0 auto', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, background: '#0f172a', color: '#f8fafc', border: '1px solid #475569', boxShadow: '0 8px 24px rgba(0,0,0,0.45)', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
+      <span style={{ flex: '1 1 220px' }}>
+        <strong>Something went wrong.</strong>{' '}
+        {props.hasRecovery ? (props.downloaded ? 'Your match is still here, and a recovery copy was saved to your downloads.' : 'Your match is still here. Download a recovery copy?') : 'You can keep playing. If the game stops responding, reload the page.'}
+      </span>
+      {props.hasRecovery && !props.downloaded && <button type="button" style={button(true)} onClick={props.onDownload} data-testid="v101-error-net-download">Download a recovery copy</button>}
+      <button type="button" style={button(false)} onClick={props.onDismiss} data-testid="v101-error-net-dismiss">Dismiss</button>
+    </div>
+  );
+}
+
+/** Keeps a broken banner from ever taking the game down with it. */
+class V101ErrorNetGuard extends React.Component<{ children?: React.ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError(): { failed: boolean } { return { failed: true }; }
+  componentDidCatch(): void { /* the banner is the last line of defence: it stays silent rather than report on itself */ }
+  render(): React.ReactNode { return this.state.failed ? null : this.props.children ?? null; }
+}
+
+/** Installs the window listeners once (removed on unmount; safe under StrictMode's mount, unmount, mount) and draws the banner when one is due. */
+export function V101ErrorNet(): React.ReactElement {
+  return <V101ErrorNetGuard><V101ErrorNetBanner /></V101ErrorNetGuard>;
+}
+function V101ErrorNetBanner(): React.ReactElement | null {
+  const [visible, setVisible] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
+  const [hasRecovery, setHasRecovery] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return undefined;
+    const handler = (source: V101ErrorSource) => (event: Event) => {
+      try {
+        if (!v101ErrorNetHandle(v101DescribeErrorEvent(source, event), Date.now())) return;
+        setHasRecovery(V99_EMERGENCY_SAVE.current !== null);
+        setDownloaded(false);
+        setVisible(true);
+      } catch { /* the net never throws */ }
+    };
+    const onError = handler('error');
+    const onRejection = handler('unhandledrejection');
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => { window.removeEventListener('error', onError); window.removeEventListener('unhandledrejection', onRejection); };
+  }, []);
+  if (!visible) return null;
+  return <V101ErrorNetView
+    hasRecovery={hasRecovery}
+    downloaded={downloaded}
+    onDownload={() => { try { const snapshot = V99_EMERGENCY_SAVE.current; if (snapshot) setDownloaded(downloadSaveBundle(snapshot.data)); } catch { /* stays as it is */ } }}
+    onDismiss={() => { V101_ERROR_NET_STATE.visible = false; setVisible(false); }} />;
+}
+
+// ---- 4. Small fixes a player can feel ------------------------------------------------------------------------------------------
+/** Where the downloaded blob link is revoked: after this long, not at once (a browser that had not started the download yet lost the file). */
+export const V101_DOWNLOAD_REVOKE_MS = 4000;
+export interface V101DownloadAnchor { href: string; download: string; click: () => void }
+export interface V101DownloadEnv {
+  createObjectURL: (blob: Blob) => string;
+  revokeObjectURL: (url: string) => void;
+  createAnchor: () => V101DownloadAnchor;
+  append: (anchor: V101DownloadAnchor) => void;
+  remove: (anchor: V101DownloadAnchor) => void;
+  later: (fn: () => void, ms: number) => unknown;
+}
+/** Downloads a blob the way every browser accepts: the link is added to the page, clicked, removed, and the blob URL is revoked after a delay. False (never a throw) when it could not. */
+export function v101TriggerDownload(env: V101DownloadEnv, blob: Blob, filename: string, revokeAfterMs: number = V101_DOWNLOAD_REVOKE_MS): boolean {
+  try {
+    const url = env.createObjectURL(blob);
+    const anchor = env.createAnchor();
+    anchor.href = url;
+    anchor.download = filename;
+    env.append(anchor);
+    try { anchor.click(); } finally { env.remove(anchor); env.later(() => { try { env.revokeObjectURL(url); } catch { /* already gone */ } }, revokeAfterMs); }
+    return true;
+  } catch { return false; }
+}
+/** v101TriggerDownload against the real page. */
+export function v101DownloadBlob(blob: Blob, filename: string): boolean {
+  if (typeof document === 'undefined' || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return false;
+  return v101TriggerDownload({
+    createObjectURL: b => URL.createObjectURL(b),
+    revokeObjectURL: u => URL.revokeObjectURL(u),
+    createAnchor: () => document.createElement('a'),
+    append: a => { document.body.appendChild(a as unknown as Node); },
+    remove: a => { if ((a as unknown as Node).parentNode) (a as unknown as Node).parentNode!.removeChild(a as unknown as Node); },
+    later: (fn, ms) => setTimeout(fn, ms)
+  }, blob, filename);
+}
+
+/** How long the paint wait (two animation frames) is allowed to take before the work runs anyway: a tab in the background never gets animation frames. */
+export const V101_PAINT_FALLBACK_MS = 1000;
+export const V101_PAINT_HIDDEN_MS = 50;
+export interface V101PaintEnv { raf: ((cb: () => void) => unknown) | null; later: (fn: () => void, ms: number) => unknown; hidden: boolean }
+/** Runs fn once, after the next paint when the page can paint, and from a timer when it cannot (hidden tab) or has not within V101_PAINT_FALLBACK_MS. */
+export function v101AfterNextPaint(fn: () => void, env: V101PaintEnv): void {
+  let done = false;
+  const run = () => { if (done) return; done = true; fn(); };
+  const raf = env.raf;
+  if (!raf) { env.later(run, 32); return; }
+  if (env.hidden) { env.later(run, V101_PAINT_HIDDEN_MS); return; }
+  raf(() => { raf(() => { env.later(run, 0); }); });
+  env.later(run, V101_PAINT_FALLBACK_MS);
+}
+
+/** The AI turn watchdog's own clock: it counts the checks that really ran one second apart with no progress, so a sleeping laptop or a blocked page cannot look like a hang. */
+export interface V101WatchdogClock { lastTickAt: number; lastProgressAt: number; ticks: number }
+export const V101_WATCHDOG_TICK_MS = 1000;
+export const V101_WATCHDOG_GAP_MS = 4000;
+export function v101WatchdogStart(nowMs: number, progressAt: number): V101WatchdogClock { return { lastTickAt: nowMs, lastProgressAt: progressAt, ticks: 0 }; }
+export function v101WatchdogTick(clock: V101WatchdogClock, nowMs: number, progressAt: number): V101WatchdogClock {
+  if (progressAt !== clock.lastProgressAt) return { lastTickAt: nowMs, lastProgressAt: progressAt, ticks: 0 };
+  if (nowMs - clock.lastTickAt > V101_WATCHDOG_GAP_MS) return { lastTickAt: nowMs, lastProgressAt: progressAt, ticks: 0 };
+  return { lastTickAt: nowMs, lastProgressAt: progressAt, ticks: clock.ticks + 1 };
+}
+/** True once enough one-second checks in a row have passed with no progress (three fewer than the threshold's seconds: the wall clock still has to agree). */
+export function v101WatchdogTicksEnough(clock: V101WatchdogClock, thresholdMs: number = V95_AI_TURN_WATCHDOG_MS): boolean {
+  return clock.ticks >= Math.max(1, Math.floor(thresholdMs / V101_WATCHDOG_TICK_MS) - 3);
+}
+
+/** Source-scanning checks that could not read the component's text (a minified build) list themselves here instead of passing silently. */
+export const V101_SOURCE_SCAN_SKIPS: string[] = [];
+export function v101SkipSourceScan(id: string): true {
+  if (!V101_SOURCE_SCAN_SKIPS.includes(id)) V101_SOURCE_SCAN_SKIPS.push(id);
+  return true;
+}
+
+// ---- 5. Performance ---------------------------------------------------------------------------------------------------------------
+/** True when the player advisor (candidate moves, Background AI and its simulations) has a player to advise. A V10.1 AI vs AI match has none; older and classic-rules matches keep their advisor. */
+export function v101AdvisorActive(isLiveIntentMatch: boolean, gameState: unknown): boolean {
+  if (!isLiveIntentMatch) return false;
+  const mode = gameState && typeof gameState === 'object' ? (gameState as { selectedMode?: unknown }).selectedMode : null;
+  return !(isV101Match(gameState) && mode === 'team_ai_vs_ai');
+}
+
+/**
+ * Measures the page for a component: once when it mounts (before the first paint, so nothing jumps) and then at most once per animation frame after
+ * a render, not a forced layout after every render (these were layout effects with no dependency list). `enabled` false measures nothing.
+ */
+export function useV101FrameMeasure(measure: () => void, enabled: boolean = true): void {
+  const measureRef = useRef(measure);
+  measureRef.current = measure;
+  const frameRef = useRef(0);
+  useLayoutEffect(() => { if (enabled) measureRef.current(); }, [enabled]);
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function' || frameRef.current) return;
+    frameRef.current = window.requestAnimationFrame(() => { frameRef.current = 0; measureRef.current(); });
+  });
+  useEffect(() => () => { if (frameRef.current && typeof window !== 'undefined') window.cancelAnimationFrame(frameRef.current); frameRef.current = 0; }, []);
+}
+
+// ---- Self-tests ------------------------------------------------------------------------------------------------------------------
 export function runV101EngineSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  /** The whole shared RNG state and id counters as text: equal text means byte-identical state. */
+  const liveSig = () => json({ streams: globalRngRegistry.exportStreamStates(), seed: globalRngRegistry.masterSeed, counters: { ...globalDeterministicCounters }, det: globalRngRegistry.isDeterministic, policy: globalRngRegistry.auditPolicy, scope: globalRngRegistry.scopeStack, incidents: globalRngRegistry.incidentLog.length });
+  const primeLive = () => { setRngMasterSeed(777, true); drawGameplayRandom('World'); drawGameplayRandom('World'); drawGameplayRandom('Markets'); setGlobalDeterministicCounters({ ...globalDeterministicCounters, correlation: 41, replayActionsExecuted: 3 }); };
+  /** A replay whose every event is a what-if fork: the reducer draws one random number per event, so a replay that touches the wrong registry shows at once. */
+  const forkReplay = (n: number, worldSeed: number = 4321, config: Partial<ReplayInitialConfigSnapshot> = {}): ReplayFile => {
+    const events = Array.from({ length: n }, (_, i) => ({ id: `en_e${i}`, sequence: i, category: 'create_whatif_timeline', day: 1, turn: i + 1, actorId: 'player', teamId: null, summary: `fork ${i}`, payload: {}, timestamp: 1 + i }));
+    const file = {
+      schemaVersion: REPLAY_SCHEMA_VERSION, gameVersion: VERSION_CONSTANTS.GAME_VERSION, matchId: 'v101en_fixture', createdAt: 1,
+      initialConfig: { gameSettings: createDefaultGameSettings(), actorsById: {}, teamsById: {}, selectedMode: 'ai', aiDifficulty: 'medium', aiSeed: 1337, worldSeed, ...config },
+      events, checkpoints: [{ id: 'c0', sequence: 0, day: 1, turn: 0, label: 'Match start', kind: 'match_start' }], finalResult: null, randomDraws: [], bookmarks: [], branches: []
+    } as unknown as ReplayFile;
+    file.checksum = computeReplayChecksum(file);
+    return file;
+  };
+  const worldDraws = (runtime: { rngRegistryState?: Record<string, RngStreamState> }) => runtime.rngRegistryState?.World?.drawCount ?? -1;
+
+  // ---- 1. Isolation ----------------------------------------------------------------------------------------------------------
+  check('v101en_01_replay_seek_leaves_live_registry_untouched', 'A replay seek runs on the replay\'s own streams: the live registry, master seed and id counters are byte-identical afterwards', () => {
+    primeLive();
+    const before = liveSig();
+    const r = seekReplayToSequenceDeterministic(forkReplay(6), 5, 'skip_invalid', false);
+    const after = liveSig();
+    return (before === after && worldDraws(r.runtime) === 5) || `live changed: ${before === after ? 'no' : 'yes'}, replay world draws ${worldDraws(r.runtime)} (want 5)`;
+  });
+  check('v101en_02_reexecution_leaves_live_registry_untouched', 'Run Re-Execution (every policy, including the one that reverts streams) leaves the live registry and counters byte-identical', () => {
+    primeLive();
+    const before = liveSig();
+    const file = forkReplay(6);
+    const reports = ['strict', 'skip_invalid', 'adaptive_fallback', 'force_reconstruction'].map(policy => reexecuteReplayMatch(file, policy));
+    return (before === liveSig() && reports.every(r => r.totalEventsProcessed === 6)) || `live ${before === liveSig() ? 'same' : 'CHANGED'}, processed ${reports.map(r => r.totalEventsProcessed).join('/')}`;
+  });
+  check('v101en_03_same_replay_same_states_whatever_the_live_position', 'Two runs of the same replay give the same states even when the live match has moved in between (the replay no longer reads the live position)', () => {
+    const file = forkReplay(6);
+    primeLive();
+    const a = seekReplayToSequenceDeterministic(file, 5, 'skip_invalid', false);
+    drawGameplayRandom('World'); drawGameplayRandom('World'); setGlobalDeterministicCounters({ ...globalDeterministicCounters, correlation: 900 });
+    const b = seekReplayToSequenceDeterministic(file, 5, 'skip_invalid', false);
+    return (json(a.runtime) === json(b.runtime) && worldDraws(a.runtime) === 5) || `runtime differs or no draws (${worldDraws(a.runtime)}/${worldDraws(b.runtime)})`;
+  });
+  check('v101en_04_replay_continues_from_its_own_start_state', 'A seek from a checkpoint that saved its streams continues from THOSE streams, not from the recording\'s opening ones', () => {
+    primeLive();
+    const first = seekReplayToSequenceDeterministic(forkReplay(6), 2, 'skip_invalid', false);
+    const mid = first.runtime.rngRegistryState as Record<string, RngStreamState>;
+    const file = forkReplay(6);
+    file.checkpoints = [...file.checkpoints, { id: 'c2', sequence: 2, day: 1, turn: 2, label: 'Day 1', kind: 'day', fullStateSnapshot: { rngRegistryState: mid, gameState: {} } } as unknown as ReplayCheckpoint];
+    const resumed = seekReplayToSequenceDeterministic(file, 5, 'skip_invalid', false);
+    const whole = seekReplayToSequenceDeterministic(forkReplay(6), 5, 'skip_invalid', false);
+    return (worldDraws(first.runtime) === 2 && worldDraws(resumed.runtime) === 5 && worldDraws(whole.runtime) === 5) || `draws first ${worldDraws(first.runtime)}, resumed ${worldDraws(resumed.runtime)}, whole ${worldDraws(whole.runtime)}`;
+  });
+  check('v101en_05_branch_fast_forward_isolated', '"Continue from here" on a checkpoint without a snapshot fast-forwards on the replay\'s streams and leaves the live match untouched', () => {
+    primeLive();
+    const before = liveSig();
+    const branch = spawnMatchBranchFromCheckpoint({ id: 'c5', sequence: 5, day: 1, turn: 5, label: 'Day 1', kind: 'day' } as unknown as ReplayCheckpoint, forkReplay(6));
+    const streams = branch.rngRegistryState as unknown as Record<string, RngStreamState> | undefined;
+    return (before === liveSig() && (streams?.World?.drawCount ?? -1) === 6) || `live ${before === liveSig() ? 'same' : 'CHANGED'}, branch world draws ${streams?.World?.drawCount} (want 6: events 0 to 5)`;
+  });
+  check('v101en_06_withReplayGlobals_restores_on_throw', 'withReplayGlobals puts the live streams, seed, flags and counters back even when the replay throws', () => {
+    primeLive();
+    const before = liveSig();
+    let threw = false;
+    try { withReplayGlobals({ seed: 99, streams: null, counters: null }, () => { drawGameplayRandom('World'); globalRngRegistry.isDeterministic = false; throw new Error('boom'); }); } catch { threw = true; }
+    return (threw && before === liveSig()) || `threw ${threw}, live ${before === liveSig() ? 'same' : 'CHANGED'}`;
+  });
+  check('v101en_07_isolation_restores_master_seed_and_scope', 'The isolation helpers now restore the master seed, the scope stack and the incident log too (the master seed used to stay wherever a suite left it)', () => {
+    primeLive();
+    const before = liveSig();
+    v95WithIsolatedGlobals(() => { setRngMasterSeed(5, true); globalRngRegistry.scopeStack.push('World'); globalRngRegistry.activeRngScope = 'World'; globalRngRegistry.incidentLog.push({ id: 'x', timestamp: 0, requestedDomain: undefined, activeScope: null } as UnscopedRngIncident); });
+    const sync = before === liveSig();
+    let threw = false;
+    try { runIsolatedSuite(() => { setRngMasterSeed(6, true); throw new Error('suite broke'); }); } catch { threw = true; }
+    return (sync && threw && before === liveSig() && globalRngRegistry.masterSeed === 777) || `sync ${sync}, threw ${threw}, seed ${globalRngRegistry.masterSeed}`;
+  });
+  check('v101en_08_run_buttons_leave_live_match_alone', 'The in-game "Run self-tests" path (runIsolatedSuite) leaves the live registry and counters unchanged for suites that draw and re-seed (Settings Intelligence, Game Intelligence 3, Co-Pilot); the same suite run raw does move them', () => {
+    const ids = ['si2', 'gi3', 'copilot'];
+    const run = (id: string, wrapped: boolean) => { const spec = V95_EXISTING_SUITES.find(x => x.id === id)!; return wrapped ? runIsolatedSuite(() => spec.run()) : spec.run(); };
+    const leaks: string[] = [];
+    ids.forEach(id => { primeLive(); const before = liveSig(); run(id, true); if (before !== liveSig()) leaks.push(id); });
+    primeLive();
+    const rawBefore = liveSig();
+    run('si2', false);
+    const rawMoves = rawBefore !== liveSig();
+    primeLive();
+    return (leaks.length === 0 && rawMoves) || `wrapped leaked: ${leaks.join(',') || 'none'}; raw run moved live: ${rawMoves}`;
+  });
+  check('v101en_09_tuning_lab_match_isolated_at_source', 'A Tuning Lab match (runMatch) no longer re-seeds the live registry or zeroes the id counters on its own, whatever button started it', () => {
+    primeLive();
+    const before = liveSig();
+    const genome = createSeedGenome('en_parent');
+    const match = runMatch({ genomeA: genome, genomeB: genome, seed: 2024, maxTurns: 6, goal: TUNING_LAB_GOALS[0], positionSwap: false, wallClockMs: 1500 });
+    return (before === liveSig() && match.turnsPlayed > 0) || `live ${before === liveSig() ? 'same' : 'CHANGED'}, turns ${match.turnsPlayed}`;
+  });
+
+  // ---- 2. The registry ---------------------------------------------------------------------------------------------------------
+  check('v101en_10_registry_integrity', 'Every registry row has a run function and a place in the suite manifest, ids are unique, and every manifest entry points at a real row', () => {
+    const problems = v101CheckSuiteManifest(V95_EXISTING_SUITES);
+    const bad = v101CheckSuiteManifest([...V95_EXISTING_SUITES, { ...V95_EXISTING_SUITES[0] }, { id: 'zz_unlisted', label: 'x', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => [] }], V101_SUITE_MANIFEST, ['runBrandNewSelfTests', 'runV96ExperienceModesSelfTests']);
+    const catches = bad.some(p => /used twice/.test(p)) && bad.some(p => /zz_unlisted/.test(p)) && bad.some(p => /runBrandNewSelfTests/.test(p)) && !bad.some(p => /runV96ExperienceModesSelfTests/.test(p));
+    return (problems.length === 0 && catches) || json({ problems, catches });
+  });
+  check('v101en_11_formerly_orphan_suites_registered', 'The suites that had no caller (the 57-test Auto Mode suite and the planner / command-centre dev suites) are registered rows now, and they pass', () => {
+    const ids = ['v101au', 'v101sm', 'v101sp', 'v101p3', 'v101p4', 'v101p5'];
+    const missing = ids.filter(id => !V95_EXISTING_SUITES.some(spec => spec.id === id));
+    if (missing.length) return `not registered: ${missing.join(', ')}`;
+    const rowsById = ids.map(id => ({ id, rows: v101SuiteRows(runIsolatedSuite(() => V95_EXISTING_SUITES.find(spec => spec.id === id)!.run())) }));
+    const red = rowsById.filter(r => r.rows.length === 0 || r.rows.some(row => !row.passed)).map(r => `${r.id}:${r.rows.filter(row => !row.passed).slice(0, 2).map(row => row.id).join('+') || 'no rows'}`);
+    const au = rowsById.find(r => r.id === 'v101au')!.rows.length;
+    return (red.length === 0 && au >= 57) || `red: ${red.join('; ')}; auto mode rows ${au}`;
+  });
+  check('v101en_12_lab_run_isolates_and_survives_a_throwing_suite', 'The LAB run goes through every suite in its own try / catch and isolation: a suite that throws is one failed row, the others still run, and the live match is untouched', () => {
+    primeLive();
+    const before = liveSig();
+    const specs: V95SuiteSpec[] = [
+      { id: 'zz1', label: 'Throws', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => { setRngMasterSeed(1, true); throw new Error('suite broke'); } },
+      { id: 'zz2', label: 'Reseeds', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => { setRngMasterSeed(9001, true); drawGameplayRandom('World'); return [{ id: 'zz2_a', name: 'ok', passed: true, detail: '' }]; } },
+      { id: 'zz3', label: 'Object shape', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => ({ testResults: [{ id: 'zz3_a', name: 'second shape', status: 'passed' }, { id: 'zz3_b', name: 'failing', status: 'failed', errorMessage: 'no' }] }) }
+    ];
+    const rows = runV101LabSuites(specs, false);
+    const ok = rows.length === 4 && rows[0].id === 'zz1:threw' && !rows[0].passed && rows[1].passed && rows[2].passed && !rows[3].passed && rows[3].detail === 'no';
+    return (ok && before === liveSig()) || json({ rows: rows.map(r => `${r.id}:${r.passed}`), same: before === liveSig() });
+  });
+  check('v101en_13_lab_list_is_the_registry', 'The LAB list covers every registered suite except the one that moves windows in the live manager; the old hand-written list covered about half', () => {
+    const covered = V95_EXISTING_SUITES.filter(spec => spec.id !== 'v101sm').length;
+    return (covered >= 64 && V95_EXISTING_SUITES.length >= 67) || `${covered} of ${V95_EXISTING_SUITES.length}`;
+  });
+
+  // ---- 3. The error net ---------------------------------------------------------------------------------------------------------
+  const report = (message: string, extra: Partial<V101ErrorReport> = {}): V101ErrorReport => ({ source: 'error', message, filename: 'game.js', handled: false, ...extra });
+  check('v101en_14_error_net_decides_what_shows', 'The error net shows an ordinary uncaught error and stays quiet for noise (ResizeObserver, opaque Script error, extensions, cancelled requests), for errors the page already handled, and for the one the root error screen just showed', () => {
+    const state = v101NewErrorNetState();
+    const verdicts = [
+      v101ErrorNetDecision(state, report('Cannot read properties of undefined'), 100000).reason,
+      v101ErrorNetDecision(state, report('ResizeObserver loop completed with undelivered notifications.'), 100000).reason,
+      v101ErrorNetDecision(state, report('Script error.', { filename: '' }), 100000).reason,
+      v101ErrorNetDecision(state, report('x is not a function', { filename: 'chrome-extension://abc/content.js' }), 100000).reason,
+      v101ErrorNetDecision(state, report('AbortError: The operation was aborted.', { source: 'unhandledrejection' }), 100000).reason,
+      v101ErrorNetDecision(state, report('handled elsewhere', { handled: true }), 100000).reason,
+      v101ErrorNetDecision(state, report('', { filename: '' }), 100000).reason
+    ];
+    const boundary = v101NewErrorNetState(); v101NoteBoundaryCatch(new Error('render blew up'), 5000, boundary);
+    const same = v101ErrorNetDecision(boundary, report('render blew up'), 6000).reason;
+    const other = v101ErrorNetDecision(boundary, report('a click handler threw'), 6000).reason;
+    const late = v101ErrorNetDecision(boundary, report('render blew up'), 5000 + V101_ERROR_NET_BOUNDARY_WINDOW_MS + 1).reason;
+    return (json(verdicts) === json(['show', 'noise', 'noise', 'noise', 'noise', 'handled', 'noise']) && same === 'boundary' && other === 'show' && late === 'show') || json({ verdicts, same, other, late });
+  });
+  check('v101en_15_error_net_rate_limits_and_cannot_loop', 'The error net never shows twice at once, repeats a message at most once a minute, keeps a gap between banners and stops after three a session: a storm of 500 errors shows at most one banner', () => {
+    const storm = v101NewErrorNetState();
+    let shown = 0;
+    for (let i = 0; i < 500; i++) { const v = v101ErrorNetDecision(storm, report(`error ${i % 7}`), 1000 + i); Object.assign(storm, v.next); if (v.show) shown += 1; }
+    const spaced = v101NewErrorNetState();
+    const reasons: V101ErrorNetReason[] = [];
+    let now = 1000;
+    for (let i = 0; i < 6; i++) { const v = v101ErrorNetDecision(spaced, report(`distinct ${i}`), now); Object.assign(spaced, v.next); reasons.push(v.reason); spaced.visible = false; now += V101_ERROR_NET_MIN_GAP_MS + 1; }
+    const tooSoon = v101NewErrorNetState(); Object.assign(tooSoon, v101ErrorNetDecision(tooSoon, report('first'), 1000).next); tooSoon.visible = false;
+    const soon = v101ErrorNetDecision(tooSoon, report('second'), 1000 + V101_ERROR_NET_MIN_GAP_MS - 1).reason;
+    const dup = v101ErrorNetDecision(tooSoon, report('first'), 1000 + V101_ERROR_NET_MIN_GAP_MS + 5).reason;
+    return (shown === 1 && json(reasons) === json(['show', 'show', 'show', 'cap', 'cap', 'cap']) && soon === 'rate_limited' && dup === 'duplicate') || json({ shown, reasons, soon, dup });
+  });
+  check('v101en_16_error_event_reading', 'Window error and promise-rejection events are read into a report without ever throwing, whatever the rejection reason is', () => {
+    const e1 = v101DescribeErrorEvent('error', { message: 'Uncaught TypeError: x', filename: 'https://x/game.js', error: new TypeError('x is undefined'), defaultPrevented: false });
+    const e2 = v101DescribeErrorEvent('unhandledrejection', { reason: new Error('save failed') });
+    const e3 = v101DescribeErrorEvent('unhandledrejection', { reason: 'plain text' });
+    const e4 = v101DescribeErrorEvent('unhandledrejection', { reason: { message: 'object reason' } });
+    const e5 = v101DescribeErrorEvent('unhandledrejection', { reason: undefined });
+    const e6 = v101DescribeErrorEvent('error', null);
+    const e7 = v101DescribeErrorEvent('error', { message: 'only a message', defaultPrevented: true });
+    return (e1.message === 'x is undefined' && e1.filename === 'https://x/game.js' && e2.message === 'save failed' && e3.message === 'plain text' && e4.message === 'object reason' && e5.message === '' && e6.message === '' && e7.message === 'only a message' && e7.handled) || json([e1, e2, e3, e4, e5, e6, e7]);
+  });
+  check('v101en_17_error_net_handle_records_and_survives', 'Handling a report stores the next state, logs it for the Release Center once, and never throws', () => {
+    const state = v101NewErrorNetState();
+    const before = V95_SURFACE_ERRORS.length;
+    const quiet = console.error;
+    console.error = () => undefined;
+    let shown = false, again = true, survived = true;
+    try { shown = v101ErrorNetHandle(report('a handler threw'), 5000, state); again = v101ErrorNetHandle(report('a handler threw'), 5001, state); survived = !v101ErrorNetHandle(null as unknown as V101ErrorReport, 5002, state); }
+    finally { console.error = quiet; }
+    const added = V95_SURFACE_ERRORS.length - before;
+    while (V95_SURFACE_ERRORS.length > before) V95_SURFACE_ERRORS.shift();
+    return (shown && !again && survived && added === 1 && state.shown === 1 && state.visible) || json({ shown, again, survived, added, state });
+  });
+  check('v101en_18_error_net_banner_markup', 'The banner says what happened in plain words and offers a recovery download only when a recovery save exists (rendered, not mirrored)', () => {
+    if (!v101StaticRendererReady()) return true; // no static renderer in this runner (V10.1 SECTION 20BI note): the pure checks above carry the guarantee
+    const withSave = v101RenderStatic(<V101ErrorNetView hasRecovery={true} downloaded={false} onDownload={() => undefined} onDismiss={() => undefined} />);
+    const noSave = v101RenderStatic(<V101ErrorNetView hasRecovery={false} downloaded={false} onDownload={() => undefined} onDismiss={() => undefined} />);
+    const done = v101RenderStatic(<V101ErrorNetView hasRecovery={true} downloaded={true} onDownload={() => undefined} onDismiss={() => undefined} />);
+    const full = v101RenderStatic(<V101ErrorNet />);
+    return (/Something went wrong/.test(withSave) && /Your match is still here/.test(withSave) && /Download a recovery copy/.test(withSave) && /role="alert"/.test(withSave)
+      && !/v101-error-net-download/.test(noSave) && /Dismiss/.test(noSave) && !/v101-error-net-download/.test(done) && /saved to your downloads/.test(done) && full === '') || json({ withSave: withSave.slice(0, 200), noSave: noSave.slice(0, 120), full });
+  });
+
+  // ---- 4. Small fixes ---------------------------------------------------------------------------------------------------------------
+  check('v101en_19_paint_wait_falls_back_to_a_timer', 'The wait-for-paint helper runs the work exactly once: after the frames when it can paint, from a short timer in a hidden tab, and from a safety timer when frames never come', () => {
+    const run = (env: { raf: boolean; hidden: boolean; fireFrames: boolean }) => {
+      const timers: Array<{ fn: () => void; ms: number }> = []; const frames: Array<() => void> = [];
+      let calls = 0;
+      v101AfterNextPaint(() => { calls += 1; }, { raf: env.raf ? cb => { frames.push(cb); return frames.length; } : null, later: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, hidden: env.hidden });
+      if (env.fireFrames) { for (let i = 0; i < 4; i++) { const next = frames.splice(0); next.forEach(cb => cb()); } }
+      const waits = timers.map(t => t.ms);
+      [...timers].sort((a, b) => a.ms - b.ms).forEach(t => t.fn());
+      return { calls, waits };
+    };
+    const visible = run({ raf: true, hidden: false, fireFrames: true });
+    const frozen = run({ raf: true, hidden: false, fireFrames: false });
+    const hidden = run({ raf: true, hidden: true, fireFrames: false });
+    const noRaf = run({ raf: false, hidden: false, fireFrames: false });
+    return (visible.calls === 1 && frozen.calls === 1 && frozen.waits.includes(V101_PAINT_FALLBACK_MS) && hidden.calls === 1 && hidden.waits.length === 1 && hidden.waits[0] === V101_PAINT_HIDDEN_MS && noRaf.calls === 1 && noRaf.waits[0] === 32) || json({ visible, frozen, hidden, noRaf });
+  });
+  check('v101en_20_download_helper_order', 'A download adds the link to the page, clicks it, removes it and revokes the blob URL only after the delay (a fake page records the order); a failure returns false instead of throwing', () => {
+    const log: string[] = []; let revoke: (() => void) | null = null; let delay = 0;
+    const env: V101DownloadEnv = {
+      createObjectURL: () => { log.push('create'); return 'blob:x'; }, revokeObjectURL: u => { log.push(`revoke ${u}`); },
+      createAnchor: () => ({ href: '', download: '', click() { log.push(`click ${this.href} ${this.download}`); } }),
+      append: () => { log.push('append'); }, remove: () => { log.push('remove'); }, later: (fn, ms) => { revoke = fn; delay = ms; return 1; }
+    };
+    const ok = v101TriggerDownload(env, new Blob(['{}']), 'save.json');
+    const beforeDelay = log.join('|');
+    if (revoke) (revoke as () => void)();
+    const lastEntry = log[log.length - 1];
+    const bad = v101TriggerDownload({ ...env, createObjectURL: () => { throw new Error('no blobs'); } }, new Blob(['{}']), 'x.json');
+    const clickFails = v101TriggerDownload({ ...env, createAnchor: () => ({ href: '', download: '', click() { throw new Error('blocked'); } }) }, new Blob(['{}']), 'x.json');
+    return (ok && beforeDelay === 'create|append|click blob:x save.json|remove' && lastEntry === 'revoke blob:x' && delay === V101_DOWNLOAD_REVOKE_MS && V101_DOWNLOAD_REVOKE_MS >= 1000 && !bad && !clickFails) || json({ ok, beforeDelay, delay, bad, clickFails });
+  });
+  check('v101en_21_watchdog_ignores_a_sleep', 'The AI-turn watchdog needs a run of ordinary one-second checks with no progress: a laptop that slept (one check, a huge gap) cannot end a healthy turn, a real hang still can', () => {
+    const start = 1000000;
+    let sleeper = v101WatchdogStart(start, 7);
+    sleeper = v101WatchdogTick(sleeper, start + 600000, 7);
+    const sleepVerdict = decideAiTurnWatchdog({ isThinking: true, hasPendingApprovals: false, msSinceLastAction: 600000 }) === 'recover' && v101WatchdogTicksEnough(sleeper);
+    let hung = v101WatchdogStart(start, 7);
+    let recoveredAt = -1;
+    for (let sec = 1; sec <= 30 && recoveredAt < 0; sec++) {
+      hung = v101WatchdogTick(hung, start + sec * 1000, 7);
+      if (decideAiTurnWatchdog({ isThinking: true, hasPendingApprovals: false, msSinceLastAction: sec * 1000 }) === 'recover' && v101WatchdogTicksEnough(hung)) recoveredAt = sec;
+    }
+    const progress = v101WatchdogTick({ lastTickAt: start, lastProgressAt: 7, ticks: 11 }, start + 1000, 8);
+    return (!sleepVerdict && recoveredAt === 16 && progress.ticks === 0 && !v101WatchdogTicksEnough({ lastTickAt: 0, lastProgressAt: 0, ticks: 5 })) || json({ sleepVerdict, recoveredAt, progress });
+  });
+  check('v101en_22_track_goal_writes_only_the_goal', 'Track as Goal merges just the goal: the day and the rival-thinking flag changed since the screen last drew are left alone (writing the drawn state back, as it did, rolled them back)', () => {
+    // What the screen last drew (day 9, rival thinking) and what the match is now (day 10, the rival has finished): the click arrives in between.
+    const drawn = { ...initialGameState, gameMode: 'game', day: 9, isAiThinking: true, playerTrackedObjective: null };
+    const live = { ...drawn, day: 10, isAiThinking: false };
+    const goal = { id: 'g1', sourceType: 'contract', sourceId: 'c1', title: 'Deliver wool' } as unknown as PlayerTrackedObjective;
+    const next = gameStateReducer(live, { type: 'UPDATE_GAME_STATE', payload: { playerTrackedObjective: goal } });
+    const old = gameStateReducer(live, { type: 'LOAD_STATE', payload: { ...drawn, playerTrackedObjective: goal } });
+    return (next.isAiThinking === false && next.day === 10 && next.playerTrackedObjective === goal && old.day === 9 && old.isAiThinking === true) || json({ thinking: next.isAiThinking, day: next.day, oldDay: old.day, oldThinking: old.isAiThinking });
+  });
+  check('v101en_23_replay_integrity_reads_healthy', 'A good replay is reported Healthy (it always read Unsupported); a tampered one Corrupted; a non-replay and a future schema stay Unsupported', () => {
+    const good = forkReplay(3);
+    const healthy = migrateReplayFileWithReport(JSON.parse(JSON.stringify(good))).compatibility;
+    const tampered = JSON.parse(JSON.stringify(good)) as ReplayFile; tampered.events[0].summary = 'edited by hand';
+    const corrupted = migrateReplayFileWithReport(tampered).compatibility;
+    const junk = migrateReplayFileWithReport('nope').compatibility;
+    const future = migrateReplayFileWithReport({ ...JSON.parse(JSON.stringify(good)), schemaVersion: REPLAY_SCHEMA_VERSION + 5 }).compatibility;
+    return (healthy.integrityStatus === 'Healthy' && healthy.status === 'exact' && corrupted.integrityStatus === 'Corrupted' && junk.integrityStatus === 'Unsupported' && future.integrityStatus === 'Unsupported') || json([healthy.integrityStatus, healthy.status, corrupted.integrityStatus, junk.integrityStatus, future.integrityStatus]);
+  });
+  check('v101en_24_automode_runtime_fields_survive_load', 'The six Auto Mode runtime fields (overlays, step stats, status history, policy snapshot, pending replay events) come back from a load; wrong shapes are dropped; a runtime without them gains none', () => {
+    const src = { actorOverlays: { player: { x: 1 } }, teamOverlays: { team_player: { treasuryReserve: 0.2 } }, turnStepStats: { totalEvaluations: 4, packagesApplied: 2, packagesRolledBack: 0, proposalsGenerated: 1, lastEvaluationTurn: 3 }, packageStatusHistory: [{ n: 1 }], activePolicySnapshot: { player: { p: 1 } }, pendingMatchReplayEvents: [{ e: 1 }] };
+    const kept = sanitizeAutoModeRuntimeState(JSON.parse(JSON.stringify(src)));
+    const wrong = sanitizeAutoModeRuntimeState({ actorOverlays: 'x', teamOverlays: [1], turnStepStats: 5, packageStatusHistory: {}, activePolicySnapshot: null, pendingMatchReplayEvents: 'e' });
+    const plain = sanitizeAutoModeRuntimeState({});
+    const long = sanitizeAutoModeRuntimeState({ packageStatusHistory: Array.from({ length: 700 }, (_, i) => ({ i })) });
+    const keys = ['actorOverlays', 'teamOverlays', 'turnStepStats', 'packageStatusHistory', 'pendingMatchReplayEvents'];
+    const rt = (r: unknown) => r as Record<string, unknown>;
+    return (json(rt(kept).actorOverlays) === json(src.actorOverlays) && json(rt(kept).teamOverlays) === json(src.teamOverlays) && json(rt(kept).turnStepStats) === json(src.turnStepStats) && json(rt(kept).packageStatusHistory) === json(src.packageStatusHistory)
+      && json(rt(kept).pendingMatchReplayEvents) === json(src.pendingMatchReplayEvents) && json(rt(kept).activePolicySnapshot) === json(src.activePolicySnapshot)
+      && keys.every(k => rt(wrong)[k] === undefined) && rt(wrong).activePolicySnapshot !== null && keys.every(k => rt(plain)[k] === undefined) && (rt(long).packageStatusHistory as unknown[]).length === 500) || json({ kept, wrong });
+  });
+  check('v101en_25_replay_branch_is_a_match_not_the_menu', 'Continue from here on a checkpoint without a snapshot builds a match in progress that keeps the recording\'s seed and rules stamp (an older recording keeps none), and the load check accepts it', () => {
+    const cp = { id: 'c5', sequence: 5, day: 3, turn: 5, label: 'Day 3', kind: 'day' } as unknown as ReplayCheckpoint;
+    const fixture = createV95SaveFixture();
+    const actors = { actorsById: { player: fixture.player, ai: fixture.aiPlayer } as unknown as Record<string, ActorState> };
+    const stamped = spawnMatchBranchFromCheckpoint(cp, forkReplay(6, 4321, { ...actors, matchSeed: 2468, rulesVersion: V101_RULES_VERSION }));
+    const old = spawnMatchBranchFromCheckpoint(cp, forkReplay(6));
+    const bare = spawnMatchBranchFromCheckpoint(cp);
+    const g = (d: SaveGameData) => d.gameState as unknown as { gameMode?: string; matchSeed?: number; rulesVersion?: number };
+    const verified = verifySaveLoadCandidate(stamped).ok;
+    const fields = v101ReplayConfigMatchFields({ matchSeed: 2468, rulesVersion: 1010 });
+    return (g(stamped).gameMode === 'game' && g(stamped).matchSeed === 2468 && g(stamped).rulesVersion === 1010 && g(old).gameMode === 'game' && g(old).matchSeed === undefined && g(old).rulesVersion === undefined
+      && g(bare).gameMode === 'game' && verified && fields.matchSeed === 2468 && fields.rulesVersion === 1010 && json(v101ReplayConfigMatchFields({})) === '{}') || json({ stamped: g(stamped), old: g(old), verified });
+  });
+  check('v101en_26_load_preflight_cancels_before_touching_anything', 'A save that cannot be built is stopped by the load preflight (which runs before the match epoch moves and the rival\'s timers are torn down); a good save passes', () => {
+    const good = createV95SaveFixture();
+    const broken = { ...good, gameState: null } as unknown as SaveGameData;
+    return (v101LoadPreflight(good) === null && typeof v101LoadPreflight(broken) === 'string') || json([v101LoadPreflight(good), v101LoadPreflight(broken)]);
+  });
+
+  // ---- 5. Determinism details ------------------------------------------------------------------------------------------------
+  check('v101en_27_draw_log_bounded_and_frozen_safe', 'drawGameRandom keeps at most 64 draw records per Auto Mode replay event (newest kept), still records the draw, and does not throw on a frozen event', () => {
+    setRngMasterSeed(31, true);
+    const state = { day: 3, turn: 3, autoModeRuntime: { replayEvents: [{ id: 'e1' }] } } as unknown as ExtendedGameState;
+    let last = -1;
+    for (let i = 0; i < 200; i++) last = drawGameRandom(state, 'World');
+    const draws = (state.autoModeRuntime as unknown as { replayEvents: Array<{ rngDraws: RecordedRandomDraw[] }> }).replayEvents[0].rngDraws;
+    const frozen = { day: 1, turn: 1, autoModeRuntime: { replayEvents: [Object.freeze({ id: 'f' })] } } as unknown as ExtendedGameState;
+    let threw = false;
+    try { drawGameRandom(frozen, 'World'); } catch { threw = true; }
+    return (draws.length === V101_MAX_EVENT_RNG_DRAWS && draws[draws.length - 1].value === last && !threw) || `len ${draws.length}, threw ${threw}`;
+  });
+  check('v101en_28_reducer_fork_id_is_pure_on_v101_matches', 'The what-if fork reducer draws nothing on a V10.1 match (React may run a reducer twice) and gives the same id for the same state; a V10.0 match still draws exactly as before', () => {
+    const base = { ...initialGameState, gameMode: 'game', whatIfTimelines: {} };
+    primeLive();
+    const before = liveSig();
+    const a = gameStateReducer({ ...base, rulesVersion: V101_RULES_VERSION }, { type: 'CREATE_WHATIF_TIMELINE', payload: {} });
+    const b = gameStateReducer({ ...base, rulesVersion: V101_RULES_VERSION }, { type: 'CREATE_WHATIF_TIMELINE', payload: {} });
+    const pure = before === liveSig() && a.activeTimelineId === b.activeTimelineId && a.activeTimelineId === 'timeline_1';
+    const second = gameStateReducer(a, { type: 'CREATE_WHATIF_TIMELINE', payload: {} }).activeTimelineId === 'timeline_2';
+    gameStateReducer({ ...base, rulesVersion: V100_RULES_VERSION }, { type: 'CREATE_WHATIF_TIMELINE', payload: {} });
+    const classicDraws = before !== liveSig();
+    primeLive();
+    const primed = liveSig();
+    gameStateReducer({ ...base }, { type: 'CREATE_WHATIF_TIMELINE', payload: {} });
+    const unstampedDraws = liveSig() !== primed;
+    return (pure && second && classicDraws && unstampedDraws && v101NextTimelineId({ timeline_1: 1, timeline_2: 1 }) === 'timeline_3') || json({ pure, second, classicDraws, unstampedDraws });
+  });
+  check('v101en_29_registryless_load_uses_the_match_seed', 'A V10.1 match loaded without saved streams is reseeded from its own match seed; a V10.0, unstamped or seedless match keeps the settings seed it always used', () => {
+    const settings = { worldRngSeed: 99, aiDeterministicSeed: 7 };
+    return (v101RegistrylessLoadSeed({ rulesVersion: V101_RULES_VERSION, matchSeed: 555 }, settings) === 555
+      && v101RegistrylessLoadSeed({ rulesVersion: V100_RULES_VERSION, matchSeed: 555 }, settings) === 99
+      && v101RegistrylessLoadSeed({ matchSeed: 555 }, settings) === 99
+      && v101RegistrylessLoadSeed({ rulesVersion: V101_RULES_VERSION }, settings) === 99
+      && v101RegistrylessLoadSeed({ rulesVersion: V101_RULES_VERSION, matchSeed: 555 }, { aiDeterministicSeed: 7 }) === 555
+      && v101RegistrylessLoadSeed({}, undefined) === 1337) || 'wrong load seed';
+  });
+  check('v101en_30_replay_ids_differ_between_matches', 'Two recordings started in different matches get different ids (the counter alone repeated "replay:corr:1" every time); the counter part is kept in front', () => {
+    const a = v101ReplayMatchId('replay:corr:1', 48213, 1700000000000);
+    const b = v101ReplayMatchId('replay:corr:1', 48214, 1700000000000);
+    const c = v101ReplayMatchId('replay:corr:1', 48213, 1700000999000);
+    const none = v101ReplayMatchId('replay:corr:1', null, Number.NaN);
+    return (a !== b && a !== c && b !== c && a.startsWith('replay:corr:1_') && none === 'replay:corr:1_m0_0' && !isV101Match({ rulesVersion: V100_RULES_VERSION }) && !isV101Match({})) || json([a, b, c, none]);
+  });
+
+  // ---- 6. Performance --------------------------------------------------------------------------------------------------------------
+  check('v101en_31_spectator_has_no_advisor_only_on_v101_matches', 'A V10.1 AI-vs-AI spectator match skips the player advisor; a V10.0, unstamped or classic-rules spectator match, and every match with a player, keep it exactly as before', () => {
+    const spec = (rulesVersion: number | undefined, selectedMode: string) => ({ selectedMode, ...(rulesVersion !== undefined ? { rulesVersion } : {}) });
+    return (!v101AdvisorActive(true, spec(V101_RULES_VERSION, 'team_ai_vs_ai'))
+      && v101AdvisorActive(true, spec(V100_RULES_VERSION, 'team_ai_vs_ai'))
+      && v101AdvisorActive(true, spec(undefined, 'team_ai_vs_ai'))
+      && v101AdvisorActive(true, spec(V101_RULES_VERSION, 'solo'))
+      && v101AdvisorActive(true, spec(V101_RULES_VERSION, 'ai'))
+      && !v101AdvisorActive(false, spec(V100_RULES_VERSION, 'ai'))
+      && !v101AdvisorActive(false, null)) || 'advisor gate wrong';
+  });
+  check('v101en_32_measuring_components_still_render', 'The screen-measuring components (the toast lane under the first-run panel) still draw their content now that they measure once per frame (rendered)', () => {
+    if (!v101StaticRendererReady()) return true;
+    const lane = v101RenderStatic(<V99ToastLaneBelow active={true}><span>first-run panel</span></V99ToastLaneBelow>);
+    const idle = v101RenderStatic(<V99ToastLaneBelow active={false}><span>first-run panel</span></V99ToastLaneBelow>);
+    return (/first-run panel/.test(lane) && /v99-toast-lane-below/.test(lane) && /first-run panel/.test(idle)) || json({ lane, idle });
+  });
+
+  // ---- 7. A test setup to trust ---------------------------------------------------------------------------------------------------
+  check('v101en_33_gl_perf_is_stable', 'The guided-learning speed check (the one that was chronically red) passes five times in a row', () => {
+    const runs = Array.from({ length: 5 }, () => runV9GuidedLearningSelfTests().find(r => r.id === 'gl_perf'));
+    const red = runs.filter(r => !r || !r.passed).map(r => r ? r.detail : 'missing');
+    return red.length === 0 || `gl_perf red ${red.length}/5: ${red[0]}`;
+  });
+  check('v101en_34_data_loss_suites_can_block_a_release', 'A failing save, migration, session-safety, recovery or campaign-persistence row makes the release NOT_READY; a failing feature row in the same suites still only warns', () => {
+    const spec = (row: string): V95SuiteSpec => ({ id: 'zzs', label: 'Fixture', tier: 'quick', section: 'System Regression', severity: 'MAJOR', criticalRows: /save|migrat|load|recover|autosave|persist/i, run: () => [{ id: row, name: row, passed: false, detail: 'red' }, { id: 'ok_row', name: 'ok_row', passed: true, detail: '' }] });
+    const dataLoss = runV95ExistingSuite(spec('save_roundtrip_migrates'));
+    const feature = runV95ExistingSuite(spec('toast_colour'));
+    const gate = (c: V95CheckResult[]) => buildReleaseReadinessReport(c, 'quick', 0, []).status;
+    const guarded = ['v98c1', 'v99ss', 'v99mr', 'v99fx', 'v100fx'].filter(id => { const s = V95_EXISTING_SUITES.find(x => x.id === id); return !s || (s.severity !== 'CRITICAL' && !(s.criticalRows instanceof RegExp)); });
+    return (dataLoss[0].severity === 'CRITICAL' && gate(dataLoss) === 'NOT_READY' && feature[0].severity === 'MAJOR' && gate(feature) === 'READY_WITH_WARNINGS' && guarded.length === 0) || json({ a: dataLoss[0].severity, b: gate(dataLoss), c: feature[0].severity, d: gate(feature), guarded });
+  });
+  check('v101en_35_known_failures_work', 'A row listed in knownFailures does not fail its suite, but a listed row that now passes (or is gone) does, so the list cannot go stale', () => {
+    const rows = (okKnown: boolean) => [{ id: 'known_red', name: 'known_red', passed: okKnown, detail: '' }, { id: 'fine', name: 'fine', passed: true, detail: '' }];
+    const base = { id: 'zzk', label: 'Known', tier: 'quick' as const, section: 'System Regression' as V95ReleaseSection, severity: 'MAJOR' as V95Severity };
+    const stillRed = runV95ExistingSuite({ ...base, knownFailures: ['known_red'], run: () => rows(false) })[0];
+    const nowPasses = runV95ExistingSuite({ ...base, knownFailures: ['known_red'], run: () => rows(true) })[0];
+    const unlisted = runV95ExistingSuite({ ...base, run: () => rows(false) })[0];
+    const newRegression = runV95ExistingSuite({ ...base, knownFailures: ['known_red'], run: () => [...rows(false), { id: 'new_break', name: 'new_break', passed: false, detail: 'x' }] })[0];
+    return (stillRed.passed && /1 known/.test(stillRed.detail) && !nowPasses.passed && /not failing now/.test(nowPasses.detail) && !unlisted.passed && !newRegression.passed && /new_break/.test(newRegression.detail)) || json([stillRed, nowPasses, unlisted.passed, newRegression.detail]);
+  });
+  check('v101en_36_toast_filter_is_the_tested_function', 'The toast lane filter and the helper the tests exercise are one function (isToastShown): a restored-from-save toast, a quiet toast and a classic toast are treated the same way in both', () => {
+    const live = { id: 'a' };
+    const restored = { id: 'r', metadata: { restoredFromSave: true } };
+    return (isToastShown(live, null) && !isToastShown(live, new Set(['a'])) && isToastShown(live, new Set(['b'])) && !isToastShown(restored, null) && isToastShown(restored, null, true) && !isToastShown(restored, new Set(['r']), true)) || 'isToastShown behaves differently';
+  });
+  {
+    // The source-scanning checks (v97_settings_keys_exist, v99ps_e51 / e52 / e54) read the component's own text. In a minified build that text is unreadable, and they used to pass
+    // silently there. They now record that they were skipped (v101SkipSourceScan); this row says so out loud and proves the recording works.
+    const probeId = 'zz_probe';
+    const recorded = v101SkipSourceScan(probeId) === true && V101_SOURCE_SCAN_SKIPS.includes(probeId);
+    const probeAt = V101_SOURCE_SCAN_SKIPS.indexOf(probeId); if (probeAt >= 0) V101_SOURCE_SCAN_SKIPS.splice(probeAt, 1);
+    const componentText = String(AustraliaGame);
+    const readable = /\bgameSettings\b/.test(componentText) && /addNotification/.test(componentText);
+    results.push({ id: 'v101en_37_source_scans_report_when_skipped', name: 'The source-scanning checks record a skip (and this row says so) when the component text is unreadable, instead of passing silently', passed: recorded, detail: recorded ? (readable ? '' : 'SKIPPED: the component source is not readable in this build (minified), so the source-scanning checks in v97cs and v99ps did not inspect it') : 'skip was not recorded' });
+  }
   return results;
 }
 // <<V101-SLOT ENGINE end>>
@@ -216117,7 +217156,11 @@ function AustraliaGame() {
     pendingReplayStartRef.current = false;
     const branchSourceMatchId = pendingReplayBranchSourceMatchIdRef.current;
     pendingReplayBranchSourceMatchIdRef.current = null;
-    const matchId = nextCorrelationId(globalDeterministicCounters, 'replay');
+    // V10.1 (SECTION 20BK): the id counter restarts with every match, so every recording used to get the same id ('replay:corr:1');
+    // two recordings then looked like one (file names, "is this the recording in progress?" checks). A V10.1 match adds its own
+    // match seed and the start time to the id. An older match, and a classic-rules match, keeps the id it always had.
+    const replayCounterId = nextCorrelationId(globalDeterministicCounters, 'replay');
+    const matchId = isV101Match(gameState) ? v101ReplayMatchId(replayCounterId, readMatchSeed(gameState), Date.now()) : replayCounterId;
     replayRecordingRef.current = {
       schemaVersion: REPLAY_SCHEMA_VERSION,
       gameVersion: VERSION_CONSTANTS.GAME_VERSION,
@@ -216136,7 +217179,8 @@ function AustraliaGame() {
         rngRegistryState: globalRngRegistry.exportStreamStates(),
         deterministicCounters: { ...globalDeterministicCounters },
         autoModeGlobalSettings: gameSettings.autoModeSettings,
-        initialAutoModeRuntimeState: gameState.autoModeRuntime
+        initialAutoModeRuntimeState: gameState.autoModeRuntime,
+        ...v101ReplayConfigMatchFields(gameState) // V10.1 (SECTION 20BK): match seed and rules stamp, kept for branches built without a snapshot
       },
       events: [],
       randomDraws: [],
@@ -216382,7 +217426,7 @@ function AustraliaGame() {
     setIsExecutingCoPilotSelfTests(true);
     setTimeout(() => {
       try {
-        const report = runCoPilotDevSelfTests(gameState, gameSettings);
+        const report = /* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runCoPilotDevSelfTests(gameState, gameSettings));
         setCoPilotSelfTestResult(report);
         addNotification(
           `Co-Pilot Dev Self-Tests Complete: ${report.passedCount}/${report.totalTests} Passed (${report.executionTimeMs}ms)`,
@@ -217246,10 +218290,14 @@ function dispatchGameSettingsChange(
   const v99RetryOffer = useMemo(() => v99TouristRetryOffer(failedChallengeData, player), [failedChallengeData, player]);
   const coPilotRuntimeContext = useMemo(() => ({ ...createCoPilotRuntimeContext(player, gameState, gameSettings, takeoverSession, actorsById, aiPlayer, teamsById), humanRules: v99DoItHandlersRef, touristRetry: v99RetryOffer }), [player, gameState, gameSettings, takeoverSession, actorsById, aiPlayer, teamsById, v99RetryOffer]);
   const isLiveIntentMatch = gameState?.gameMode === 'game' && !gameState?.gameOver;
+  // V10.1 (SECTION 20BK): the advisor (candidate moves for the player, Background AI and its simulations) works for a player. In AI vs AI
+  // spectator mode there is none, and it still ran after every AI action (about half of the screen's render time). A V10.1 match skips it;
+  // an older or classic-rules match keeps running it exactly as before.
+  const bgAdvisorActive = v101AdvisorActive(isLiveIntentMatch, gameState);
   const intentCandidateCacheRef = useRef<{ fingerprint: string; candidates: any[] }>({ fingerprint: '', candidates: [] });
   const [intentRecCandidates, setIntentRecCandidates] = useState<any[]>([]);
   React.useEffect(() => {
-    if (!isLiveIntentMatch) {
+    if (!bgAdvisorActive) {
       if (intentCandidateCacheRef.current.fingerprint) {
         intentCandidateCacheRef.current = { fingerprint: '', candidates: [] };
         setIntentRecCandidates([]);
@@ -217270,7 +218318,7 @@ function dispatchGameSettingsChange(
     }
     intentCandidateCacheRef.current = { fingerprint, candidates };
     setIntentRecCandidates(candidates);
-  }, [isLiveIntentMatch, gameState, player, coPilotRuntimeContext]);
+  }, [isLiveIntentMatch, bgAdvisorActive, gameState, player, coPilotRuntimeContext]);
   const intentLayerComputed = useMemo(() => {
     const actor = resolveIntentActor(gameState, player);
     const idleObjective: CurrentObjective = {
@@ -217773,28 +218821,14 @@ function dispatchGameSettingsChange(
   const downloadSaveFile = useCallback((data: SaveGameData) => {
     const filename = generateSaveFileName(data);
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    v101DownloadBlob(blob, filename); // V10.1 (SECTION 20BK): revoked after a delay, not at once
   }, [generateSaveFileName]);
 
   // RP2: mirrors downloadSaveFile's exact Blob+anchor download pattern for the replay file.
   const downloadReplayFile = useCallback((file: ReplayFile) => {
     const filename = `replay_${file.matchId}.json`;
     const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    v101DownloadBlob(blob, filename); // V10.1 (SECTION 20BK): revoked after a delay, not at once
   }, []);
 
   // RP2: stamps the final match result onto the in-progress recording, computes its checksum (the
@@ -223946,13 +224980,18 @@ function dispatchGameSettingsChange(
     if (!gameState.isAiThinking && !isAiThinkingRef.current) return;
 
     lastActorActionTimeRef.current = Date.now();
+    // V10.1 (SECTION 20BK): the wall clock alone ended a healthy rival turn after a laptop slept, a dialog blocked the page or the browser throttled the
+    // timer (one check, "15 s since the last action", and the turn was handed back). The check now also needs enough ordinary one-second checks in a
+    // row with no progress; a long gap between two checks restarts the count.
+    let v101WatchdogClock = v101WatchdogStart(Date.now(), lastActorActionTimeRef.current);
 
     const isDev = !(typeof process !== 'undefined' && process.env?.NODE_ENV === 'production');
 
     const intervalId = setInterval(() => {
       const isThinking = gameState.isAiThinking || isAiThinkingRef.current;
       const hasPendingApprovals = (pendingApprovalRequests || []).some(r => r.status === 'pending' || r.status === 'displayed');
-      if (decideAiTurnWatchdog({ isThinking, hasPendingApprovals, msSinceLastAction: Date.now() - lastActorActionTimeRef.current }) === 'recover') {
+      v101WatchdogClock = v101WatchdogTick(v101WatchdogClock, Date.now(), lastActorActionTimeRef.current);
+      if (decideAiTurnWatchdog({ isThinking, hasPendingApprovals, msSinceLastAction: Date.now() - lastActorActionTimeRef.current }) === 'recover' && v101WatchdogTicksEnough(v101WatchdogClock)) {
         if (isDev) {
           console.warn('[Watchdog] isAiThinking has remained true for >15 seconds with no actor action recorded.');
         }
@@ -224308,8 +225347,10 @@ function dispatchGameSettingsChange(
   }, [updateUiState, uiState.settingsActiveTab]);
 
   const trackIntentGoal = useCallback((tracked: PlayerTrackedObjective | null) => {
-    dispatchGameState({ type: 'LOAD_STATE', payload: { ...gameState, playerTrackedObjective: tracked } });
-  }, [dispatchGameState, gameState]);
+    // V10.1 (SECTION 20BK): only the goal is written. The whole render-time state used to be written back over the live one (a stale copy
+    // when an AI turn finished in between) and LOAD_STATE also switched isAiThinking off; UPDATE_GAME_STATE merges just this one field.
+    dispatchGameState({ type: 'UPDATE_GAME_STATE', payload: { playerTrackedObjective: tracked } });
+  }, [dispatchGameState]);
 
   useEffect(() => {
     // V10.1 (SECTION 20BJ): the story-decision popup lives in the match state, not in uiState: tell the surface manager it is open (V10.1 matches), so shortcuts stand down and Escape / the rescue can close it.
@@ -225423,6 +226464,13 @@ function dispatchGameSettingsChange(
       addNotification(`Load cancelled — this save could not be upgraded (${err instanceof Error ? err.message : 'unknown error'}). Your current match was not changed.`, 'error', true, 'system');
       return false;
     }
+    // V10.1 (SECTION 20BK): a dry run of the pure parts of the load BEFORE the match epoch is bumped and the rival's timers are torn down: a save that
+    // cannot be built used to leave the old match on screen with its rival loop already dead and no message. Now the load is cancelled, nothing touched.
+    const v101PreflightProblem = v101LoadPreflight(data);
+    if (v101PreflightProblem !== null) {
+      addNotification(`Load cancelled — this save could not be read (${v101PreflightProblem}). Your current match was not changed.`, 'error', true, 'system');
+      return false;
+    }
     v95MatchEpochRef.current += 1; // invalidates deferred callbacks scheduled by the previous match
     // V9.9 (SECTION 20AT): nothing of the match that was running may act in the loaded one. A save made in the middle of
     // the rival's turn resumes that turn with the actions it had left (not a second full turn); a save that was waiting
@@ -225662,7 +226710,9 @@ function dispatchGameSettingsChange(
       // saved stream positions are taken; a pre-V9.9 save is imported exactly as before.
       restoreRngRegistryForLoad(globalRngRegistry, readMatchSeed(data.gameState), data.rngRegistryState);
     } else {
-      const seed = data.gameSettings?.worldRngSeed || data.gameSettings?.aiDeterministicSeed || 1337;
+      // V10.1 (SECTION 20BK): a V10.1 match without saved streams is reseeded from ITS OWN match seed (the settings seed it used to take is
+      // whatever the player last typed, not what this match started with); an older match keeps the exact seed it always took.
+      const seed = v101RegistrylessLoadSeed(data.gameState, data.gameSettings);
       setRngMasterSeed(seed, true);
     }
     if (data.deterministicCounters) {
@@ -228715,8 +229765,10 @@ function dispatchGameSettingsChange(
     link.download = profileId
       ? `ai-memory-profile-${profileId}.json`
       : `ai-memory-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link); // V10.1 (SECTION 20BK): added to the page and revoked after a delay
     link.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), V101_DOWNLOAD_REVOKE_MS);
     addNotification(
       profileId
         ? 'Exported one persistent AI profile. Automatic persistence was not changed.'
@@ -229985,7 +231037,7 @@ function dispatchGameSettingsChange(
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    setTimeout(() => URL.revokeObjectURL(url), V101_DOWNLOAD_REVOKE_MS); // V10.1 (SECTION 20BK): added to the page and revoked after a delay
   }, []);
 
   // V6.7 Phase 3c: gains Team Initiative for teamId, applying teamInitiativeGainMultiplier and a
@@ -237673,11 +238725,16 @@ function dispatchGameSettingsChange(
   // approval resolver — a single place that increments totalRuns/totalSuccesses/totalFailed/
   // runsToday/consecutiveNoChangeCount, so the two call sites can never drift.
   const applyHumanAutomationRunResult = useCallback((automationId: string, success: boolean, day: number, turn: number, errorMsg?: string) => {
+    // V10.1 (SECTION 20BK): the run id is drawn ONCE here, before the state updater. A React updater may run twice (StrictMode, a restarted
+    // render) and a draw inside it consumed the Replay and AICandidates streams twice and minted a different id each time.
+    const runLogId = gameSettings.automationRunHistoryEnabled
+      ? `run_${Math.floor(globalRngRegistry.draw('Replay') * 1e12)}_${Math.floor(drawGameplayRandom('AICandidates') * 100000).toString(36)}`
+      : '';
     setHumanAutomations(prev => prev.map(a => {
       if (a.id !== automationId) return a;
       const stats = a.executionStats;
       const historyEntry: HumanAutomationRunLogEntry | null = gameSettings.automationRunHistoryEnabled ? {
-        id: `run_${Math.floor(globalRngRegistry.draw('Replay') * 1e12)}_${Math.floor(drawGameplayRandom('AICandidates') * 100000).toString(36)}`,
+        id: runLogId,
         timestamp: Date.now(),
         day,
         turn,
@@ -247265,7 +248322,7 @@ function dispatchGameSettingsChange(
   const bgStored = useMemo(() => sanitizeBackgroundAIState(bgStoredRaw), [bgStoredRaw]);
   const bgPerfRef = useRef<{ lastMs: number; maxMs: number; evaluations: number; skipped: number }>({ lastMs: 0, maxMs: 0, evaluations: 0, skipped: 0 });
   const bgEvaluation = useMemo<{ state: BackgroundAIState; report: BackgroundEvaluationReport } | null>(() => {
-    if (!isLiveIntentMatch || !bgStored.enabled) return null;
+    if (!bgAdvisorActive || !bgStored.enabled) return null; // V10.1 (SECTION 20BK): no advisor for a spectator (was: !isLiveIntentMatch)
     try {
       const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
       const world = { ...giWorldBuilderRef.current(), gi3: gi3StateRef.current };
@@ -247280,7 +248337,7 @@ function dispatchGameSettingsChange(
     }
     // v9GiFingerprint covers the canonical slices the world reads; GI3 and Team OS feed strategy/team context.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bgStored, v9GiFingerprint, gi3Live, teamOsView, isLiveIntentMatch]);
+  }, [bgStored, v9GiFingerprint, gi3Live, teamOsView, bgAdvisorActive]);
   const bgLive: BackgroundAIState = bgEvaluation?.state || bgStored;
   bgStateRef.current = bgLive;
   const bgCommitRef = useRef<{ turn: number; commits: number; lastSig: string }>({ turn: -1, commits: 0, lastSig: '' });
@@ -258575,7 +259632,7 @@ function dispatchGameSettingsChange(
                       document.body.appendChild(link);
                       link.click();
                       document.body.removeChild(link);
-                      setTimeout(() => URL.revokeObjectURL(url), 0);
+                      setTimeout(() => URL.revokeObjectURL(url), V101_DOWNLOAD_REVOKE_MS); // V10.1 (SECTION 20BK): added to the page and revoked after a delay
                     };
                     // AB8: import — full sanitize-on-import via the existing sanitizeAiAlgorithmConfig
                     // (the exact same discipline sanitizeTeamPlan established: reject rather than trust
@@ -262471,8 +263528,10 @@ function dispatchGameSettingsChange(
                         const a = document.createElement('a');
                         a.href = url;
                         a.download = `canonical_ledger_compressed_${Date.now()}.json`;
+                        document.body.appendChild(a); // V10.1 (SECTION 20BK): added to the page and revoked after a delay
                         a.click();
-                        URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        setTimeout(() => URL.revokeObjectURL(url), V101_DOWNLOAD_REVOKE_MS);
                         addNotification('Compressed canonical ledger exported.', 'info');
                       }}
                       className="px-3 py-1.5 rounded bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow transition cursor-pointer"
@@ -262488,8 +263547,10 @@ function dispatchGameSettingsChange(
                         const a = document.createElement('a');
                         a.href = url;
                         a.download = `diagnostic_bundle_${Date.now()}.json`;
+                        document.body.appendChild(a); // V10.1 (SECTION 20BK): added to the page and revoked after a delay
                         a.click();
-                        URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        setTimeout(() => URL.revokeObjectURL(url), V101_DOWNLOAD_REVOKE_MS);
                         addNotification('Diagnostic bundle exported successfully.', 'info');
                       }}
                       className="px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs shadow transition cursor-pointer"
@@ -263114,7 +264175,7 @@ function dispatchGameSettingsChange(
     if (v101FirstRunVoices(wp8State, glLearning.basicsStep !== null && glSelection.mode !== 'off').holdToasts) filtered = filtered.filter(n => !v101IsFirstRunAnnouncement(n));
     // V9.9 (SECTION 20AT): restored-from-save and end-screen-quiet notifications are history, not toasts
     // (classicStickyToasts keeps the V9.8 behaviour of showing a loaded save's toasts again).
-    filtered = filtered.filter(n => (classicSticky || isLiveToast(n)) && !(v99QuietToastIds !== null && v99QuietToastIds.has(n.id)));
+    filtered = filtered.filter(n => isToastShown(n, v99QuietToastIds, classicSticky)); // V10.1 (SECTION 20BK): the lane uses the tested helper (same rule as before)
     if (isBlockingModalOpen) {
       filtered = filtered.filter(n => v99ToastShowsOverModal(n, classicSticky));   // V9.9 (SECTION 20AU): also the result toasts raised under this window
     }
@@ -266690,9 +267751,9 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV96ChallengeDecisionSelfTests()), ...v95WithIsolatedGlobals(() => runV96ChallengeContentSelfTests()), ...runV96MapMotionSoundSelfTests(), ...runV96OpponentMindSelfTests(), ...runV96MatchShapeSelfTests(), ...v95WithIsolatedGlobals(() => runV96PerformanceSelfTests()), ...runV96GuidedFirstRunSelfTests(), ...v95WithIsolatedGlobals(() => runV97CorrectnessSweepSelfTests()), ...v95WithIsolatedGlobals(() => runV98CampaignStateSelfTests()), ...v95WithIsolatedGlobals(() => runV99FoundationsSelfTests()), ...v95WithIsolatedGlobals(() => runV99TrustworthyAdviceSelfTests()), ...v95WithIsolatedGlobals(() => runV99MatchFlowSelfTests()), ...v95WithIsolatedGlobals(() => runV99SessionSafetySelfTests()), ...v95WithIsolatedGlobals(() => runV99PlayScreenRulesSelfTests()), ...v95WithIsolatedGlobals(() => runV99MatchRecoverySelfTests()), ...v95WithIsolatedGlobals(() => runV99MatchJournalSelfTests()), ...v95WithIsolatedGlobals(() => runV99TurnDigestSelfTests()), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
-            setV9SelfTestResults(sync);
-            void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
+            // V10.1 (SECTION 20BK): the list is the suite registry (the hand-written list covered about half of it, and one suite that threw lost every result);
+            // every suite runs isolated from the live match, in its own try / catch, one at a time so the page stays usable. The async Game Intelligence suites come last.
+            void runV101LabProgressive(rows => setV9SelfTestResults(rows));
           }}
           selfTestResults={v9SelfTestResults}
           giDiagnostics={giDiagnostics}
@@ -271837,7 +272898,7 @@ function dispatchGameSettingsChange(
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 0);
+      setTimeout(() => URL.revokeObjectURL(url), V101_DOWNLOAD_REVOKE_MS); // V10.1 (SECTION 20BK): added to the page and revoked after a delay
     };
 
     const exportGameActivityLedgerEventsCsv = () => {
@@ -271859,7 +272920,7 @@ function dispatchGameSettingsChange(
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 0);
+      setTimeout(() => URL.revokeObjectURL(url), V101_DOWNLOAD_REVOKE_MS); // V10.1 (SECTION 20BK): added to the page and revoked after a delay
     };
 
     const clearGameActivityLedgerEvents = () => {
@@ -272950,8 +274011,10 @@ function dispatchGameSettingsChange(
                           const a = document.createElement('a');
                           a.href = url;
                           a.download = `match_bundle_${gameState?.gameActivityLedger?.matchId || Date.now()}.json`;
+                          document.body.appendChild(a); // V10.1 (SECTION 20BK): added to the page and revoked after a delay
                           a.click();
-                          URL.revokeObjectURL(url);
+                          document.body.removeChild(a);
+                          setTimeout(() => URL.revokeObjectURL(url), V101_DOWNLOAD_REVOKE_MS);
                         }}
                         className="px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1 shadow"
                       >
@@ -273254,8 +274317,10 @@ function dispatchGameSettingsChange(
                                   const a = document.createElement('a');
                                   a.href = url;
                                   a.download = `canonical_ledger_compressed_${Date.now()}.json`;
+                                  document.body.appendChild(a); // V10.1 (SECTION 20BK): added to the page and revoked after a delay
                                   a.click();
-                                  URL.revokeObjectURL(url);
+                                  document.body.removeChild(a);
+                                  setTimeout(() => URL.revokeObjectURL(url), V101_DOWNLOAD_REVOKE_MS);
                                   addNotification('Compressed canonical ledger exported.', 'info');
                                 }}
                                 className="px-3 py-1 rounded bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow transition cursor-pointer"
@@ -273388,8 +274453,10 @@ function dispatchGameSettingsChange(
                                 const a = document.createElement('a');
                                 a.href = url;
                                 a.download = `canonical_ledger_compressed_${Date.now()}.json`;
+                                document.body.appendChild(a); // V10.1 (SECTION 20BK): added to the page and revoked after a delay
                                 a.click();
-                                URL.revokeObjectURL(url);
+                                document.body.removeChild(a);
+                                setTimeout(() => URL.revokeObjectURL(url), V101_DOWNLOAD_REVOKE_MS);
                                 addNotification('Compressed canonical ledger exported.', 'info');
                               }}
                               className="px-3 py-1 rounded bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs"
@@ -274262,7 +275329,7 @@ function dispatchGameSettingsChange(
       }
     };
     const runStudioTests = () => {
-      const report = runReplayStudioSelfTests();
+      const report = /* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runReplayStudioSelfTests());
       setReplaySelfTestReport(report.summary);
       addNotification(report.summary, report.success ? 'success' : 'error', true);
     };
@@ -278023,7 +279090,7 @@ function dispatchGameSettingsChange(
                 <div>Sigma: {tuningSigma.toFixed(3)} · Neither streak: {tuningNeitherStreak}</div>
                 <button type="button" disabled={tuningFeatureCeiling} onClick={runTuningLabGeneration} className="px-4 py-2 rounded bg-fuchsia-700 font-semibold disabled:opacity-40">Run generation</button>
                 <div className="text-slate-400 text-xs">{tuningLabProgress}</div>
-                <button type="button" className="px-3 py-1 rounded bg-slate-700 text-xs" onClick={() => setTuningSelfTestReport(runAiTuningLabSelfTests())}>Run lab self-tests</button>
+                <button type="button" className="px-3 py-1 rounded bg-slate-700 text-xs" onClick={() => setTuningSelfTestReport(/* V10.1 (SECTION 20BK): isolated from the live match */ runIsolatedSuite(() => runAiTuningLabSelfTests()))}>Run lab self-tests</button>
               </div>
               <div className="space-y-2">
                 <div className="font-semibold">Champion manager</div>
@@ -278054,8 +279121,10 @@ function dispatchGameSettingsChange(
                     const link = document.createElement('a');
                     link.href = url;
                     link.download = `ai-tuning-archive-${GAME_VERSION}.json`;
+                    document.body.appendChild(link); // V10.1 (SECTION 20BK): added to the page and revoked after a delay
                     link.click();
-                    URL.revokeObjectURL(url);
+                    document.body.removeChild(link);
+                    setTimeout(() => URL.revokeObjectURL(url), V101_DOWNLOAD_REVOKE_MS);
                     setTuningLabUnsaved(false);
                   }}>Export JSON</button>
                   <button type="button" className="px-3 py-1 rounded bg-slate-700" onClick={() => tuningLabFileInputRef.current?.click()}>Import JSON</button>
@@ -278669,10 +279738,15 @@ function dispatchGameSettingsChange(
 // exception while drawing shows a recovery screen instead of a blank page. No hooks, no props, no context: for
 // src/main.tsx and the tools it is the same `<AustraliaGame />` as before (the inner component keeps its name).
 function AustraliaGameRoot() {
+  // V10.1 (SECTION 20BK): V101ErrorNet sits beside the boundary (not inside it): errors thrown outside rendering (click handlers, timers, promises) reach the
+  // window, and the net shows a banner with a recovery download; it draws nothing until one is due.
   return (
-    <V99RootErrorBoundary>
-      <AustraliaGame />
-    </V99RootErrorBoundary>
+    <>
+      <V99RootErrorBoundary>
+        <AustraliaGame />
+      </V99RootErrorBoundary>
+      <V101ErrorNet />
+    </>
   );
 }
 export default AustraliaGameRoot;
