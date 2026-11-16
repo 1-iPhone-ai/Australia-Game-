@@ -54827,7 +54827,11 @@ export function inspectLoadedReplayCompatibility(
     const recordedMaxActions = recordedSettings?.maxActionsPerTurn;
     const maxActionsMatches = recordedMaxActions === undefined || currentSettings.maxActionsPerTurn === recordedMaxActions;
 
-    const allParityPassed = winCondMatches && difficultyMatches && actionLimitsMatches && maxActionsMatches;
+    // V10.1 (SECTION 20BG): the real budget keys (the Simple view and Smart plans only ever wrote these); a recording without them (older replay) is not compared on them.
+    const v101RecordedPlayerApd = (recordedSettings as Partial<GameSettingsState> | undefined)?.playerActionsPerDay;
+    const v101RecordedAiApd = (recordedSettings as Partial<GameSettingsState> | undefined)?.aiActionsPerDay;
+    const v101ActionsPerDayMatches = (typeof v101RecordedPlayerApd !== 'number' || currentSettings.playerActionsPerDay === v101RecordedPlayerApd) && (typeof v101RecordedAiApd !== 'number' || currentSettings.aiActionsPerDay === v101RecordedAiApd);
+    const allParityPassed = winCondMatches && difficultyMatches && actionLimitsMatches && maxActionsMatches && v101ActionsPerDayMatches;
     checks.push({
       id: 'runtime_parity',
       label: 'Active Settings Alignment',
@@ -64176,6 +64180,8 @@ export interface CoPilotModalProps {
   /** V10.1 (SECTION 20BG): the match's actions per day, and whether the match plays by V10.1 rules, so the cap slider can say how the two numbers relate. */
   matchActionsPerDay?: number;
   matchIsV101?: boolean;
+  /** V10.1 (SECTION 20BG): false when the match has no daily action limit (then the cap is the only limit). */
+  matchActionLimitsEnabled?: boolean;
 }
 
 /**
@@ -64194,11 +64200,14 @@ export const CoPilotModal: React.FC<CoPilotModalProps> = ({
   onAcceptRecommendation,
   isPlayerTurn = true,
   matchActionsPerDay,
-  matchIsV101 = false
+  matchIsV101 = false,
+  matchActionLimitsEnabled = true
 }) => {
   const [activeTab, setActiveTab] = React.useState<'overview' | 'advisory' | 'governance' | 'takeover'>('overview');
   const [customSpendLimit, setCustomSpendLimit] = React.useState<number>(coPilotSettings?.spendingCaps?.maximumSpendPerTurn || 1000);
   const [customMaxActions, setCustomMaxActions] = React.useState<number>(coPilotSettings?.maxActionsPerTurn || 3);
+  // V10.1 (SECTION 20BG): how the cap and the match's actions per day fit together (read each render: the flag lives in this browser's storage, and a blocked store reads as "not moved").
+  const v101CapInput: V101CoPilotCapInput = { copilotCap: customMaxActions, capTouched: v101CoPilotCapTouched(v99BrowserStorage()), actionsPerDay: matchActionsPerDay, overridesGranted: player?.overrideActionsGranted, actionLimitsEnabled: matchActionLimitsEnabled, v101: matchIsV101 };
 
   if (!isOpen) return null;
 
@@ -64486,14 +64495,14 @@ export const CoPilotModal: React.FC<CoPilotModalProps> = ({
 
                 <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-4 space-y-2">
                   <label className="text-xs font-bold text-gray-200 block">
-                    Max Actions Per Turn ({customMaxActions})
+                    Max Actions Per Turn ({v101CoPilotShownCap(v101CapInput)})
                   </label>
                   <input
                     type="range"
                     min="1"
                     max="10"
                     step="1"
-                    value={customMaxActions}
+                    value={v101CoPilotShownCap(v101CapInput)}
                     onChange={(e) => {
                       const val = Number(e.target.value);
                       setCustomMaxActions(val);
@@ -64503,8 +64512,8 @@ export const CoPilotModal: React.FC<CoPilotModalProps> = ({
                     className="w-full"
                   />
                   <span className="text-[11px] text-gray-400">Max actions Co-Pilot can execute in a single turn</span>
-                  <span className="text-[11px] text-sky-300 block" data-testid="v101-copilot-cap-note">{v101CoPilotCapNote({ copilotCap: customMaxActions, capTouched: v101CoPilotCapTouched(v99BrowserStorage()), actionsPerDay: matchActionsPerDay, overridesGranted: player?.overrideActionsGranted, actionLimitsEnabled: true, v101: matchIsV101 })}{/* V10.1 (SECTION 20BG): the cap and the match's actions per day, said in one line */}</span>
-                  {matchIsV101 && v101CoPilotCapTouched(v99BrowserStorage()) && (
+                  <span className="text-[11px] text-sky-300 block" data-testid="v101-copilot-cap-note">{v101CoPilotCapNote(v101CapInput)}{/* V10.1 (SECTION 20BG): the cap and the match's actions per day, said in one line */}</span>
+                  {matchIsV101 && v101CapInput.capTouched && (
                     <button type="button" className="text-[11px] underline text-sky-300" onClick={() => { v101CoPilotCapMarkTouched(v99BrowserStorage(), false); setCustomMaxActions(V101_COPILOT_CAP_DEFAULT); onUpdateSettings({ maxActionsPerTurn: V101_COPILOT_CAP_DEFAULT }); }}>Use all of my actions per day</button>
                   )}
                 </div>
@@ -100158,7 +100167,7 @@ export const SettingsSearchResultCard: React.FC<SettingsSearchResultCardProps> =
             <input
               type="number"
               value={curVal ?? 0}
-              onChange={(e) => onUpdateSetting(keyStr, Number(e.target.value))}
+              onChange={(e) => { if (e.target.value.trim() === '' || !Number.isFinite(Number(e.target.value))) return; onUpdateSetting(keyStr, Number(e.target.value)); /* V10.1 (SECTION 20BG): this edit is live now, so an emptied box is ignored instead of writing 0 */ }}
               disabled={v101LiveRuleLockReason(keyStr as string) !== null} title={v101LiveRuleLockReason(keyStr as string) ?? undefined} /* V10.1 (SECTION 20BD): locked while a V10.1 match runs */
               className="w-16 px-1.5 py-0.5 text-[11px] font-semibold bg-slate-800 border border-slate-600 rounded text-white"
             />
@@ -100194,6 +100203,8 @@ export interface CustomSettingsPreset {
   description: string;
   category: 'builtin' | 'custom';
   createdAt?: number;
+  /** V10.1 (SECTION 20BG): true for a preset saved by V10.1: `settings` then holds only what differs from the defaults (everything else means "the default"). Absent = a whole copy, applied as before. */
+  sparse?: boolean;
   settings: Partial<GameSettingsState>;
 }
 
@@ -100288,17 +100299,19 @@ export function saveCustomSettingsPresetChecked(name: string, description: strin
     description: description.trim() || 'User-created custom settings preset',
     category: 'custom',
     createdAt: Date.now(),
+    sparse: true,
     settings: v101PresetDeltaFromDefaults(settings)
   };
   const updated = [newPreset, ...customPresets];
   memoryPresetCache = updated;
   const stored = v99WriteJson(storage, CUSTOM_SETTINGS_PRESETS_STORAGE_KEY, updated);
-  if (!stored) console.error('Failed to save custom settings preset: this browser would not store it (kept for this session only).');
+  if (!stored) { v101NoteSessionOnlyPreset(newPreset.id); console.error('Failed to save custom settings preset: this browser would not store it (kept for this session only).'); }
   return { preset: newPreset, stored };
 }
 
 export function clearCustomSettingsPresetsCache(): void {
   memoryPresetCache = [];
+  v101ForgetSessionPreset(null); // V10.1 (SECTION 20BG): nothing is left to merge back
   try {
     const storage = typeof localStorage !== "undefined" ? localStorage : (typeof window !== "undefined" ? window.localStorage : null);
     if (storage) {
@@ -100311,6 +100324,7 @@ export function deleteCustomSettingsPreset(presetId: string): boolean {
   const customPresets = getCustomSettingsPresets();
   const filtered = customPresets.filter(p => p.id !== presetId);
   memoryPresetCache = filtered;
+  v101ForgetSessionPreset(presetId); // V10.1 (SECTION 20BG): a deleted preset is not merged back
   try {
     const storage = typeof localStorage !== 'undefined' ? localStorage : (typeof window !== 'undefined' ? window.localStorage : null);
     if (storage) {
@@ -100403,7 +100417,7 @@ export const SettingsPresetManagerModal: React.FC<SettingsPresetManagerModalProp
 
   const handleApply = (preset: CustomSettingsPreset) => {
     // V10.1 (SECTION 20BG): the preset is not applied here any more. The caller shows what would change (a count, a warning in a running match) and applies it once the player confirms.
-    onApplyPresetSettings(preset.settings, preset.name, { includeProfile });
+    onApplyPresetSettings(v101PresetEffectiveSettings(preset), preset.name, { includeProfile });
   };
 
   const handleSaveCustom = (e: React.FormEvent) => {
@@ -100518,7 +100532,7 @@ export const SettingsPresetManagerModal: React.FC<SettingsPresetManagerModalProp
                     <p className="text-xs text-slate-400 mb-3 line-clamp-2">{preset.description}</p>
                   </div>
                   <div className="flex items-center justify-between border-t border-white/5 pt-2.5 mt-1">
-                    <span className="text-[11px] text-slate-500">{v101PresetCountLine(preset.settings, currentSettings, includeProfile)}</span>{/* V10.1 (SECTION 20BG): the real number of changes from where you are now (it said how many settings the preset stores) */}
+                    <span className="text-[11px] text-slate-500">{v101PresetCountLine(preset, currentSettings, includeProfile)}</span>{/* V10.1 (SECTION 20BG): the real number of changes from where you are now (it said how many settings the preset stores) */}
                     <div className="flex items-center gap-1.5">
                       {preset.category === 'custom' && (
                         <button
@@ -212656,9 +212670,675 @@ export function runV101PlayScreenSelfTests(): V9SelfTestResult[] {
 // SECTION 20BG: V10.1 SETTINGS TRUTH — EVERY SWITCH DOES WHAT IT SAYS
 // ============================================================================
 // <<V101-SLOT SETTINGS begin>>
-// (work package SETTINGS: replace everything between the two markers; keep the markers and the exported suite function below.)
+// V10.1 (SECTION 20BG): work package SETTINGS. Settings that tell the truth: every switch on the settings screens does what it says, can be found, and cannot silently wreck a match.
+// What changed, and for which matches (details and hand-tests in the package report):
+//  S1 Findable (every match). The presets section is always drawn; with "Settings Presets" off it says so and offers "Show presets". It no longer waits for the UX Assist master switch (that would also switch on other helpers).
+//  S2 Switches that did nothing (every match, display and profile only). "Start Collapsed", "Allow Category Collapse", "Remember Category Navigation State" and the narrow-screen switch now drive the hub; settings nothing reads carry the
+//     "No effect" chip; the interest label says "% of the standard rate" everywhere; UX Assist rows say what the game really does; the Simple view says which switches need a rival; the legacy twin of an actions-per-day key follows it.
+//     Team Brain "Escalating Cost" and "Override Fatigue" are read (V10.1 Team matches only: they change how the AI's extra actions are priced and how they tire it).
+//  S3 Co-Pilot turn cap (V10.1 matches only). The cap means "up to your actions per day" unless the player lowered it on purpose; an older or Classic match keeps the old cap.
+//  S4 Preset manager (every match; it is a screen). A preset is compared with your settings, confirmed with a count, and leaves look, sound and accessibility alone unless asked; saving says honestly whether the browser kept it.
+//  S5 Search results edit live like every other control (every match).
+// Nothing here is persisted match state: the only stored values are per-browser profile conveniences under "aussie.v101.". No random draws, no clock reads.
+
+// ---- S3: the Co-Pilot's own cap and the match's actions per day -----------------------------------------------------------
+/** The Co-Pilot's factory cap. In a V10.1 match a cap equal to this and never moved by the player means "use the match's actions per day". */
+export const V101_COPILOT_CAP_DEFAULT = 3;
+/** Browser-profile flag: the player moved the Co-Pilot's cap slider on purpose (so a cap of 3 is a choice, not the factory value). */
+export const V101_COPILOT_CAP_TOUCHED_KEY = 'aussie.v101.copilotCapTouched';
+/** True when the player has moved the Co-Pilot cap slider in this browser; false when unset, unreadable or blocked storage. */
+export function v101CoPilotCapTouched(storage: V99StorageLike | null): boolean {
+  return v99ReadJson(storage, V101_COPILOT_CAP_TOUCHED_KEY) === true;
+}
+/** Records (or clears) the flag above. Returns false, never throws, when the browser would not store it. */
+export function v101CoPilotCapMarkTouched(storage: V99StorageLike | null, touched: boolean): boolean {
+  if (touched) return v99WriteJson(storage, V101_COPILOT_CAP_TOUCHED_KEY, true);
+  if (!storage) return false;
+  try { storage.removeItem(V101_COPILOT_CAP_TOUCHED_KEY); return true; } catch { return false; }
+}
+export interface V101CoPilotCapInput {
+  /** coPilotSettings.maxActionsPerTurn as saved (unset, 0 and NaN read as the factory 3, as before). */
+  copilotCap?: number | null;
+  /** The player moved the slider (v101CoPilotCapTouched). */
+  capTouched?: boolean;
+  /** The match's playerActionsPerDay. */
+  actionsPerDay?: number | null;
+  /** Actions bought with overrides this turn (player.overrideActionsGranted). */
+  overridesGranted?: number | null;
+  /** False when the match has no daily action limit (then the cap is the only limit, as before). */
+  actionLimitsEnabled?: boolean | null;
+  /** True for a match played by V10.1 rules (isV101Match). */
+  v101: boolean;
+}
+function v101CapNumber(value: unknown): number | null { return typeof value === 'number' && Number.isFinite(value) ? value : null; }
+/** The cap exactly as every earlier version read it. */
+function v101CoPilotOwnCap(input: V101CoPilotCapInput): number { return Math.max(1, v101CapNumber(input.copilotCap) || V101_COPILOT_CAP_DEFAULT); }
+/** What getRemainingActionPoints counts for the player at the start of a turn (actions per day plus overrides bought), or null where the cap rules alone (older match, or no daily limit). */
+export function v101CoPilotMatchBudget(input: V101CoPilotCapInput): number | null {
+  if (!input.v101 || input.actionLimitsEnabled === false) return null;
+  const perDay = v101CapNumber(input.actionsPerDay);
+  return (perDay && perDay > 0 ? perDay : 3) + Math.max(0, v101CapNumber(input.overridesGranted) ?? 0);
+}
+/** A cap the player chose: the slider was moved, or the saved value is not the factory 3 (a value saved before V10.1 is honoured). */
+export function v101CoPilotCapIsDeliberate(input: V101CoPilotCapInput): boolean {
+  const cap = v101CapNumber(input.copilotCap);
+  return input.capTouched === true || (cap !== null && cap > 0 && cap !== V101_COPILOT_CAP_DEFAULT);
+}
+/**
+ * How many actions the Co-Pilot may take in one turn. Older and Classic matches, and a match with no daily limit: the cap as it always was
+ * (max(1, cap or 3)). A V10.1 match: the match's actions per day plus granted overrides, or the player's lower cap when they set one on purpose.
+ */
+export function v101CoPilotEffectiveCap(input: V101CoPilotCapInput): number {
+  const own = v101CoPilotOwnCap(input);
+  const budget = v101CoPilotMatchBudget(input);
+  if (budget === null) return own;
+  return v101CoPilotCapIsDeliberate(input) ? Math.min(own, budget) : budget;
+}
+/** The number the cap slider should show: the budget while the cap is "all my actions", the saved cap otherwise. */
+export function v101CoPilotShownCap(input: V101CoPilotCapInput): number {
+  const budget = v101CoPilotMatchBudget(input);
+  return budget !== null && !v101CoPilotCapIsDeliberate(input) ? Math.min(10, budget) : v101CoPilotOwnCap(input);
+}
+/** One plain line: how the Co-Pilot's cap and the match's actions per day fit together. */
+export function v101CoPilotCapNote(input: V101CoPilotCapInput): string {
+  const own = v101CoPilotOwnCap(input);
+  if (input.actionLimitsEnabled === false) return `Daily action limits are off, so this cap (${own}) is the only limit on what the Co-Pilot does in a turn.`;
+  if (!input.v101) {
+    const perDay = v101CapNumber(input.actionsPerDay);
+    if (perDay !== null && perDay > own) return `This match keeps the older rule: the Co-Pilot stops after ${own} actions a turn, even though you have ${perDay} actions per day.`;
+    return `The Co-Pilot stops after ${own} actions a turn${perDay !== null ? ` (you have ${perDay} actions per day)` : ''}.`;
+  }
+  const budget = v101CoPilotMatchBudget(input) ?? own;
+  if (!v101CoPilotCapIsDeliberate(input)) return `The Co-Pilot plays all ${budget} of your actions per day. Move the slider to give it a lower limit.`;
+  if (own < budget) return `The Co-Pilot stops after ${own} of your ${budget} actions each turn.`;
+  return `The Co-Pilot plays all ${budget} of your actions per day (its own limit of ${own} is not lower).`;
+}
+/** The same line for the Simple view's "Your actions per day" row. No match running (null) reads as "a match started now", which plays by V10.1 rules unless Classic Rules is on. */
+export function v101CoPilotSimpleLine(settings: GameSettingsState, matchIsV101: boolean | null, storage?: V99StorageLike | null): string {
+  const cp = settings.coPilotSettings;
+  return v101CoPilotCapNote({
+    copilotCap: cp ? cp.maxActionsPerTurn : null,
+    capTouched: v101CoPilotCapTouched(storage === undefined ? v99BrowserStorage() : storage),
+    actionsPerDay: settings.playerActionsPerDay,
+    actionLimitsEnabled: settings.actionLimitsEnabled,
+    v101: matchIsV101 ?? settings.classicRulesV100 !== true
+  });
+}
+
+// ---- S1: the presets section ---------------------------------------------------------------------------------------------
+/** The presets section is open when "Settings Presets" is on. (It used to need the UX Assist Pack master switch as well; that switch also turns on other helpers, so it is no longer required.) */
+export function v101PresetsSectionOpen(settings: Pick<GameSettingsState, 'settingsPresetsEnabled'> | null | undefined): boolean {
+  return settings?.settingsPresetsEnabled === true;
+}
+export const V101_PRESETS_GATE_NOTE = 'Presets are ready-made bundles of settings (Classic, Fast and more). They are switched off. "Show presets" turns on only this list and Reset to Classic; it does not switch on the other UX Assist helpers.';
+/** What the presets section shows while presets are off: one note and one button. Nothing when presets are on. */
+export const V101PresetsGateCard: React.FC<{ enabled: boolean; onShow: () => void; buttonClassName?: string }> = ({ enabled, onShow, buttonClassName }) => {
+  if (enabled) return null;
+  return (
+    <div id="settings-presets-gate-note" data-testid="v101-presets-gate" className="flex flex-wrap items-center justify-between gap-3 text-sm">
+      <div className="opacity-80">{V101_PRESETS_GATE_NOTE}</div>
+      <button type="button" onClick={onShow} className={buttonClassName || 'px-4 py-2 rounded font-semibold bg-emerald-600 text-white'} data-testid="v101-presets-show">Show presets</button>
+    </div>
+  );
+};
+
+// ---- S2: settings the hub's own switches never read ---------------------------------------------------------------------
+/** True unless the player turned "Allow Category Collapse" off. Every settings section reads this. */
+export function v101SectionCanCollapse(settings: Pick<GameSettingsState, 'allowSettingsCategoryCollapse'> | null | undefined): boolean {
+  return !settings || settings.allowSettingsCategoryCollapse !== false;
+}
+export const V101_START_COLLAPSED_HINT = 'Settings sections start folded the next time you open Settings (needs Allow Category Collapse).';
+/** Where the hub remembers the last tab and folds when "Remember Category Navigation State" is on. */
+export const V101_SETTINGS_NAV_KEY = 'aussie.v101.settingsNav';
+export interface V101SettingsNav { tab: SettingsHubTabId | null; collapsed: string[] }
+function v101IsHubTab(value: unknown): value is SettingsHubTabId { return typeof value === 'string' && Object.prototype.hasOwnProperty.call(SETTINGS_HUB_TAB_LABELS, value); }
+/** The remembered hub position, sanitised (a corrupt or hostile record gives null or an empty one). */
+export function v101ReadSettingsNav(storage: V99StorageLike | null): V101SettingsNav | null {
+  const raw = v99ReadJson(storage, V101_SETTINGS_NAV_KEY);
+  if (!v99IsRecord(raw)) return null;
+  const collapsed = Array.isArray(raw.collapsed) ? raw.collapsed.filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length <= 120).slice(0, 400) : [];
+  return { tab: v101IsHubTab(raw.tab) ? raw.tab : null, collapsed };
+}
+/** Stores the hub position. False (never a throw) when the browser would not keep it. */
+export function v101WriteSettingsNav(storage: V99StorageLike | null, nav: V101SettingsNav): boolean {
+  return v99WriteJson(storage, V101_SETTINGS_NAV_KEY, { tab: nav.tab, collapsed: nav.collapsed.slice(0, 400) });
+}
+export interface V101SettingsOpenPlan { tab: SettingsHubTabId | null; collapsed: Record<string, boolean> }
+/**
+ * What the hub does the moment it opens, or null for "leave it as it is".
+ * Needs Allow Category Collapse. With Remember Category Navigation State on and a remembered position: the folds (and, when the hub opened on its home tab and not by a jump, the tab) the player left.
+ * Otherwise Start Collapsed (or the narrow-screen switch on a narrow screen) folds every section. A section the player jumped to is never folded.
+ */
+export function v101SettingsOpenPlan(settings: Partial<GameSettingsState>, nav: V101SettingsNav | null, sectionIds: readonly string[], currentTab: string, jumpSectionId: string | null, narrow: boolean): V101SettingsOpenPlan | null {
+  if (!v101SectionCanCollapse(settings as Pick<GameSettingsState, 'allowSettingsCategoryCollapse'>)) return null;
+  const collapsed: Record<string, boolean> = {};
+  let tab: SettingsHubTabId | null = null;
+  if (settings.rememberCategoryNavigationState === true && nav) {
+    nav.collapsed.forEach(id => { if (sectionIds.includes(id)) collapsed[id] = true; });
+    if (nav.tab && currentTab === 'home' && !jumpSectionId) tab = nav.tab;
+  } else if (settings.startSettingsCategoryCollapsed === true || (settings.autoCollapseCategoriesOnNarrow === true && narrow)) {
+    sectionIds.forEach(id => { collapsed[id] = true; });
+  }
+  if (jumpSectionId) delete collapsed[jumpSectionId];
+  if (tab === null && Object.keys(collapsed).length === 0) return null;
+  return { tab, collapsed };
+}
+/** Settings V10.1 found that nothing reads. Each gets the "No effect in this version" chip next to its control (nothing is removed; saved values stay). */
+export const V101_INERT_SETTINGS: readonly V99InertSetting[] = [
+  { key: 'rememberCategoryNavigationMode', reason: 'The navigation style is already kept with your other preferences, so this extra switch changes nothing. Kept so saved games keep their value.' },
+  { key: 'survivalMechanicsEnabled', reason: 'Nothing in the game reads this switch (typing "enable survival mechanics" only sets it). Kept so saved games keep their value.' },
+  { key: 'aiPersonalityVariance', reason: 'The rival does not read this value in this version. Kept so saved games keep their value.' },
+  { key: 'adaptiveAiMaxDifficulty', reason: 'The adaptive AI does not read this ceiling in this version. Kept so saved games keep their value.' },
+  { key: 'aiCalibrationLearningRate', reason: 'Nothing reads this learning rate in this version. Kept so saved games keep their value.' },
+  { key: 'decisionTransparencyPanelDensity', reason: 'The panel looks the same at either density in this version.' },
+  { key: 'decisionTransparencySamplingDensity', reason: 'The panel samples the same decisions at any value in this version.' },
+  { key: 'teamTreasuryAllowAiFundingRequests', reason: 'No team treasury code reads this switch in this version. Kept so saved games keep their value.' },
+  { key: 'replayTurningPointDetectionEnabled', reason: 'Replays find turning points whether this is on or off in this version.' },
+  { key: 'replayWhatIfBranchingEnabled', reason: 'Replays offer branching whether this is on or off in this version.' },
+  { key: 'replayDeveloperDiagnosticsEnabled', reason: 'Replays show the same diagnostics whether this is on or off in this version.' },
+  { key: 'forcedRetreatEnabled', reason: 'Nothing reads this switch in this version; expedition risk follows its own setting.' },
+];
+/** The hub settings V10.1 wired to a real reader, with the reader (the registry walk in the self-tests holds this table to account). */
+export const V101_WIRED_HUB_SETTINGS: Readonly<Record<string, string>> = {
+  allowSettingsCategoryCollapse: 'SettingsSection (fold arrow and header click) and the Collapse All button, through v101SectionCanCollapse',
+  startSettingsCategoryCollapsed: 'v101SettingsOpenPlan, run when the hub opens',
+  rememberCategoryNavigationState: 'v101SettingsOpenPlan / v101WriteSettingsNav (aussie.v101.settingsNav)',
+  autoCollapseCategoriesOnNarrow: 'v101SettingsOpenPlan, on a screen narrower than 640 px',
+  teamAiOverrideEscalatingCostEnabled: 'calculateActorOverrideCost through v101TeamOverrideRules (V10.1 Team matches)',
+  teamAiOverrideFatigueEnabled: 'applyActorActionOverride through v101TeamOverrideRules (V10.1 Team matches)',
+};
+
+// ---- S2: Team Brain override price and fatigue -----------------------------------------------------------------------------
+export interface V101TeamOverrideRules { flatCost: boolean; noFatigue: boolean }
+/**
+ * What the two Team Brain override boxes mean in a match. Only a V10.1 Team match and only for AI actors: with "Escalating Cost" off the AI pays the base price for every
+ * extra action (not +50% for each one already bought today); with "Override Fatigue" off an override does not tire it. Both on (the default), a one-on-one match, a human actor,
+ * a V10.0 or older match and a Classic match: exactly as before.
+ */
+export function v101TeamOverrideRules(settings: unknown, gameState: unknown, isAiActor: boolean): V101TeamOverrideRules {
+  const s = v99IsRecord(settings) ? settings : {};
+  const g = v99IsRecord(gameState) ? gameState : {};
+  const active = isAiActor && isV101Match(gameState) && isTeamModeSelection(typeof g.selectedMode === 'string' ? g.selectedMode : null);
+  return { flatCost: active && s.teamAiOverrideEscalatingCostEnabled === false, noFatigue: active && s.teamAiOverrideFatigueEnabled === false };
+}
+/** The override price: the canonical price, or (flat) the base price with no escalation for overrides already bought today. */
+export function v101ActorOverrideCost(actor: Record<string, unknown>, settings: unknown, overridesUsedToday: number, flat: boolean): number {
+  return calculateActionPointOverrideCost(flat ? { ...actor, overridesUsedToday: 0 } : actor, settings, flat ? 0 : overridesUsedToday);
+}
+/** The fatigue one override adds: the usual step, or nothing when the Team Brain fatigue box is off (V10.1 Team match). */
+export function v101OverrideFatigueStep(usualStep: number, noFatigue: boolean): number { return noFatigue ? 0 : usualStep; }
+export const V101_TEAM_OVERRIDE_NOTE = 'In a Team match on V10.1 rules these two boxes work for the AI: with Escalating Cost off it pays the base price for every extra action (not +50% for each one bought that day); with Override Fatigue off extra actions do not tire it. Older matches and Classic Rules keep the old behaviour.';
+
+// ---- S2: one label for the interest rate ------------------------------------------------------------------------------------
+/** The loan interest slider (0.5 to 2.0) is a multiplier on the standard rate: 1.0 is 100%, not "1%". */
+export function v101InterestMultiplierLabel(multiplier: number): string { return `Interest Rate: ${v101InterestPercent(multiplier)}% of the standard rate`; }
+/** The same figure inside a sentence (the settings summary). */
+export function v101InterestMultiplierPhrase(multiplier: unknown): string { return `interest at ${v101InterestPercent(multiplier)}% of the standard rate`; }
+function v101InterestPercent(multiplier: unknown): number {
+  const m = typeof multiplier === 'number' && Number.isFinite(multiplier) ? multiplier : 1;
+  return Math.round(m * 100);
+}
+
+// ---- S2: UX Assist rows that say what the game does ---------------------------------------------------------------------------
+/** The three UX Assist helpers the guided and simple interface levels switch on by themselves, whatever their own toggle says. */
+export const V101_GUIDED_UX_KEYS: readonly string[] = ['simplifiedActionBarEnabled', 'disabledActionFeedbackEnabled', 'interactiveMapEnabled'];
+export const V101_UX_GUIDED_NOTE = 'On because your interface level is Simple or Guided. This helper is on at those levels whatever this switch says.';
+/** The button text and tone of one UX Assist row: ON while the game really does it, "(guided level)" when the interface level supplies it, "(waiting)" while it needs the master switch. */
+export function v101UxAssistRowState(settings: unknown, key: string): { label: string; guidedSupplied: boolean; active: boolean } {
+  const s = v99IsRecord(settings) ? settings : {};
+  const own = s[key] === true;
+  const master = s.uxAssistPackEnabled === true;
+  const guidedSupplied = V101_GUIDED_UX_KEYS.includes(key) && usesGuidedIntentChrome(s);
+  const isSubFeature = key !== 'uxAssistPackEnabled' && key !== 'teamModeAiSystemsEnabled' && key !== 'settingsPresetsEnabled';
+  if (guidedSupplied) return { label: own && master ? 'ON' : 'ON (guided level)', guidedSupplied, active: true };
+  if (own && isSubFeature && !master) return { label: 'ON (waiting for UX Assist Pack)', guidedSupplied, active: false };
+  return { label: own ? 'ON' : 'OFF', guidedSupplied, active: own };
+}
+
+// ---- S2: the Simple view says which switches need a rival ------------------------------------------------------------------
+/** Simple-view switches that only do something when the match has a rival. */
+export const V101_SIMPLE_RIVAL_KEYS: readonly string[] = ['sabotageEnabled', 'opponentPersonalityEnabled', 'adaptiveAiTauntsEnabled', 'aiSpecialAbilitiesEnabled'];
+export function v101SimpleModeCaveat(key: string, matchMode: string | null | undefined): { label: string; title: string } | null {
+  if (!V101_SIMPLE_RIVAL_KEYS.includes(key)) return null;
+  if (matchMode === 'single') return { label: 'No rival in Single Player', title: 'This match is Single Player, so there is no rival and this switch does nothing in it.' };
+  return { label: 'Rival modes only', title: 'Used in AI Opponent, Team, Scenario and Grand Tour matches. It does nothing in Single Player, where there is no rival.' };
+}
+export function v101SimpleModeChip(key: string, matchMode: string | null | undefined): React.ReactElement | null {
+  const caveat = v101SimpleModeCaveat(key, matchMode);
+  if (!caveat) return null;
+  return <span className="ml-2 inline-block align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded border border-current opacity-70 whitespace-nowrap" title={caveat.title} data-testid={`v101-simple-mode-${key}`}>{caveat.label}</span>;
+}
+
+// ---- S2: the two actions-per-day keys ------------------------------------------------------------------------------------------
+/**
+ * Actions per day has a real key (playerActionsPerDay / aiActionsPerDay) and a legacy twin (maxActionsPerTurn / aiMaxActionsPerTurn) that only the Advanced hub kept in step.
+ * The one settings write calls this: when a real key changed in this write, its twin takes the same value. A write that changes only a twin, and any load, is left alone.
+ */
+export function v101MirrorActionTwinKeys(prev: GameSettingsState, next: GameSettingsState): GameSettingsState {
+  if (next === prev) return next;
+  let out = next;
+  if (next.playerActionsPerDay !== prev.playerActionsPerDay && Number.isFinite(next.playerActionsPerDay) && next.maxActionsPerTurn !== next.playerActionsPerDay) out = { ...out, maxActionsPerTurn: next.playerActionsPerDay };
+  if (next.aiActionsPerDay !== prev.aiActionsPerDay && Number.isFinite(next.aiActionsPerDay) && next.aiMaxActionsPerTurn !== next.aiActionsPerDay) out = { ...out, aiMaxActionsPerTurn: next.aiActionsPerDay };
+  return out;
+}
+
+/** The one settings write: the RULES lock first (V10.1 SECTION 20BD), then the actions-per-day twins. dispatchGameSettingsChange runs every write (a screen, a preset, a search result, a Smart plan) through this. */
+export function v101SettingsWritePipeline(prev: GameSettingsState, rawNext: GameSettingsState, source: string): GameSettingsState {
+  return v101MirrorActionTwinKeys(prev, v101GuardSettingsWrite(prev, rawNext, source));
+}
+
+// ---- S4: the preset manager ------------------------------------------------------------------------------------------------------
+const V101_PRESET_PROFILE_KEYS: ReadonlySet<string> = new Set<string>([...V95_PROFILE_SCOPED_SETTING_KEYS, ...V99_DEVICE_KEPT_SAVE_SCOPED_KEYS]);
+/** True for a look, sound, accessibility, layout or V9.9 helper setting: the player's own, not part of a match. A preset leaves these alone unless asked. */
+export function v101IsProfileSettingKey(key: string): boolean { return V101_PRESET_PROFILE_KEYS.has(key); }
+export const V101_PRESET_PROFILE_NOTE = 'Off: a preset leaves them as they are.';
+/** The settings that differ from the factory defaults: all a saved preset stores (a whole copy was about 38 KB each). Internal "_" keys are not kept. */
+export function v101PresetDeltaFromDefaults(settings: Partial<GameSettingsState>): Partial<GameSettingsState> {
+  const out: Record<string, unknown> = {};
+  const defaults = DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>;
+  Object.entries(settings as Record<string, unknown>).forEach(([key, value]) => {
+    if (key.startsWith('_') || value === undefined) return;
+    if (!settingsValuesEqual(value, defaults[key])) out[key] = value;
+  });
+  return out as Partial<GameSettingsState>;
+}
+/** What applying a preset means: a V10.1-saved (sparse) preset is "the defaults plus these", so applying it sets the same whole picture a full copy used to; every other preset is just its own keys. */
+export function v101PresetEffectiveSettings(preset: { settings: Partial<GameSettingsState>; sparse?: boolean }): Partial<GameSettingsState> {
+  return preset.sparse === true ? { ...DEFAULT_GAME_SETTINGS, ...preset.settings } : preset.settings;
+}
+export interface V101PresetPlan {
+  /** Only the settings that change (and, unless asked, no look, sound or accessibility setting). */
+  patch: Partial<GameSettingsState>;
+  changedKeys: string[];
+  changedCount: number;
+  /** Look, sound and accessibility differences that were left alone. */
+  skippedProfileKeys: string[];
+  /** Changed settings that belong to the match (everything that is not a profile setting). */
+  matchKeys: string[];
+  message: string;
+}
+function v101SettingLabel(key: string): string { const meta = SETTINGS_HUB_FIELD_META[key]; return meta && meta.label ? meta.label : key; }
+/** The difference between a preset and the settings now, and the words to confirm it with. */
+export function v101PresetApplyPlan(current: GameSettingsState, presetSettings: Partial<GameSettingsState>, opts: { includeProfile: boolean; liveMatch: boolean; rulesLocked?: boolean }): V101PresetPlan {
+  const now = current as unknown as Record<string, unknown>;
+  const patch: Record<string, unknown> = {};
+  const changedKeys: string[] = [];
+  const skippedProfileKeys: string[] = [];
+  Object.entries(presetSettings as Record<string, unknown>).forEach(([key, value]) => {
+    if (key.startsWith('_') || value === undefined || settingsValuesEqual(now[key], value)) return;
+    if (v101IsProfileSettingKey(key) && !opts.includeProfile) { skippedProfileKeys.push(key); return; }
+    patch[key] = value;
+    changedKeys.push(key);
+  });
+  const matchKeys = changedKeys.filter(key => !v101IsProfileSettingKey(key));
+  const n = changedKeys.length;
+  const m = skippedProfileKeys.length;
+  const skippedText = m > 0 ? ` ${m} look, sound or accessibility ${m === 1 ? 'setting is' : 'settings are'} left as you have ${m === 1 ? 'it' : 'them'} (tick the box in Presets to include ${m === 1 ? 'it' : 'them'}).` : '';
+  let message: string;
+  if (n === 0) {
+    message = `Nothing to change: it already matches your settings.${skippedText}`;
+  } else {
+    const names = changedKeys.slice(0, 5).map(v101SettingLabel).join(', ');
+    message = `This changes ${n} ${n === 1 ? 'setting' : 'settings'}: ${names}${n > 5 ? ` and ${n - 5} more` : ''}.${skippedText}`;
+    if (opts.liveMatch && matchKeys.length > 0) {
+      message += ` You are in a match: ${matchKeys.length} of these ${matchKeys.length === 1 ? 'changes' : 'change'} how it plays, from now on${opts.rulesLocked ? ' (Game Length, Victory Goal and Difficulty wait for your next match)' : ''}.`;
+    }
+  }
+  return { patch: patch as Partial<GameSettingsState>, changedKeys, changedCount: n, skippedProfileKeys, matchKeys, message };
+}
+/** The line on a preset card: how many settings it would change from where you are now. */
+export function v101PresetCountLine(preset: { settings: Partial<GameSettingsState>; sparse?: boolean }, current: GameSettingsState, includeProfile: boolean): string {
+  const plan = v101PresetApplyPlan(current, v101PresetEffectiveSettings(preset), { includeProfile, liveMatch: false });
+  const n = plan.changedCount;
+  const left = plan.skippedProfileKeys.length;
+  return `${n === 0 ? 'No change' : `Changes ${n} ${n === 1 ? 'setting' : 'settings'}`} from now${left > 0 ? ` (${left} look/sound/accessibility left alone)` : ''}`;
+}
+/** What the manager says after a save: honest about a browser that would not keep it. */
+export function v101PresetSaveMessage(name: string, stored: boolean): string {
+  return stored ? `Saved custom preset: "${name}"` : `"${name}" is NOT saved to this browser (storage is blocked or full). It stays in the list until you close the game.`;
+}
+// Presets the browser refused to store live for this session only; reading the list merges them back in so they do not vanish after the message.
+const V101_SESSION_ONLY_PRESET_IDS = new Set<string>();
+export function v101NoteSessionOnlyPreset(id: string): void { V101_SESSION_ONLY_PRESET_IDS.add(id); }
+export function v101ForgetSessionPreset(id: string | null): void { if (id === null) V101_SESSION_ONLY_PRESET_IDS.clear(); else V101_SESSION_ONLY_PRESET_IDS.delete(id); }
+export function v101MergeSessionPresets<T extends { id: string }>(stored: T[], session: readonly T[]): T[] {
+  const extra = session.filter(p => V101_SESSION_ONLY_PRESET_IDS.has(p.id) && !stored.some(s => s.id === p.id));
+  return extra.length === 0 ? stored : [...extra, ...stored];
+}
+
+// ---- S5: a search result edits live ----------------------------------------------------------------------------------------------
+/** The value a search-result edit writes: checked like an import (wrong-kind values dropped, core numbers kept in range). */
+export function v101SearchEditPatch(key: string, value: unknown): Partial<GameSettingsState> {
+  return sanitizeSettingsPatch({ [key]: value }, { keepUnknownKeys: true }).settings;
+}
+
+// ---- Robustness: a blocked browser store never throws in render -------------------------------------------------------------------
+/** True when this browser lets the game use localStorage. A blocked store (the property read itself throws) is a plain "no". */
+export function v101StorageAvailable(): boolean { return v99BrowserStorage() !== null; }
+
 export function runV101SettingsSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  const blocked: V99StorageLike = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); }, removeItem: () => { throw new Error('blocked'); } };
+  const fresh = (over: Partial<GameSettingsState> = {}): GameSettingsState => ({ ...DEFAULT_GAME_SETTINGS, ...over }); // nothing below mutates it
+  const staticReady = v101StaticRendererReady();
+  const markup = (el: React.ReactElement): string => v101RenderStatic(el);
+
+  // ---- S1 findable ----------------------------------------------------------------------------------------------------
+  check('v101st_01_presets_section_always_there_with_a_gate', 'The Settings Presets section is in the hub index (so search and Jump can reach it) and is always drawn: with presets off it shows one note and a "Show presets" button, with presets on it shows nothing extra; the gate no longer needs the UX Assist master switch', () => {
+    const sec = SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'quickSetup.presets');
+    const gates = [{ settingsPresetsEnabled: false }, { settingsPresetsEnabled: true }, { settingsPresetsEnabled: undefined }].map(s => v101PresetsSectionOpen(s as { settingsPresetsEnabled: boolean }));
+    if (!sec && SETTINGS_HUB_SECTION_INDEX.every(s => !/preset/i.test(s.id))) return 'the presets section is not indexed';
+    if (json(gates) !== json([false, true, false]) || v101PresetsSectionOpen(null) !== false) return `gate ${json(gates)}`;
+    if (v101PresetsSectionOpen(fresh({ settingsPresetsEnabled: true, uxAssistPackEnabled: false })) !== true) return 'still waits for the master switch';
+    if (!staticReady) return true; // the rendered-markup half needs the runner's static renderer (set by tools/selftest/node-run.mjs); the pure half above ran
+    const off = markup(<V101PresetsGateCard enabled={false} onShow={() => undefined} />);
+    const on = markup(<V101PresetsGateCard enabled onShow={() => undefined} />);
+    return (off.includes('Show presets') && off.includes('v101-presets-gate') && off.includes('does not switch on the other UX Assist helpers') && on === '') || `off=${off.slice(0, 200)} on=${on}`;
+  });
+
+  // ---- S3 Co-Pilot cap ---------------------------------------------------------------------------------------------------
+  check('v101st_02_copilot_effective_cap_table', 'Co-Pilot effective cap table (cap x actions per day x overrides x touched): a V10.1 match plays all its actions unless the player chose a lower cap; a saved explicit value is honoured; overrides add to the budget; no daily limit leaves the cap alone', () => {
+    const row = (cap: number | null | undefined, apd: number | undefined, granted: number, touched: boolean, limits: boolean | undefined = true, v101 = true): number =>
+      v101CoPilotEffectiveCap({ copilotCap: cap, capTouched: touched, actionsPerDay: apd, overridesGranted: granted, actionLimitsEnabled: limits, v101 });
+    const table: Array<[number, number]> = [
+      [row(3, 5, 0, false), 5], [row(undefined, 5, 0, false), 5], [row(0, 5, 0, false), 5], [row(null, 4, 0, false), 4], [row(3, 3, 0, false), 3], [row(3, 5, 2, false), 7],
+      [row(3, 5, 0, true), 3], [row(2, 5, 0, false), 2], [row(2, 5, 0, true), 2], [row(8, 5, 0, false), 5], [row(1, 5, 2, true), 1], [row(6, 5, 1, true), 6], [row(3, undefined, 0, false), 3], [row(3, 5, 0, false, false), 3],
+      [row(3, 5, 0, false, undefined), 5], [row(7, 5, 0, false, false), 7],
+    ];
+    const bad = table.map(([got, want], i) => (got === want ? null : `#${i}: ${got} != ${want}`)).filter(Boolean);
+    return bad.length === 0 || bad.join('; ');
+  });
+  check('v101st_03_copilot_old_cap_kept_on_older_matches', 'Regression guard: an unstamped, V10.0 or Classic match keeps the old Co-Pilot cap exactly (max(1, cap or 3)) whatever the actions per day', () => {
+    const old = (cap: number | null | undefined, apd: number | undefined) => v101CoPilotEffectiveCap({ copilotCap: cap, capTouched: true, actionsPerDay: apd, overridesGranted: 2, actionLimitsEnabled: true, v101: isV101Match({ rulesVersion: 1000 }) });
+    const unstamped = v101CoPilotEffectiveCap({ copilotCap: 3, actionsPerDay: 6, v101: isV101Match({}) });
+    const classic = v101CoPilotEffectiveCap({ copilotCap: undefined, actionsPerDay: 6, v101: isV101Match({ rulesVersion: v101RulesVersionForNewMatch({ classicRulesV100: true }) }) });
+    const got = [old(3, 5), old(undefined, 5), old(0, 5), old(2, 9), old(7, 2), unstamped, classic];
+    return json(got) === json([3, 3, 3, 2, 7, 3, 3]) || json(got);
+  });
+  check('v101st_04_copilot_step_uses_all_actions_in_a_v101_match', 'The real Co-Pilot step in a match with 5 actions per day and the default cap of 3: a V10.1 match plays all 5 actions and ends the turn because none are left; a V10.0 match still stops at 3 with actions unspent (reason max_actions_per_turn)', () => {
+    const coPilot: CoPilotSettings = { ...createDefaultCoPilotSettings(), coPilotEnabled: true, authorityMode: 'full_co_pilot', maxActionsPerTurn: 3, minimumConfidenceThreshold: 0 };
+    const s = fresh({ coPilotSettings: coPilot, playerActionsPerDay: 5, actionLimitsEnabled: true });
+    const cand = (actionType: string, utilityScore: number, apCost: number, over?: Partial<CoPilotActionCandidate>): CoPilotActionCandidate => ({ id: `st04_${actionType}`, category: 'loans_and_credit', categoryIndex: 3, categoryName: 'x', title: actionType, description: '', actionType, apCost, costEstimate: 0, expectedOutcome: '', utilityScore, riskFactor: 0, rewardScore: 0, longTermScore: 0, expectedStateDelta: { cashDelta: 0, apDelta: -apCost }, isValid: true, ...(over || {}) });
+    const evaluation = (list: CoPilotActionCandidate[]): CoPilotCandidateEvaluationResult => ({ candidates: list, topRecommendation: list.filter(c => c.isValid).sort((a, b) => b.utilityScore - a.utilityScore)[0] || null, saferAlternative: null, bestLongTermAlternative: null, aggressiveAlternative: null, categoriesEvaluatedCount: 13 });
+    const used = (ctx: unknown): number => { const player = v99IsRecord(ctx) && v99IsRecord(ctx.player) ? ctx.player : {}; return Number(player.actionsUsedThisTurn) || 0; };
+    const offers = (ctx: unknown): CoPilotCandidateEvaluationResult => { const left = 5 - used(ctx); return evaluation([cand('work', 70, 1, { isValid: left >= 1, invalidationReason: left >= 1 ? undefined : 'Insufficient Action Points' })]); };
+    const execute = ((ctx: { gameState?: unknown; player?: unknown }, intent: { actionId?: string; actionType?: string }) => {
+      const before = v99IsRecord(ctx.player) ? ctx.player : {};
+      const player = { ...before, actionsUsedThisTurn: used(ctx) + 1 };
+      return { updatedState: { ...(v99IsRecord(ctx.gameState) ? ctx.gameState : {}), player }, updatedPlayer: player, executionResult: { actionId: intent.actionId, actionType: intent.actionType, status: 'verified', success: true, verifiedDeltas: { apDelta: -1 } } };
+    }) as unknown as typeof executeCoPilotActionIntent;
+    const pass = (() => ({ isValid: true, valid: true })) as unknown as typeof validateTakeoverActionWith10PointPass;
+    const world = (stamp: number | undefined): Record<string, unknown> => ({ day: 8, turnCounter: 8, currentActorId: 'player', currentTurn: 'player', humanPlayerId: 'player', selectedMode: 'ai', gameMode: 'game', turnOrder: ['player', 'ai'], actorsById: {}, resourcePrices: {}, supplyDemand: {}, activeEvents: [], season: 'Off', weather: 'Sunny', gameSettings: s, ...(stamp === undefined ? {} : { rulesVersion: stamp }), player: { id: 'player', name: 'Tester', kind: 'human', isHuman: true, isAi: false, money: 5000, actionsUsedThisTurn: 0, currentRegion: 'QLD', inventory: [], loans: [], equipment: [], character: { name: 'Tourist' }, masteryUnlocks: [], level: 1 } });
+    const play = (stamp: number | undefined): string => {
+      COPILOT_COMMITTED_ACTION_TOKENS.clear();
+      let w = world(stamp);
+      let live = initiateCoPilotTakeover(w, { id: 'st04', type: 'tactical_optimization', title: 'T', description: 'T', confidenceScore: 90, reasoningSummary: 'T', multiTurnPlanSequence: [], teachingExplanation: 'T', targetActorId: 'player', generatedTurn: 8, priorityWeight: 1, category: 'economy' }, { id: 'st04_obj', actorId: 'player', type: 'rebuild_team_economy', description: 'T', priority: 'high', targetMetrics: {}, maxTurns: 10, maxSpendAllowed: 10000, allowedActionCategories: [], status: 'active', progressPercentage: 0, targetTurn: 10, createdTurn: 1 }, 'continuous', coPilot);
+      let actions = 0, last = '';
+      for (let i = 0; i < 10; i++) {
+        const r = runCoPilotAutonomousStep({ gameState: w, player: v99IsRecord(w.player) ? w.player : {}, gameSettings: s, session: live, settings: coPilot, generateCandidates: offers as unknown as typeof generateCoPilotPlayerActionCandidates, executeIntent: execute, validatePass: pass });
+        last = `${r.kind}:${String(r.reason || '')}`;
+        if (r.kind === 'action_committed') actions++;
+        w = r.gameState as unknown as Record<string, unknown>; live = r.session;
+        if (!r.continueTurn) break;
+      }
+      COPILOT_COMMITTED_ACTION_TOKENS.clear();
+      return `${actions}|${last}`;
+    };
+    const v101 = play(V101_RULES_VERSION), v100 = play(V100_RULES_VERSION), unstamped = play(undefined);
+    const okNew = v101.startsWith('5|') && !v101.includes('max_actions_per_turn');
+    const okOld = v100.startsWith('3|') && v100.includes('max_actions_per_turn') && unstamped.startsWith('3|') && unstamped.includes('max_actions_per_turn');
+    return (okNew && okOld) || json({ v101, v100, unstamped });
+  });
+  check('v101st_05_copilot_cap_flag_never_throws', 'The "player moved the cap slider" flag round-trips in a browser store, can be cleared, and a blocked, absent or corrupt store reads as "not moved" and reports a failed write instead of throwing', () => {
+    const mem = createV99MemoryStorage();
+    const before = v101CoPilotCapTouched(mem);
+    const wrote = v101CoPilotCapMarkTouched(mem, true);
+    const after = v101CoPilotCapTouched(mem);
+    const cleared = v101CoPilotCapMarkTouched(mem, false) && !v101CoPilotCapTouched(mem);
+    const corrupt = v101CoPilotCapTouched(createV99MemoryStorage({ [V101_COPILOT_CAP_TOUCHED_KEY]: '{nope' }));
+    const dead = [v101CoPilotCapTouched(blocked), v101CoPilotCapTouched(null), v101CoPilotCapMarkTouched(blocked, true), v101CoPilotCapMarkTouched(null, true), v101CoPilotCapMarkTouched(blocked, false)];
+    return (before === false && wrote && after && cleared && corrupt === false && json(dead) === json([false, false, false, false, false]) && V101_COPILOT_CAP_TOUCHED_KEY.startsWith('aussie.v101.')) || json({ before, wrote, after, cleared, corrupt, dead });
+  });
+  check('v101st_06_copilot_cap_is_explained_in_one_line', 'The Co-Pilot panel and the Simple view say in one line how the cap and the match\'s actions per day fit together, for a V10.1 match, an older match, a lower deliberate cap and no daily limit', () => {
+    const note = (o: Partial<V101CoPilotCapInput>) => v101CoPilotCapNote({ copilotCap: 3, capTouched: false, actionsPerDay: 5, actionLimitsEnabled: true, v101: true, ...o });
+    const a = note({}), b = note({ capTouched: true }), c = note({ v101: false }), d = note({ actionLimitsEnabled: false }), e = note({ copilotCap: 2 });
+    const shown = [v101CoPilotShownCap({ copilotCap: 3, actionsPerDay: 5, v101: true }), v101CoPilotShownCap({ copilotCap: 3, capTouched: true, actionsPerDay: 5, v101: true }), v101CoPilotShownCap({ copilotCap: 3, actionsPerDay: 5, v101: false }), v101CoPilotShownCap({ copilotCap: 3, actionsPerDay: 20, v101: true })];
+    const simple = v101CoPilotSimpleLine(fresh({ playerActionsPerDay: 5 }), true, createV99MemoryStorage());
+    const simpleOld = v101CoPilotSimpleLine(fresh({ playerActionsPerDay: 5 }), false, createV99MemoryStorage());
+    const classicNoMatch = v101CoPilotSimpleLine(fresh({ playerActionsPerDay: 5, classicRulesV100: true }), null, createV99MemoryStorage());
+    const ok = a.includes('all 5 of your actions per day') && b.includes('stops after 3 of your 5') && c.includes('older rule') && c.includes('3 actions a turn') && d.includes('limits are off') && e.includes('stops after 2 of your 5')
+      && json(shown) === json([5, 3, 3, 10]) && simple.includes('all 5 of your actions') && simpleOld.includes('older rule') && classicNoMatch.includes('older rule') && [a, b, c, d, e, simple].every(t => !t.includes('\n'));
+    return ok || json({ a, b, c, d, e, shown, simple, simpleOld, classicNoMatch });
+  });
+
+  // ---- S2 switches that did nothing ---------------------------------------------------------------------------------------
+  check('v101st_07_collapse_switches_drive_the_hub', 'Allow Category Collapse, Start Collapsed, Remember State and the narrow-screen switch each change what the hub does when it opens: folded sections, the remembered tab and folds, a jump target never folded, nothing when collapse is not allowed', () => {
+    const ids = ['a.one', 'a.two', 'b.three'];
+    const plan = (s: Partial<GameSettingsState>, nav: V101SettingsNav | null, tab = 'home', jump: string | null = null, narrow = false) => v101SettingsOpenPlan(s, nav, ids, tab, jump, narrow);
+    const startCollapsed = plan({ startSettingsCategoryCollapsed: true }, null);
+    const notAllowed = plan({ startSettingsCategoryCollapsed: true, allowSettingsCategoryCollapse: false }, null);
+    const none = plan({}, null);
+    const narrowOn = plan({ autoCollapseCategoriesOnNarrow: true }, null, 'home', null, true);
+    const narrowOff = plan({ autoCollapseCategoriesOnNarrow: true }, null, 'home', null, false);
+    const jump = plan({ startSettingsCategoryCollapsed: true }, null, 'home', 'a.two');
+    const nav: V101SettingsNav = { tab: 'economy', collapsed: ['a.one', 'gone.section'] };
+    const remembered = plan({ rememberCategoryNavigationState: true }, nav);
+    const rememberedDeepLink = plan({ rememberCategoryNavigationState: true }, nav, 'aiTeams');
+    const rememberedOff = plan({ rememberCategoryNavigationState: false }, nav);
+    const ok = json(startCollapsed) === json({ tab: null, collapsed: { 'a.one': true, 'a.two': true, 'b.three': true } }) && notAllowed === null && none === null
+      && narrowOn !== null && Object.keys(narrowOn.collapsed).length === 3 && narrowOff === null && jump !== null && jump.collapsed['a.two'] === undefined && jump.collapsed['a.one'] === true
+      && json(remembered) === json({ tab: 'economy', collapsed: { 'a.one': true } }) && rememberedDeepLink !== null && rememberedDeepLink.tab === null && rememberedOff === null
+      && v101SectionCanCollapse({ allowSettingsCategoryCollapse: false }) === false && v101SectionCanCollapse({ allowSettingsCategoryCollapse: true }) === true && v101SectionCanCollapse(undefined) === true;
+    return ok || json({ startCollapsed, notAllowed, none, narrowOn, narrowOff, jump, remembered, rememberedDeepLink, rememberedOff });
+  });
+  check('v101st_08_remembered_hub_position_is_safe', 'The remembered hub position (tab and folds) round-trips under aussie.v101.settingsNav; a hostile or corrupt record gives a clean empty one; a blocked or absent browser store never throws', () => {
+    const mem = createV99MemoryStorage();
+    const wrote = v101WriteSettingsNav(mem, { tab: 'economy', collapsed: ['a.one', 'b.two'] });
+    const back = v101ReadSettingsNav(mem);
+    const hostile = v101ReadSettingsNav(createV99MemoryStorage({ [V101_SETTINGS_NAV_KEY]: json({ tab: '__proto__', collapsed: [1, null, {}, 'ok', 'x'.repeat(500)] }) }));
+    const corrupt = v101ReadSettingsNav(createV99MemoryStorage({ [V101_SETTINGS_NAV_KEY]: 'not json' }));
+    const wrong = v101ReadSettingsNav(createV99MemoryStorage({ [V101_SETTINGS_NAV_KEY]: '[1,2]' }));
+    const dead = [v101ReadSettingsNav(blocked), v101ReadSettingsNav(null), v101WriteSettingsNav(blocked, { tab: null, collapsed: [] }), v101WriteSettingsNav(null, { tab: null, collapsed: [] })];
+    return (wrote && json(back) === json({ tab: 'economy', collapsed: ['a.one', 'b.two'] }) && json(hostile) === json({ tab: null, collapsed: ['ok'] }) && corrupt === null && wrong === null && json(dead) === json([null, null, false, false]) && V101_SETTINGS_NAV_KEY === 'aussie.v101.settingsNav')
+      || json({ wrote, back, hostile, corrupt, wrong, dead });
+  });
+  check('v101st_09_registry_walk_every_control_reads_or_says_so', 'Registry walk: every setting in the hub\'s Category Navigation section is either wired to a reader (the table of what V10.1 wired) or carries the "No effect" chip; every setting V10.1 marks inert exists, has a reason and is not also claimed wired; the V9.9 list is untouched', () => {
+    const sec = SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'interface.categoryNavigation');
+    if (!sec) return 'section missing';
+    const nav = sec.fieldKeys as string[];
+    // the one key of that section nothing needs to read: the navigation style itself is read by the hub's own category bar
+    const loose = nav.filter(k => k !== 'settingsCategoryNavigationMode' && !(k in V101_WIRED_HUB_SETTINGS) && v99InertSettingReason(k) === null);
+    const defaults = DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>;
+    const inertMissing = V101_INERT_SETTINGS.filter(i => !(i.key in defaults) || !i.reason || v99InertSettingReason(i.key) !== i.reason);
+    const both = V101_INERT_SETTINGS.filter(i => i.key in V101_WIRED_HUB_SETTINGS).map(i => i.key);
+    const wiredNotReal = Object.keys(V101_WIRED_HUB_SETTINGS).filter(k => !(k in defaults));
+    const v99Still = V99_INERT_SETTINGS.every(i => v99InertSettingReason(i.key) === i.reason) && V99_INERT_SETTINGS.length === 8;
+    const chip = V99NoEffectChip({ settingKey: 'rememberCategoryNavigationMode' });
+    const noChip = V99NoEffectChip({ settingKey: 'startSettingsCategoryCollapsed' });
+    const ok = loose.length === 0 && inertMissing.length === 0 && both.length === 0 && wiredNotReal.length === 0 && v99Still && chip !== null && noChip === null;
+    return ok || json({ loose, inertMissing, both, wiredNotReal, v99Still });
+  });
+  check('v101st_10_team_override_boxes_are_read', 'Team Brain "Escalating Cost" and "Override Fatigue": in a V10.1 Team match with a box off, the AI pays the flat price / is not tired; both on (default), a one-on-one, a human actor, a V10.0, unstamped or Classic match behave exactly as before', () => {
+    const team = { rulesVersion: V101_RULES_VERSION, selectedMode: 'team_human_ai_vs_ai_ai' };
+    const off = { teamAiOverrideEscalatingCostEnabled: false, teamAiOverrideFatigueEnabled: false };
+    const on = { teamAiOverrideEscalatingCostEnabled: true, teamAiOverrideFatigueEnabled: true };
+    const r = (s: unknown, g: unknown, ai = true) => json(v101TeamOverrideRules(s, g, ai));
+    const flat = json({ flatCost: true, noFatigue: true }), norm = json({ flatCost: false, noFatigue: false });
+    const rules = [r(off, team), r(on, team), r(off, { ...team, selectedMode: 'ai' }), r(off, team, false), r(off, { ...team, rulesVersion: V100_RULES_VERSION }), r(off, { selectedMode: team.selectedMode }), r(off, null), r(undefined, team), r(off, { ...team, selectedMode: 'team_ai_vs_ai' })];
+    if (json(rules) !== json([flat, norm, norm, norm, norm, norm, norm, norm, flat])) return json(rules);
+    const actor = { money: 20000, netWorth: 20000 };
+    const escalating = [0, 1, 2].map(n => v101ActorOverrideCost(actor, fresh(), n, false));
+    const flatCosts = [0, 1, 2].map(n => v101ActorOverrideCost(actor, fresh(), n, true));
+    const base = calculateActionPointOverrideCost(actor, fresh(), 0);
+    const fatigue = [v101OverrideFatigueStep(0.05, false), v101OverrideFatigueStep(0.05, true)];
+    return (json(flatCosts) === json([base, base, base]) && escalating[1] === Math.round(base * 1.5) && escalating[2] === Math.round(base * 2.25) && escalating[0] === base && json(fatigue) === json([0.05, 0]))
+      || json({ escalating, flatCosts, base, fatigue });
+  });
+  check('v101st_11_interest_label_is_one_thing_everywhere', 'The loan interest slider and the settings summary say the same percentage of the standard rate for every value from 0.5 to 2.0 (1.0 is "100%", not "1%")', () => {
+    const values = [0.5, 0.8, 1, 1.1, 1.4, 2];
+    const rows = values.map(v => ({ v, label: v101InterestMultiplierLabel(v), phrase: v101InterestMultiplierPhrase(v) }));
+    const consistent = rows.every(r => { const pct = String(Math.round(r.v * 100)); return r.label === `Interest Rate: ${pct}% of the standard rate` && r.phrase === `interest at ${pct}% of the standard rate`; });
+    return (consistent && !rows.some(r => /: \d%/.test(r.label)) && v101InterestMultiplierPhrase(undefined) === 'interest at 100% of the standard rate' && v101InterestMultiplierLabel(1.1).includes('110%')) || json(rows);
+  });
+  check('v101st_12_ux_assist_rows_say_what_is_on', 'UX Assist rows: the three helpers the Simple/Guided interface levels supply show "ON (guided level)" even when their own switch is off; at Advanced they follow their switch; a helper whose switch is on but whose master is off says it is waiting; the master and Team rows are plain', () => {
+    const guided = { smartSettingsProfile: { interfaceLevel: 'guided' }, uxAssistPackEnabled: false };
+    const advanced = { smartSettingsProfile: { interfaceLevel: 'advanced' }, uxAssistPackEnabled: false };
+    const row = (s: Record<string, unknown>, k: string) => v101UxAssistRowState(s, k);
+    const checks: Array<[unknown, unknown]> = [
+      [row(guided, 'simplifiedActionBarEnabled').label, 'ON (guided level)'], [row(guided, 'simplifiedActionBarEnabled').guidedSupplied, true], [row({ ...guided, uxAssistPackEnabled: true, simplifiedActionBarEnabled: true }, 'simplifiedActionBarEnabled').label, 'ON'],
+      [row({ ...guided, uxAssistPackEnabled: true }, 'simplifiedActionBarEnabled').label, 'ON (guided level)'], [row(advanced, 'simplifiedActionBarEnabled').label, 'OFF'], [row({ ...advanced, simplifiedActionBarEnabled: true }, 'simplifiedActionBarEnabled').label, 'ON (waiting for UX Assist Pack)'],
+      [row({ ...advanced, simplifiedActionBarEnabled: true }, 'simplifiedActionBarEnabled').active, false], [row({ ...advanced, uxAssistPackEnabled: true, simplifiedActionBarEnabled: true }, 'simplifiedActionBarEnabled').label, 'ON'],
+      [row(guided, 'winConditionCoachEnabled').label, 'OFF'], [row({ ...guided, winConditionCoachEnabled: true }, 'winConditionCoachEnabled').label, 'ON (waiting for UX Assist Pack)'], [row({ ...guided, uxAssistPackEnabled: true }, 'uxAssistPackEnabled').label, 'ON'],
+      [row({ ...advanced, settingsPresetsEnabled: true }, 'settingsPresetsEnabled').label, 'ON'], [row({}, 'interactiveMapEnabled').label, 'ON (guided level)'],
+    ];
+    const bad = checks.map(([got, want], i) => (got === want ? null : `#${i}: ${String(got)} != ${String(want)}`)).filter(Boolean);
+    return bad.length === 0 || bad.join('; ');
+  });
+  check('v101st_13_simple_view_says_which_switches_need_a_rival', 'The Simple view marks the rival-only switches (sabotage, rival personality, taunts, special abilities) with a chip, a different one in Single Player, and no other row gets one; the real component renders it', () => {
+    const rowsWithChip = SIMPLE_SETTINGS.filter(d => v101SimpleModeCaveat(d.key, 'ai') !== null).map(d => d.key);
+    const single = v101SimpleModeCaveat('sabotageEnabled', 'single'), ai = v101SimpleModeCaveat('sabotageEnabled', 'ai'), unknown = v101SimpleModeCaveat('sabotageEnabled', null);
+    const pureOk = json(rowsWithChip) === json([...V101_SIMPLE_RIVAL_KEYS].sort((a, b) => SIMPLE_SETTINGS_KEYS.indexOf(a) - SIMPLE_SETTINGS_KEYS.indexOf(b))) && V101_SIMPLE_RIVAL_KEYS.every(k => SIMPLE_SETTINGS_KEYS.includes(k))
+      && single !== null && ai !== null && unknown !== null && single.label !== ai.label && v101SimpleModeCaveat('totalDays', 'single') === null && v101SimpleModeChip('winCondition', 'ai') === null;
+    if (!pureOk) return json({ rowsWithChip, single, ai });
+    if (!staticReady) return true;
+    const view = (mode: string | null) => markup(<SimpleSettingsPanel settings={fresh()} onChange={() => undefined} onShowAll={() => undefined} isDark isRetro={false} matchMode={mode} />);
+    const inSingle = view('single'), inAi = view('ai');
+    const count = (html: string, re: RegExp) => (html.match(re) || []).length;
+    return (count(inSingle, /No rival in Single Player/g) === 4 && count(inAi, /Rival modes only/g) === 4 && !inAi.includes('No rival in Single Player') && inSingle.includes('v101-copilot-cap-line')) || `single=${count(inSingle, /No rival in Single Player/g)} ai=${count(inAi, /Rival modes only/g)}`;
+  });
+  check('v101st_14_actions_per_day_twin_keys_follow_from_every_write_path', 'The legacy twins (maxActionsPerTurn, aiMaxActionsPerTurn) follow the real actions-per-day keys through the one settings write: key and value, a patch, an updater, the Simple view\'s write; a write that changes only a twin or nothing is left alone', () => {
+    const base = fresh({ playerActionsPerDay: 3, maxActionsPerTurn: 3, aiActionsPerDay: 3, aiMaxActionsPerTurn: 3 });
+    // the same three forms the dispatcher accepts, resolved the way it resolves them, then through the one write pipeline
+    const run = (keyOrPatch: keyof GameSettingsState | Partial<GameSettingsState> | ((p: GameSettingsState) => GameSettingsState), value?: unknown): GameSettingsState => {
+      const raw = typeof keyOrPatch === 'string' ? (settingsValuesEqual(base[keyOrPatch], value) ? base : { ...base, [keyOrPatch]: value } as GameSettingsState) : typeof keyOrPatch === 'function' ? keyOrPatch(base) : { ...base, ...keyOrPatch };
+      return v101SettingsWritePipeline(base, raw, 'direct_player_change');
+    };
+    const viaKey = run('playerActionsPerDay', 5), viaPatch = run({ aiActionsPerDay: 4 }), viaFn = run(p => ({ ...p, playerActionsPerDay: 6, aiActionsPerDay: 2 })), twinOnly = run('maxActionsPerTurn', 9), same = run('playerActionsPerDay', 3);
+    const mirrorUnchanged = v101MirrorActionTwinKeys(base, base) === base;
+    const ok = viaKey.maxActionsPerTurn === 5 && viaKey.aiMaxActionsPerTurn === 3 && viaPatch.aiMaxActionsPerTurn === 4 && viaPatch.maxActionsPerTurn === 3 && viaFn.maxActionsPerTurn === 6 && viaFn.aiMaxActionsPerTurn === 2
+      && twinOnly.maxActionsPerTurn === 9 && twinOnly.playerActionsPerDay === 3 && same.maxActionsPerTurn === 3 && mirrorUnchanged;
+    return ok || json({ viaKey: [viaKey.playerActionsPerDay, viaKey.maxActionsPerTurn], viaPatch: [viaPatch.aiActionsPerDay, viaPatch.aiMaxActionsPerTurn], viaFn: [viaFn.maxActionsPerTurn, viaFn.aiMaxActionsPerTurn], twinOnly: [twinOnly.maxActionsPerTurn, twinOnly.playerActionsPerDay] });
+  });
+  check('v101st_15_replay_check_compares_the_real_budget', 'The replay "Active Settings Alignment" check compares the real actions-per-day keys (the ones the Simple view writes) and still ignores a recording that does not carry them', () => {
+    const replay = (snapshot: Record<string, unknown>) => ({ gameVersion: '9.9.0', schemaVersion: 3, header: {}, initialConfig: { gameSettings: snapshot }, events: [] }) as unknown as ReplayFile;
+    const parity = (snapshot: Record<string, unknown>, current: GameSettingsState) => inspectLoadedReplayCompatibility(replay(snapshot), current).checks.find(c => c.id === 'runtime_parity')?.status;
+    const cur = fresh({ playerActionsPerDay: 3, maxActionsPerTurn: 3 });
+    const got = [parity({ playerActionsPerDay: 5, maxActionsPerTurn: 3 }, cur), parity({ playerActionsPerDay: 3, maxActionsPerTurn: 3 }, cur), parity({ maxActionsPerTurn: 3 }, cur), parity({ aiActionsPerDay: 5 }, cur), parity({ maxActionsPerTurn: 5 }, cur)];
+    return json(got) === json(['warning', 'passed', 'passed', 'warning', 'warning']) || json(got);
+  });
+
+  // ---- S4 preset manager ---------------------------------------------------------------------------------------------------
+  check('v101st_16_preset_delta_keeps_only_what_differs', 'A saved preset keeps only the settings that differ from the defaults (a small record, not a whole copy), and a V10.1 preset applies as "the defaults plus these" so it still sets the whole picture; an older whole-copy preset applies as before', () => {
+    const custom = fresh({ totalDays: 40, soundVolume: 0.1, winCondition: 'regions' });
+    const delta = v101PresetDeltaFromDefaults(custom);
+    const whole = JSON.stringify(custom).length, small = JSON.stringify(delta).length;
+    const eff = v101PresetEffectiveSettings({ settings: delta, sparse: true });
+    const old = { settings: { totalDays: 14 } as Partial<GameSettingsState> };
+    const keys = Object.keys(delta).sort();
+    const ok = json(keys) === json(['soundVolume', 'totalDays', 'winCondition']) && small * 50 < whole && eff.totalDays === 40 && eff.soundVolume === 0.1 && eff.winCondition === 'regions' && eff.actionLimitsEnabled === DEFAULT_GAME_SETTINGS.actionLimitsEnabled
+      && Object.keys(eff).length === Object.keys(DEFAULT_GAME_SETTINGS).length && v101PresetEffectiveSettings(old) === old.settings && json(v101PresetDeltaFromDefaults({})) === '{}' && json(v101PresetDeltaFromDefaults({ _x: 1, totalDays: undefined } as unknown as Partial<GameSettingsState>)) === '{}';
+    return ok || json({ keys, small, whole });
+  });
+  check('v101st_17_preset_apply_plan_strips_profile_and_flags_match_rules', 'The preset diff: counted against your settings now, look/sound/accessibility settings left out by default and put back by the opt-in, match settings flagged for the stronger warning in a running match, unchanged values not counted', () => {
+    const cur = fresh();
+    const preset: Partial<GameSettingsState> = { soundEnabled: !cur.soundEnabled, visualMode: cur.visualMode === 'classic' ? 'enhanced' : 'classic', totalDays: 40, actionLimitsEnabled: cur.actionLimitsEnabled, winCondition: 'regions' };
+    const plain = v101PresetApplyPlan(cur, preset, { includeProfile: false, liveMatch: false });
+    const withProfile = v101PresetApplyPlan(cur, preset, { includeProfile: true, liveMatch: false });
+    const live = v101PresetApplyPlan(cur, preset, { includeProfile: false, liveMatch: true, rulesLocked: true });
+    const liveOld = v101PresetApplyPlan(cur, preset, { includeProfile: false, liveMatch: true, rulesLocked: false });
+    const profileOnly = v101PresetApplyPlan(cur, { soundEnabled: !cur.soundEnabled }, { includeProfile: false, liveMatch: false });
+    const defaultPreset = v101PresetApplyPlan(fresh({ totalDays: 50, soundVolume: 0.2 }), BUILT_IN_CUSTOM_SETTINGS_PRESETS[0].settings, { includeProfile: false, liveMatch: false });
+    const ok = json(plain.changedKeys.sort()) === json(['totalDays', 'winCondition']) && plain.changedCount === 2 && json(plain.skippedProfileKeys.sort()) === json(['soundEnabled', 'visualMode']) && !('soundEnabled' in plain.patch) && plain.message.includes('This changes 2 settings') && plain.message.includes('2 look, sound or accessibility settings are left')
+      && withProfile.changedCount === 4 && json(withProfile.matchKeys.sort()) === json(['totalDays', 'winCondition']) && 'soundEnabled' in withProfile.patch
+      && live.message.includes('You are in a match: 2 of these change how it plays') && live.message.includes('wait for your next match') && liveOld.message.includes('You are in a match') && !liveOld.message.includes('wait for your next match') && !plain.message.includes('You are in a match')
+      && profileOnly.changedCount === 0 && profileOnly.message.includes('Nothing to change') && json(profileOnly.patch) === '{}'
+      && defaultPreset.changedKeys.includes('totalDays') && !defaultPreset.changedKeys.includes('soundVolume') && defaultPreset.skippedProfileKeys.includes('soundVolume');
+    return ok || json({ plain, withProfile, live: live.message, profileOnly, defaultPreset: [defaultPreset.changedKeys, defaultPreset.skippedProfileKeys] });
+  });
+  check('v101st_18_preset_cards_say_what_they_change', 'Each built-in preset\'s description names what it really sets (a table of the keys each sets), and the card\'s count line is the real number of changes from where you are now', () => {
+    const want: Record<string, string[]> = {
+      builtin_fast_ai_performance: ['simplifiedActionBarEnabled', 'totalDays', 'uxAssistPackEnabled'],
+      builtin_deep_simulation: ['actionLimitsEnabled', 'advancedLoansEnabled', 'creditScoreEnabled', 'decisionTransparencyEnabled', 'teamBrainModeV63'],
+      builtin_competitive_mp: ['actionLimitsEnabled', 'gameActivityLedgerEnabled', 'winCondition'],
+      builtin_casual_solo: ['actionLimitsEnabled', 'uxAssistPackEnabled', 'winConditionCoachEnabled'],
+    };
+    const wrongKeys = Object.keys(want).filter(id => { const p = BUILT_IN_CUSTOM_SETTINGS_PRESETS.find(x => x.id === id); return !p || json(Object.keys(p.settings).sort()) !== json(want[id]); });
+    const text = (id: string) => BUILT_IN_CUSTOM_SETTINGS_PRESETS.find(p => p.id === id)?.description || '';
+    const claims = !/expert AI profiles|governance enabled|strictly equal AI fairness|relaxed AI difficulty|full audit ledger/i.test(BUILT_IN_CUSTOM_SETTINGS_PRESETS.map(p => p.description).join(' ')) && text('builtin_fast_ai_performance').includes('14-day') && text('builtin_competitive_mp').includes('does not change AI');
+    const casual = BUILT_IN_CUSTOM_SETTINGS_PRESETS.find(p => p.id === 'builtin_casual_solo');
+    const cur = fresh({ uxAssistPackEnabled: true, winConditionCoachEnabled: true, actionLimitsEnabled: false });
+    const none = casual ? v101PresetCountLine(casual, cur, false) : '';
+    const some = casual ? v101PresetCountLine(casual, fresh(), false) : '';
+    return (wrongKeys.length === 0 && claims && none.startsWith('No change') && some.startsWith('Changes ') && /Changes \d+ settings? from now/.test(some)) || json({ wrongKeys, claims, none, some });
+  });
+  check('v101st_19_preset_save_reports_failure_honestly', 'Saving a custom preset into a blocked, absent or full browser store reports "not saved" (never "Saved"), keeps the preset in the list for this session, and a working store reports saved; the old save function still returns the preset', () => {
+    clearCustomSettingsPresetsCache();
+    const settings = fresh({ totalDays: 33 });
+    const full: V99StorageLike = { getItem: () => null, setItem: () => { throw new Error('QuotaExceededError'); }, removeItem: () => undefined };
+    const a = saveCustomSettingsPresetChecked('Blocked one', 'x', settings, blocked);
+    const b = saveCustomSettingsPresetChecked('Absent one', 'x', settings, null);
+    const c = saveCustomSettingsPresetChecked('Full one', 'x', settings, full);
+    const kept = getCustomSettingsPresets(null).map(p => p.name).sort();
+    const mem = createV99MemoryStorage();
+    const d = saveCustomSettingsPresetChecked('Fine one', 'x', settings, mem);
+    const listed = getCustomSettingsPresets(mem).map(p => p.name);
+    const legacy = saveCustomSettingsPreset('Legacy path', 'x', settings);
+    const msgs = [v101PresetSaveMessage('A', true), v101PresetSaveMessage('A', false)];
+    clearCustomSettingsPresetsCache();
+    const ok = !a.stored && !b.stored && !c.stored && d.stored && json(kept) === json(['Absent one', 'Blocked one', 'Full one']) && listed.includes('Fine one') && listed.includes('Blocked one')
+      && legacy.name === 'Legacy path' && !('preset' in legacy) && msgs[0] === 'Saved custom preset: "A"' && msgs[1].includes('NOT saved') && !msgs[1].startsWith('Saved') && a.preset.sparse === true;
+    return ok || json({ stored: [a.stored, b.stored, c.stored, d.stored], kept, listed, msgs });
+  });
+  check('v101st_20_saved_preset_is_small_and_deleting_it_sticks', 'A saved preset is stored as a few hundred bytes (not about 38 KB), a deleted session-only preset does not come back, and clearing the cache forgets them all', () => {
+    clearCustomSettingsPresetsCache();
+    const mem = createV99MemoryStorage();
+    const saved = saveCustomSettingsPresetChecked('Small', 'x', fresh({ totalDays: 45, winCondition: 'regions' }), mem);
+    const bytes = (mem.data[CUSTOM_SETTINGS_PRESETS_STORAGE_KEY] || '').length;
+    const onlySession = saveCustomSettingsPresetChecked('Session only', 'x', fresh(), blocked);
+    const before = getCustomSettingsPresets(blocked).length;
+    deleteCustomSettingsPreset(onlySession.preset.id);
+    const after = getCustomSettingsPresets(null).map(p => p.id).includes(onlySession.preset.id);
+    clearCustomSettingsPresetsCache();
+    const cleared = getCustomSettingsPresets(createV99MemoryStorage()).length;
+    return (saved.stored && bytes > 0 && bytes < 1500 && before >= 1 && !after && cleared === 0) || json({ stored: saved.stored, bytes, before, after, cleared });
+  });
+
+  // ---- S5 search results edit live ---------------------------------------------------------------------------------------------
+  check('v101st_21_search_edits_are_live_and_checked', 'An edit made from a search result is one live write like every other control: the value is checked (a number outside its range is brought in, a wrong-kind value is dropped, an unknown key is kept as before) and it goes through the one write path, so a later choice cannot be overwritten by a stale draft', () => {
+    const base = fresh({ totalDays: 30 });
+    const tooBig = v101SearchEditPatch('totalDays', 99999), wrongKind = v101SearchEditPatch('totalDays', 'abc'), fine = v101SearchEditPatch('soundEnabled', !base.soundEnabled);
+    const live = (patch: Partial<GameSettingsState>): GameSettingsState => v101SettingsWritePipeline(base, { ...base, ...patch }, 'direct_player_change');
+    const wrote = live(v101SearchEditPatch('playerActionsPerDay', 5));
+    const ranged = typeof tooBig.totalDays === 'number' && tooBig.totalDays < 99999;
+    return (ranged && !('totalDays' in wrongKind) && json(fine) === json({ soundEnabled: !base.soundEnabled }) && wrote.playerActionsPerDay === 5 && wrote.maxActionsPerTurn === 5)
+      || json({ tooBig, wrongKind, fine, wrote: [wrote.playerActionsPerDay, wrote.maxActionsPerTurn] });
+  });
+  check('v101st_22_blocked_storage_never_throws_in_render', 'The AI Memory panel\'s "Storage available" check answers a plain yes or no and never throws; where the page can be given a window whose localStorage read throws (the Node runner) it answers "no" for that and "yes" for a working one', () => {
+    const g = globalThis as { window?: unknown };
+    const real = v101StorageAvailable();
+    if (typeof real !== 'boolean') return 'not a boolean';
+    const had = Object.prototype.hasOwnProperty.call(g, 'window');
+    const original = g.window;
+    const blockedWindow = { get localStorage(): never { throw new Error('SecurityError'); } };
+    let mocked = false;
+    try { g.window = blockedWindow; mocked = g.window === blockedWindow; } catch { mocked = false; }
+    if (!mocked) return true; // a real browser's window cannot be replaced; the guard itself (v99BrowserStorage) is shared with every other storage read
+    try {
+      const blockedAnswer = v101StorageAvailable();
+      g.window = { localStorage: createV99MemoryStorage() };
+      const okAnswer = v101StorageAvailable();
+      delete g.window;
+      const noWindow = v101StorageAvailable();
+      return (blockedAnswer === false && okAnswer === true && noWindow === false) || json({ blockedAnswer, okAnswer, noWindow });
+    } finally {
+      if (had) g.window = original; else delete g.window;
+    }
+  });
   return results;
 }
 // <<V101-SLOT SETTINGS end>>
@@ -216810,7 +217490,7 @@ function dispatchGameSettingsChange(
   // (every screen, a preset, an import, a reset) wait for the next match instead of changing the rules of the match being
   // played; loading a save, starting a scenario and replays still write them. Off in a V10.0, an unstamped or a Classic match.
   // V10.1 (SECTION 20BG): the same write also keeps the legacy twin of an actions-per-day setting in step (v101MirrorActionTwinKeys), from every screen.
-  const computeNextState = (prev: GameSettingsState): GameSettingsState => v101MirrorActionTwinKeys(prev, v101GuardSettingsWrite(prev, computeNextStateRaw(prev), source));
+  const computeNextState = (prev: GameSettingsState): GameSettingsState => v101SettingsWritePipeline(prev, computeNextStateRaw(prev), source);
   // SH3: Unified state updater helper function to compute next state cleanly across all patch types
   const computeNextStateRaw = (prev: GameSettingsState): GameSettingsState => {
     if (typeof keyOrPatch === 'string') {
@@ -220479,8 +221159,7 @@ function dispatchGameSettingsChange(
   const calculateActorOverrideCost = useCallback((actorId: string) => {
     const state = getActorState(actorId);
     // V10.1 (SECTION 20BG): Team Brain "Escalating Cost" was a checkbox nothing read. In a V10.1 Team match with it OFF, an AI actor pays the base override price every time (not +50% for each one already bought today).
-    const v101FlatCost = v101TeamOverrideRules(gameSettings, gameState, state?.kind === 'ai').flatCost;
-    return calculateActionPointOverrideCost({ ...(state || {}), ...(v101FlatCost ? { overridesUsedToday: 0 } : {}), netWorth: computeNetWorth(state) }, gameSettings, v101FlatCost ? 0 : (state?.overridesUsedToday || 0));
+    return v101ActorOverrideCost({ ...(state || {}), netWorth: computeNetWorth(state) }, gameSettings, state?.overridesUsedToday || 0, v101TeamOverrideRules(gameSettings, gameState, state?.kind === 'ai').flatCost);
   }, [computeNetWorth, gameSettings, getActorState, gameState.rulesVersion, gameState.selectedMode]);
 
   const calculateOverrideCost = useCallback((target: 'player' | 'ai' = 'player') => {
@@ -220530,7 +221209,7 @@ function dispatchGameSettingsChange(
       ...prev,
       money: deductMoney(prev.money, overrideCost),
       overridesUsedToday: (prev.overridesUsedToday || 0) + 1,
-      overrideFatigue: (prev.overrideFatigue || 0) + (v101TeamOverrideRules(gameSettings, gameState, true).noFatigue ? 0 : getOverrideFatigueIncrement(prev.overridesUsedToday || 0)) // V10.1 (SECTION 20BG): Team Brain "Override Fatigue" OFF in a V10.1 Team match = overrides do not tire the AI
+      overrideFatigue: (prev.overrideFatigue || 0) + v101OverrideFatigueStep(getOverrideFatigueIncrement(prev.overridesUsedToday || 0), v101TeamOverrideRules(gameSettings, gameState, true).noFatigue) // V10.1 (SECTION 20BG): Team Brain "Override Fatigue" OFF in a V10.1 Team match = overrides do not tire the AI
     }));
     addNotification(`🤖 ${getActorDisplayName(actorId)} paid ${fmtMoney(overrideCost)} for extra actions`, 'ai', true);
     return true;
@@ -251948,7 +252627,7 @@ function dispatchGameSettingsChange(
                                 draftSettings={draftGameSettings}
                                 onUpdateSetting={(key, val) => {
                                   // V10.1 (SECTION 20BG): a search result edits LIVE like every other control (it used to write a hidden draft that a later Apply could use to overwrite newer choices). The value is checked the way an Apply checked it.
-                                  trackedSetGameSettings("direct_player_change", "Settings Search", prev => ({ ...prev, ...sanitizeSettingsPatch({ [key]: val }, { keepUnknownKeys: true }).settings }));
+                                  trackedSetGameSettings("direct_player_change", "Settings Search", prev => ({ ...prev, ...v101SearchEditPatch(key, val) }));
                                 }}
                                 onOpenSection={(tab, secId, fieldKey) => {
                                   navigateToSettings(tab, secId, { highlight: true, fieldKey, resultIndex: idx });
@@ -252614,18 +253293,7 @@ function dispatchGameSettingsChange(
               </SettingsSection>
               {/* V10.1 (SECTION 20BG): the presets section is always rendered, so Search and Jump never land on nothing. With "Settings Presets" off it shows one note and a "Show presets" button; the switch no longer depends on the UX Assist master switch (which would also turn on other helpers). */}
               <SettingsSection id="quickSetup.presets" tab="quickSetup" title="Settings Presets" onReset={() => applySettingsPreset('classic')} resetLabel="Reset to Classic">
-                  {!v101PresetsSectionOpen(gameSettings) && (
-                    <div id="settings-presets-gate-note" className="flex flex-wrap items-center justify-between gap-3 text-sm">
-                      <div className="opacity-80">{V101_PRESETS_GATE_NOTE}</div>
-                      <button
-                        type="button"
-                        onClick={() => updateGameSetting('settingsPresetsEnabled', true, { settingLabel: 'Settings Presets', section: 'Quick Setup → Settings Presets', source: 'direct_player_change' })}
-                        className={`px-4 py-2 rounded font-semibold ${themeStyles.success} text-white`}
-                      >
-                        Show presets
-                      </button>
-                    </div>
-                  )}
+                  <V101PresetsGateCard enabled={v101PresetsSectionOpen(gameSettings)} onShow={() => updateGameSetting('settingsPresetsEnabled', true, { settingLabel: 'Settings Presets', section: 'Quick Setup → Settings Presets', source: 'direct_player_change' })} buttonClassName={`px-4 py-2 rounded font-semibold ${themeStyles.success} text-white`} />
                   {v101PresetsSectionOpen(gameSettings) && (<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {(Object.entries(SETTINGS_PRESETS) as Array<[SettingsPresetId, SettingsPresetConfig]>).map(([presetId, preset]) => (
                       <button
@@ -262006,7 +262674,7 @@ function dispatchGameSettingsChange(
               // Look, sound and accessibility settings stay as they are unless the player ticked the box; a running match keeps its Experience mode (it has its own question).
               const v101Plan = v101PresetApplyPlan(gameSettings, sanitizeSettingsPatch(presetSettings, { keepUnknownKeys: true }).settings, { includeProfile: presetOptions?.includeProfile === true, liveMatch: gameState.gameMode === 'game', rulesLocked: v101RulesLocked });
               setShowPresetManagerModal(false); // the confirmation window sits below this manager, so the manager closes first
-              if (v101Plan.changedCount === 0) { addNotification(`"${presetName}" already matches your settings, so nothing changed.`, 'info', true, 'system'); return; }
+              if (v101Plan.changedCount === 0) { addNotification(`"${presetName}": ${v101Plan.message}`, 'info', true, 'system'); return; }
               showConfirmation('settingsPreset', `Apply ${presetName}?`, v101Plan.message, 'Apply preset', () => {
                 trackedSetGameSettings("direct_player_change", `Applied Preset: ${presetName}`, prev => ({
                   ...prev,
@@ -278626,6 +279294,7 @@ function dispatchGameSettingsChange(
         player={player}
         coPilotSettings={gameSettings?.coPilotSettings || createDefaultCoPilotSettings()}
         matchActionsPerDay={gameSettings?.playerActionsPerDay}
+        matchActionLimitsEnabled={gameSettings?.actionLimitsEnabled !== false}
         matchIsV101={isV101Match(gameState)}
         onUpdateSettings={(newSettings) => {
           const currentCp = gameSettings?.coPilotSettings || createDefaultCoPilotSettings();
