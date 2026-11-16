@@ -1712,8 +1712,8 @@ export const ACTION_POINT_CATEGORIES: Array<{
     actions: [
       { id: 'travel', label: 'Travel', description: 'Move to adjacent region or territory', defaultCost: 1 },
       { id: 'challenges', label: 'Attempt Challenge', description: 'Participate in a regional mini-game or challenge', defaultCost: 1 },
-      { id: 'gather', label: 'Gather Resource', description: 'Extract resources from the current region', defaultCost: 1 },
-      { id: 'explore', label: 'Explore / Discover', description: 'Scout uncharted regions or opportunities', defaultCost: 1 },
+      { id: 'gather', label: 'Gather Resource', description: 'The cost of Work for Wages (the game has no separate gather action)', defaultCost: 1 }, // V10.1 (SECTION 20BH): said "extract resources", an action the game does not have; Work for Wages is what pays this cost
+      { id: 'explore', label: 'Explore / Discover', description: 'Not used in this version (the game has no explore action); kept so saved settings still load', defaultCost: 1 }, // V10.1 (SECTION 20BH): honest text, the id stays
       { id: 'support_ally', label: 'Support Ally', description: 'Send aid or assistance to an ally', defaultCost: 1 },
       { id: 'end_turn', label: 'End Turn', description: 'Finish current turn (always free)', defaultCost: 0 }
     ]
@@ -42066,6 +42066,18 @@ export async function processAskGameQuery(
   gameState: any,
   userPermissions: string[] = ['SIMULATION_EXECUTE', 'SETTINGS_READ', 'GOVERNANCE_READ']
 ): Promise<AskGameResponse> {
+  return processAskGameQuerySync(rawQuery, gameState, userPermissions);
+}
+
+/**
+ * V10.1 (SECTION 20BH): the pipeline has no awaits, so it runs as plain code here (processAskGameQuery is its async wrapper, unchanged for callers).
+ * The self-tests call this one, which means they run the shipped pipeline itself rather than a copy of it.
+ */
+export function processAskGameQuerySync(
+  rawQuery: string,
+  gameState: any,
+  userPermissions: string[] = ['SIMULATION_EXECUTE', 'SETTINGS_READ', 'GOVERNANCE_READ']
+): AskGameResponse {
   const queryId = `q_${Date.now()}_${(queryIdCounter++).toString(36)}`;
   
   try {
@@ -209535,6 +209547,17 @@ export function v101PlayRecommendationView(set: { recommended: ContextualActionC
   return { actionType: r.actionType, title: r.label, reason: (r.reasons && r.reasons[0]) || r.benefit || r.description || '', apCost: Number(r.apCost) || 0, score: Math.round(Number(r.relevance) || 0) };
 }
 
+/** What the Co-Pilot panel shows for its top move: the Play card's Recommended action, with its own confidence (null when the card has none). */
+export interface V101CoPilotPanelMove { id: string; title: string; reason: string; confidencePercent: number | null }
+
+/** The panel's top move. It is the action set's recommended candidate, the one the Play card renders, so "Accept Top Move" and "Do It" are the same move. */
+export function v101CoPilotPanelTopMove(set: { recommended: ContextualActionCandidate | null } | null | undefined): V101CoPilotPanelMove | null {
+  const r = set?.recommended;
+  if (!r) return null;
+  const confidence = typeof r.confidence === 'number' && Number.isFinite(r.confidence) ? Math.round(r.confidence * 100) : null;
+  return { id: r.id, title: r.label, reason: (r.reasons && r.reasons[0]) || r.description || 'The top move on your Play screen.', confidencePercent: confidence };
+}
+
 /** The one line under the Co-Pilot panel's top move: why it can differ from nothing, and what it filters. */
 export const V101_COPILOT_PANEL_SAME_MOVE_NOTE = 'Same move as the Recommended card on Play. Moves the rules or your Guardian setting block are never offered.';
 
@@ -209620,8 +209643,340 @@ export function v101GuardianStateKey(context: { gameState?: unknown; actorId: st
   return computeDeterministicHash(parts.join('|'));
 }
 
+// ---- Self-tests (v101ai) ------------------------------------------------------------------------------------------------------------------------------
 export function runV101AdviceSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  type Obj = Record<string, unknown>;
+  const o = (v: unknown): Obj => (v && typeof v === 'object' && !Array.isArray(v) ? v as Obj : {});
+  const settings = (over?: Obj): GameSettingsState => ({ ...(JSON.parse(json(DEFAULT_GAME_SETTINGS)) as GameSettingsState), ...(over || {}) } as GameSettingsState);
+  // A match state shaped like the live one: the real initial state, the player standing in VIC with one of three actions used.
+  const live = (over?: Obj, playerOver?: Obj): Obj => ({
+    ...(JSON.parse(json(initialGameState)) as Obj), day: 3, turnCounter: 5, selectedMode: 'ai', gameMode: 'game', rulesVersion: V101_RULES_VERSION,
+    player: { ...(JSON.parse(json(initialPlayerState)) as Obj), id: 'player', currentRegion: 'VIC', actionsUsedThisTurn: 1, money: 1234, inventory: ['Coral'], ...(playerOver || {}) },
+    gameSettings: settings(), ...(over || {})
+  });
+  const ask = (q: string, state: Obj = live()): AskGameResponse => processAskGameQuerySync(q, state);
+  const FILLER = ['Recommendation engine calculated', 'scan complete', 'Dry run simulation completed', 'Affordability check executed', 'Answer synthesized for', 'Action validation complete', 'I have nothing to tell you'];
+
+  // ---- Ask-the-Game drawer ------------------------------------------------------------------------------------------------------------------------
+  check('v101ai_01_route_table', 'Every tool dependency of every Ask intent resolves to a grounded tool or an explicit "unavailable" answer; the seven that have a tool reach it', () => {
+    const want: Record<string, string> = { getaibehaviorlog: 'explain_ai_decision', geteconomydiagnostics: 'diagnose_economy', getrecommendedaction: 'rank_next_actions', getrecommendedsequence: 'rank_turn_sequences', rundryrunsimulation: 'simulate_action', checkaffordability: 'check_affordability', getteammatediagnostics: 'diagnose_teammate' };
+    const wrong = Object.keys(want).filter(k => ASK_GAME_TOOL_DEPENDENCY_ROUTES[k] !== want[k]);
+    if (wrong.length) return `not routed: ${wrong.join(', ')}`;
+    const state = live();
+    const args = { action: { type: 'work', actionId: 'work' }, actionId: 'work', target: { actionId: 'travel', region: 'QLD' }, region: 'QLD', query: 'wages' };
+    const bad: string[] = [];
+    let total = 0;
+    (Object.values(ASK_GAME_INTENT_REGISTRY) as AskGameIntentMetadata[]).forEach(meta => meta.toolDependencies.forEach(dep => {
+      total += 1;
+      const r = executeAskGameTool(dep, args, state, 'player');
+      const grounded = r.success === true && r.result !== null && r.result !== undefined;
+      if (!grounded && r.unavailable !== true) bad.push(`${dep}: ${r.error}`);
+      if (r.error && /Unrecognized tool/.test(r.error)) bad.push(`${dep}: unrecognized`);
+    }));
+    return (bad.length === 0 && total >= 25) || `${total} deps; ${bad.join(' | ')}`;
+  });
+
+  check('v101ai_02_no_filler_answers', '"Best actions", "diagnose my economy", "what if I travel", "can I afford to travel", "dry run" and the settings questions never print the old placeholder lines', () => {
+    const qs = ['best actions', 'What should I do this turn?', 'diagnose my economy', 'what if I travel to VIC', 'can I afford to travel to QLD', 'dry run', 'inspect settings', 'search settings co-pilot', 'show my sequence plan'];
+    const bad: string[] = [];
+    qs.forEach(q => { const text = ask(q).mainAnswer; const hit = FILLER.find(f => text.includes(f)); if (hit || !text.trim()) bad.push(`"${q}" -> ${hit || 'empty'}: ${text.slice(0, 80)}`); });
+    return bad.length === 0 || bad.join(' | ');
+  });
+
+  check('v101ai_03_best_move_is_the_play_card', 'With the Play card\'s Recommended action handed over, "best actions" names that exact move; without it the drawer ranks only real actions', () => {
+    const play: V101PlayRecommendationView = { actionType: 'sell', title: 'Sell Coral at the local market', reason: 'Turns your stock into cash', apCost: 0, score: 77 };
+    const withCard = ask('best actions', live({ v101PlayRecommendation: play }));
+    if (!withCard.mainAnswer.includes('Sell Coral at the local market') || !withCard.mainAnswer.includes('same move')) return withCard.mainAnswer;
+    const without = askGameToolRankNextActions(live(), 'player', 8);
+    const ids = without.rankedActions.map(r => r.actionId);
+    const ghost = ids.filter(id => v101IsGhostActionType(id) || !v101IsEngineBackedActionType(id));
+    return (ghost.length === 0 && ids.length >= 3 && without.rankedActions.every(r => typeof r.label === 'string' && r.label.length > 0)) || json(ids);
+  });
+
+  check('v101ai_04_dry_run_and_affordability_are_grounded', 'A dry run of travel shows the real fare, a dry run of a sale shows no invented cash, and affordability prices travel but not what it cannot price', () => {
+    const state = live({}, { currentRegion: 'NSW', money: 5000 });
+    const sim = askGameToolSimulateAction(state, 'player', { type: 'travel', destination: 'QLD' });
+    const fare = computeTravelCostCore({ from: 'NSW', to: 'QLD' });
+    if (!sim.valid || sim.delta.moneyChange !== -fare || sim.preStateSnapshot.region !== 'NSW' || sim.postStateSnapshot.region !== 'QLD') return json(sim.delta);
+    const sale = ask('what if I sell my coral', state);
+    if (!/only price travel and work/.test(sale.mainAnswer) || sale.previewCards.some(c => c.diffSummary.some(d => /Money Delta/.test(d)))) return sale.mainAnswer;
+    const travel = askGameToolCheckAffordability(state, 'player', { actionId: 'travel', region: 'QLD' });
+    const rail = askGameToolCheckAffordability(state, 'player', { item: 'high speed rail upgrade' });
+    const railText = ask('can I afford a high speed rail upgrade', state).mainAnswer;
+    return (travel.costKnown === true && travel.costBreakdown.moneyCost === fare && rail.costKnown === false && rail.costBreakdown.moneyCost === 0 && /cannot price/i.test(railText) && !/\$500|\$750|\$2,500/.test(railText)) || json({ travel: travel.costBreakdown, rail: rail.costKnown, railText });
+  });
+
+  check('v101ai_05_evidence_bundle_reads_the_live_state', 'The drawer\'s state snapshot is the live one: day, the region the player stands in, the real actions left; no Turn 1, NSW, 3 AP or "Turn player"', () => {
+    const state = live();
+    const bundle = buildAskGameEvidenceBundle('q1', 'PLAYER_STATUS', 'where am i', [], [], state);
+    const snap = bundle.rawStateSnapshots;
+    const text = ask('where am i', state).mainAnswer;
+    const label = bundle.items[0].label;
+    const bad = [snap.activeRegion !== 'VIC', snap.actionsLeft !== 2, snap.day !== 3, snap.money !== 1234, !text.includes('VIC'), !/Actions left today\*\*: 2/.test(text), /NSW|3 AP|Turn player|Turn 1/.test(`${text} ${label}`), 'creditScore' in snap];
+    return bad.every(b => b === false) || `${json(bad)} ${text} ${label}`;
+  });
+
+  check('v101ai_06_evidence_bundle_invents_nothing', 'With nothing to read (an empty state, no player, no settings) the snapshot has no region, cash, actions, day or credit score and the answer says so; credit shows only while it is switched on', () => {
+    const empties: Obj[] = [{}, { gameSettings: settings(), player: {} }, { turnCounter: 'x', currentTurn: 'player', player: { currentRegion: 7, money: 'rich' } }];
+    const keys = ['activeRegion', 'money', 'actionsLeft', 'day', 'turn', 'creditScore', 'inventory'];
+    for (const state of empties) {
+      const snap = buildAskGameEvidenceBundle('q2', 'PLAYER_STATUS', 'where am i', [], [], state).rawStateSnapshots;
+      const present = keys.filter(k => k in snap);
+      const text = composeAskGameResponse(buildAskGameEvidenceBundle('q3', 'PLAYER_STATUS', 'where am i', [], [], state), state).mainAnswer;
+      if (present.length || !/cannot read your status/.test(text) || /NSW|700|3 AP/.test(`${text}${json(snap)}`.replace(/"gameSettings":\{.*\}/, ''))) return `${json(state)} -> ${present.join(',')} ${text}`;
+    }
+    const noLimit = v101AskLiveFacts(live({ gameSettings: settings({ actionLimitsEnabled: false }) }));
+    const credit = v101AskLiveFacts(live({ gameSettings: settings({ creditScoreEnabled: true }) }, { creditScore: 640 }));
+    const noCredit = v101AskLiveFacts(live());
+    return (noLimit.actionsLeft === 'unlimited' && credit.creditScore === 640 && !('creditScore' in noCredit)) || json({ noLimit, credit, noCredit });
+  });
+
+  check('v101ai_07_explain_ai_decision_invents_nothing', '"Why did the AI move" reads the real record (strategy focus, phase, recent travel) and says "no decision record yet" instead of inventing directives, travel and weights', () => {
+    const none = askGameToolExplainAiDecision({}, 'ai');
+    const text = json(none);
+    if (none.hasRecord !== false || !/No decision record yet/.test(none.decisionExplanation) || /Consolidate|NSW|VIC|mid_game|Cash Floor/.test(text) || none.utilityWeights !== undefined || none.recentTravel.length !== 0) return text;
+    const some = askGameToolExplainAiDecision({ aiStrategyFocus: 'travel', adaptiveAiPhase: 'phase1_aggressive', aiPatternData: { recentTravel: ['QLD', 'SA'] } }, 'ai');
+    const answer = ask('why did the ai move', live({ aiStrategyFocus: 'travel', aiPatternData: { recentTravel: ['QLD'] } })).mainAnswer;
+    return (some.hasRecord === true && some.strategyFocus === 'travel' && some.adaptivePhase === 'phase1_aggressive' && some.recentTravel.join() === 'QLD,SA' && /QLD/.test(answer) && !/No decision record/.test(answer)) || `${json(some)} ${answer}`;
+  });
+
+  check('v101ai_08_intent_gating_table', 'The goal explainer answers goal questions only: "how do I get a loan" and "am I losing money to loan interest" reach their own answers, "what should I do" reaches the recommendation', () => {
+    const table: Array<[string, V101AskIntentLayerKind | null]> = [
+      ['Why am I losing?', 'losing'], ['why are we losing', 'losing'], ['why am i behind', 'losing'], ['What is my goal?', 'goal'], ['current objective', 'goal'], ['What am I supposed to do?', 'goal'],
+      ['How do I get to my goal?', 'path'], ['how do i unlock it', 'path'], ['show me the path', 'path'], ['What does my tracked goal require?', 'tracked'],
+      ['How do I get a loan?', null], ['Am I losing money to loan interest?', null], ['What should I do this turn?', null], ['how do i get to VIC', null], ['why am i losing cash on travel', null], ['what is my goal for the loan', null], ['', null]
+    ];
+    const wrong = table.filter(([q, want]) => v101AskIntentLayerKind(q) !== want).map(([q]) => q);
+    if (wrong.length) return `kind wrong for: ${wrong.join(' | ')}`;
+    const loan = ask('How do I get a loan?').mainAnswer;
+    const interest = ask('Am I losing money to loan interest?').mainAnswer;
+    const losing = ask('why am i losing').mainAnswer;
+    const goal = ask('what is my goal').mainAnswer;
+    const todo = ask('What should I do this turn?');
+    return (!/WHAT HAPPENED/.test(loan) && !/WHAT HAPPENED/.test(interest) && /WHAT HAPPENED/.test(losing) && /WHAT HAPPENED/.test(goal) && todo.intent === 'ACTION_RECOMMEND' && /Recommended Move/.test(todo.mainAnswer) && !v101AskIntentLayerApplies('CREDIT_LOAN_STATUS', 'why am i losing') && !v101AskIntentLayerApplies('GAME_RULES', 'why am i losing', [{ entityType: 'region' }]))
+      || json({ loan, interest, losing: losing.slice(0, 40), goal: goal.slice(0, 40), todo: todo.mainAnswer.slice(0, 60) });
+  });
+
+  check('v101ai_09_settings_questions_use_the_registry', '"Search settings" and "inspect settings" quote the registry defaults and read Co-Pilot from coPilotSettings, not from a top-level key', () => {
+    const found = askGameToolSearchSettings(undefined, '').matches;
+    const byKey = (k: string) => found.find(m => m.settingKey === k);
+    const dflt = DEFAULT_GAME_SETTINGS as unknown as Obj;
+    const expected: Obj = { directiveStrength: dflt.directiveStrength, creditScoreEnabled: dflt.creditScoreEnabled, actionLimitsEnabled: dflt.actionLimitsEnabled, coPilotEnabled: createDefaultCoPilotSettings().coPilotEnabled };
+    const wrong = Object.keys(expected).filter(k => byKey(k)?.defaultValue !== expected[k] || byKey(k)?.currentValue !== expected[k]);
+    if (wrong.length || dflt.directiveStrength !== 'standard' || dflt.creditScoreEnabled !== false) return `defaults wrong for ${wrong.join(', ')}: ${json(found.map(m => [m.settingKey, m.defaultValue, m.currentValue]))}`;
+    const on = settings({ coPilotSettings: { ...createDefaultCoPilotSettings(), coPilotEnabled: true, authorityMode: 'recommendations' } });
+    const current = askGameToolSearchSettings(on, 'co-pilot').matches.find(m => m.settingKey === 'coPilotEnabled');
+    const inspectOn = askGameToolInspectSettings({ gameSettings: on });
+    const inspectOff = askGameToolInspectSettings({ gameSettings: settings() });
+    return (current?.currentValue === true && inspectOn.coPilotMode === 'recommendations' && inspectOff.coPilotMode === 'off' && inspectOff.directiveStrength === 'standard' && inspectOff.apCosts.travel === DEFAULT_ACTION_POINT_COSTS.travel) || json({ current, on: inspectOn.coPilotMode, off: inspectOff.coPilotMode });
+  });
+
+  check('v101ai_10_prompt_chips_do_not_invent_a_place', 'The drawer\'s suggestion chips say NSW or Turn 1 only when the match says so', () => {
+    const text = (node: unknown): string => {
+      if (node === null || node === undefined || typeof node === 'boolean') return '';
+      if (typeof node === 'string' || typeof node === 'number') return String(node);
+      if (Array.isArray(node)) return node.map(text).join(' ');
+      const el = node as { props?: { children?: unknown } };
+      return text(el.props?.children);
+    };
+    const render = (props: Obj) => text(AskGamePromptChips({ onSelectChip: () => undefined, ...props } as unknown as AskGamePromptChipsProps));
+    const none = render({});
+    const vic = render({ currentRegion: 'VIC', currentTurn: 7 });
+    return (!/NSW|Turn 1|Location/.test(none) && /my current region/.test(none) && /Tell me about VIC region/.test(vic) && /Location:\s+VIC/.test(vic) && /Day 7/.test(vic)) || `${none.slice(0, 120)} || ${vic.slice(0, 120)}`;
+  });
+
+  // ---- One best move ------------------------------------------------------------------------------------------------------------------------------
+  const cand = (id: string, actionType: string, title: string, utility: number, cashDelta: number, cost: number, targetId?: string): Obj => ({
+    id, actionType, title, description: title, category: 'economy', apCost: 1, costEstimate: cost, utilityScore: utility, riskFactor: 10, rewardScore: 60,
+    isValid: true, expectedStateDelta: { cashDelta, apDelta: -1 }, parameters: targetId ? { region: targetId } : {}, targetId
+  });
+  const withActions = (w: GIWorld, cands: Obj[]): GIWorld => {
+    const ranked = rankContextualRecommendations(cands, w.objective, { apRemaining: 3, cash: w.player.money, limit: 12 });
+    return { ...w, actionSet: buildContextualActionSet({ rankedRecommendations: ranked, invalidCandidates: [], objective: w.objective, attention: w.attention, apRemaining: 3, isHumanTurn: true }) };
+  };
+  const CALM = [cand('c_sell', 'sell', 'Sell Gold at market', 70, 1000, 0), cand('c_vic', 'deposit_region', 'Deposit $5,500 into VIC', 65, -5500, 5500, 'VIC'), cand('c_def', 'deposit_region', 'Deposit $1,000 into NSW', 55, -1000, 1000, 'NSW')];
+
+  check('v101ai_11_one_best_move', 'For a fixed fixture the Play card\'s Recommended action, the Co-Pilot panel\'s top move and Background AI\'s next move are the same move; when a threat rule moves it, the reason says so', () => {
+    const rivalCash = (w: GIWorld, money: number): GIWorld => ({ ...w, actors: w.actors.map(a => (a.relation === 'rival' ? { ...a, money, visible: true } : a)), settings: { ...w.settings, fogOfWar: false } });
+    const cashOf = (w: GIWorld, money: number, turn: number): GIWorld => ({ ...w, turn, player: { ...w.player, money }, actors: w.actors.map(a => (a.relation === 'self' ? { ...a, money } : a)) });
+    const calm = withActions(rivalCash(cashOf(createGIFixtureWorld().world, 6000, 1), 1000), CALM);
+    const play = calm.actionSet?.recommended;
+    if (!play) return 'no recommended action in the fixture';
+    const panel = v101CoPilotPanelTopMove(calm.actionSet);
+    const bg = evaluateBackgroundAI(createEmptyBackgroundAIState('advisor'), calm, { force: true }).state.recommendedNextMove;
+    if (!panel || panel.id !== play.id || panel.title !== play.label || !bg || bg.actionId !== play.id) return `play ${play.id}, panel ${panel?.id}, background ${bg?.actionId}`;
+    if (v101PlayRecommendationView(calm.actionSet)?.title !== play.label) return 'the drawer copy of the Recommended action differs';
+    // a serious NSW threat: Background AI may put the mitigation first, and then must say a threat rule did it
+    const pressured = withActions(rivalCash(cashOf(createGIFixtureWorld().world, 7000, 9), 9000), CALM);
+    const pressedPlay = pressured.actionSet?.recommended;
+    const pressedBg = evaluateBackgroundAI(createEmptyBackgroundAIState('strategist'), pressured, { force: true }).state.recommendedNextMove;
+    if (!pressedPlay || !pressedBg) return 'no move under pressure';
+    return pressedBg.actionId === pressedPlay.id || /threat rule/.test(pressedBg.reason) || `background chose ${pressedBg.label} over ${pressedPlay.label} without saying why: ${pressedBg.reason}`;
+  });
+
+  check('v101ai_12_panel_top_move_is_the_card', 'The Co-Pilot panel shows the card\'s own title, reason and confidence (none when the card has none) and says in one line why it matches Play; with no recommended action it shows nothing', () => {
+    const calm = withActions(createGIFixtureWorld().world, CALM);
+    const rec = calm.actionSet?.recommended;
+    if (!rec) return 'no recommended action';
+    const view = v101CoPilotPanelTopMove(calm.actionSet);
+    const noConf = v101CoPilotPanelTopMove({ recommended: { ...rec, confidence: null } });
+    const note = V101_COPILOT_PANEL_SAME_MOVE_NOTE;
+    const expectConf = typeof rec.confidence === 'number' ? Math.round(rec.confidence * 100) : null;
+    return (view?.title === rec.label && view?.confidencePercent === expectConf && noConf?.confidencePercent === null && v101CoPilotPanelTopMove(null) === null && v101CoPilotPanelTopMove({ recommended: null }) === null
+      && /Same move as the Recommended card on Play/.test(note) && /Guardian/.test(note) && !note.includes('\n') && note.length < 140) || json({ view, noConf, note });
+  });
+
+  // ---- Strategy Planner --------------------------------------------------------------------------------------------------------------------------
+  const objective: StrategyObjective = { id: 'obj_v101', type: 'net_worth_target', title: 'Reach $10k Net Worth', description: 'Earn money', targetValue: 10000, priority: 5, isCompleted: false };
+  const plannerState = (inventory?: unknown[]): Obj => ({
+    turn: 3, activePlayerId: 'player', humanPlayer: { id: 'player', money: 1500, ...(inventory ? { inventory } : {}) }, players: [{ id: 'player', money: 1500, ...(inventory ? { inventory } : {}) }],
+    gameSettings: settings({ strategyPlannerSettings: createDefaultStrategyPlannerSettings() }), strategyPlannerState: createDefaultStrategyPlannerState()
+  });
+
+  check('v101ai_13_planner_only_emits_engine_actions', 'Every step of every style\'s plan (empty bag, full bag, unknown bag) is an action the engine can run, with a case in reduceGameAction; never gather or explore', () => {
+    const labels = v97CaseLabels(String(reduceGameAction));
+    const bad: string[] = [];
+    let steps = 0;
+    [plannerState([]), plannerState(['Coral', 'Opals']), plannerState()].forEach((state, fx) => {
+      const set = generateCandidatePlans(objective, state, createDefaultStrategyPlannerSettings());
+      if (set.plans.length < 4) bad.push(`fixture ${fx}: only ${set.plans.length} plans`);
+      set.plans.forEach(plan => {
+        if (plan.turns.length === 0 || plan.turns.every(t => t.actions.length === 0)) bad.push(`${plan.style} (fixture ${fx}) has no steps`);
+        plan.turns.forEach(t => t.actions.forEach(a => {
+          steps += 1;
+          const engine = v101EngineActionFor(a.actionType);
+          if (!engine || !labels.includes(engine) || v101IsGhostActionType(a.actionType)) bad.push(`${plan.style}/${a.actionType} (fixture ${fx})`);
+        }));
+      });
+    });
+    return (bad.length === 0 && steps >= 12 && labels.length > 100) || `${steps} steps, ${labels.length} labels: ${bad.join(', ')}`;
+  });
+
+  check('v101ai_14_one_engine_set', 'One set of engine-backed actions: each maps to a reducer case, gather and explore are not in it, and the planner pools, the sequence ranker and the drawer all draw only from it', () => {
+    const labels = v97CaseLabels(String(reduceGameAction));
+    const mapped = Object.values(V101_ENGINE_PLAN_ACTIONS);
+    const missing = mapped.filter(a => !labels.includes(a));
+    if (missing.length) return `no reducer case for ${[...new Set(missing)].join(', ')}`;
+    if (V101_GHOST_ACTION_TYPES.some(g => v101IsEngineBackedActionType(g)) || !V101_GHOST_ACTION_TYPES.every(g => v101IsGhostActionType(g)) || v101IsGhostActionType('work')) return 'ghost set wrong';
+    const pools = v101PlannerPools({ inventory: ['Coral'] });
+    const stray = Object.entries(pools).filter(([, list]) => list.length === 0 || list.some(t => !v101IsEngineBackedActionType(t))).map(([k]) => k);
+    const seqs = askGameToolRankTurnSequences(live(), 'player', 2).rankedSequences.concat(askGameToolRankTurnSequences(live(), 'player', 3).rankedSequences);
+    const seqStray = seqs.filter(s => s.sequence.some(a => !v101IsEngineBackedActionType(a)));
+    const empty = v101PlannerPools({ inventory: [] });
+    // nothing was deleted: the action-point rows and ids that saved settings use are still there, and their text no longer promises an action the game lacks
+    const rows = ACTION_POINT_CATEGORIES.flatMap(c => c.actions);
+    const gatherRow = rows.find(r => r.id === 'gather'); const exploreRow = rows.find(r => r.id === 'explore');
+    if (!gatherRow || !exploreRow || normalizeActionPointId('gather') !== 'gather' || normalizeActionPointId('explore') !== 'explore' || normalizeActionPointId('work') !== 'gather' || /extract|scout/i.test(`${gatherRow.description} ${exploreRow.description}`) || !/Not used/.test(exploreRow.description)) return 'the gather / explore rows were removed or still promise an action';
+    return (stray.length === 0 && seqs.length >= 2 && seqStray.length === 0 && Object.values(empty).every(list => !list.includes('sell_resources')) && v101DrawerActionCandidates().every(v101IsEngineBackedActionType)) || json({ stray, seqStray: seqStray.length, empty });
+  });
+
+  check('v101ai_15_simulator_has_no_ghost_income', 'The simulator refuses gather and explore, previews work at the engine\'s real wage, and no longer writes into the caller\'s live player', () => {
+    const player: Obj = { id: 'player', money: 1000, supplies: 4, currentRegion: 'NSW', actionsUsedThisTurn: 0 };
+    const state: Obj = { player, gameSettings: settings(), _isWorkingCopy: true };
+    const ghost = askGameToolSimulateAction(state, 'player', { type: 'gather' }, { skipDeepClone: true });
+    const explore = askGameToolSimulateAction(state, 'player', 'explore', { skipDeepClone: true });
+    const work = askGameToolSimulateAction(state, 'player', { type: 'work' }, { skipDeepClone: true });
+    return (!ghost.valid && /not an action this game has/.test(String(ghost.error)) && !explore.valid && work.valid && work.delta.moneyChange === V101_WORK_WAGE && player.money === 1000 && player.supplies === 4 && player.actionsUsedThisTurn === 0)
+      || json({ ghost: ghost.error, explore: explore.error, work: work.delta, player });
+  });
+
+  check('v101ai_16_plan_step_gather_is_refused_and_work_runs', 'An old saved plan with a "gather" step is refused without spending an action; a "work" step really pays and spends the action', () => {
+    const world: Obj = { day: 1, turnCounter: 1, currentActorId: 'player', currentTurn: 'player', humanPlayerId: 'player', selectedMode: 'ai', gameMode: 'game', turnOrder: ['player', 'ai'], resourcePrices: {}, supplyDemand: {}, activeEvents: [], season: 'Off', weather: 'Sunny' };
+    const player: Obj = { id: 'player', name: 'Tester', kind: 'human', isHuman: true, isAi: false, money: 1000, actionsUsedThisTurn: 0, currentRegion: 'QLD', inventory: [], loans: [], equipment: [], character: { name: 'Tourist' }, masteryUnlocks: [], level: 1 };
+    const rival: Obj = { id: 'ai', name: 'Rival', kind: 'ai', isHuman: false, isAi: true, money: 1100, actionsUsedThisTurn: 0, currentRegion: 'NSW', inventory: [], loans: [], equipment: [] };
+    const make = (actionType: string): Obj => {
+      const base: Obj = { ...world, player, aiPlayer: rival, actorsById: { player, ai: rival }, gameSettings: settings({ strategyPlannerSettings: createDefaultStrategyPlannerSettings(), coPilotAuthorityMode: 'full_co_pilot' }) };
+      const set = generateCandidatePlans(objective, base, createDefaultStrategyPlannerSettings());
+      const active = activateStrategyPlan(set, set.plans[0].id, base) as Obj;
+      const plan = o(o(active.strategyPlannerState).activePlan) as unknown as StrategyPlan;
+      plan.turns = [{ turnNumber: 1, actions: [{ id: 'step1', turnNumber: 1, stepIndex: 1, actionType, estimatedCost: 0, estimatedRevenue: 0, estimatedAPCost: 1, riskLevel: 0.1, status: 'pending' }], expectedCashStart: 1000, expectedCashEnd: 1000, expectedNetWorthEnd: 1000, expectedRiskLevel: 0.1, turnSummary: 'test' }];
+      return active;
+    };
+    const ghostRun = executeStrategyPlannerCoPilotStep(make('gather'), { mode: 'full_co_pilot', autoApproveCheckpoint: true });
+    const ghostPlayer = o(o(ghostRun.newState).player);
+    if (ghostRun.executed || !/not an action this game has/.test(String(ghostRun.checkpointReason)) || ghostPlayer.actionsUsedThisTurn !== 0 || ghostPlayer.money !== 1000) return json({ executed: ghostRun.executed, why: ghostRun.checkpointReason, used: ghostPlayer.actionsUsedThisTurn });
+    const workRun = executeStrategyPlannerCoPilotStep(make('work'), { mode: 'full_co_pilot', autoApproveCheckpoint: true });
+    const workPlayer = o(o(workRun.newState).player);
+    return (workRun.executed === true && workPlayer.money === 1000 + V101_WORK_WAGE && workPlayer.actionsUsedThisTurn === 1) || json({ executed: workRun.executed, why: workRun.checkpointReason, money: workPlayer.money, used: workPlayer.actionsUsedThisTurn, err: workRun.executionResult?.error });
+  });
+
+  // ---- Proactive Intelligence, Guardian, goal alignment ---------------------------------------------------------------------------------------------
+  check('v101ai_17_region_picture_from_live_deposits', 'Who holds which region, and which holds are contested, are read from the live deposits (the old inputs were fields nothing writes)', () => {
+    const state: Obj = { selectedMode: 'ai', regionDeposits: { NSW: { player: 1000, ai: 800 }, VIC: { player: 500 }, QLD: { ai: 900 }, SA: { player: 400, ai: 400 }, WA: { player: 1000, ai: 100 } } };
+    const pic = v101LiveRegionPicture(state);
+    const none = v101LiveRegionPicture({});
+    const team = v101LiveRegionPicture({ selectedMode: 'team_human_ai_vs_ai_ai', regionDeposits: { NSW: { team_player: 900, team_opponent: 700 } } });
+    return (json(pic.playerRegions) === json(['NSW', 'VIC', 'WA']) && json(pic.rivalRegions) === json(['QLD']) && json(pic.threatenedRegions) === json(['NSW', 'SA']) && none.threatenedRegions.length === 0 && json(team.threatenedRegions) === json(['NSW']) && json(team.playerRegions) === json(['NSW']))
+      || json({ pic, team });
+  });
+
+  check('v101ai_18_proactive_speaks_as_a_rival_not_a_teammate', 'In a one-on-one match a region warning is a plain notice (no "want me to cover it?", no reserve offer) and names "you", not the raw id; in a team match the teammate lines are unchanged', () => {
+    const memory = { relationships: { player: { actorId: 'player', trust: 10, respect: 10, rivalry: 20, grievance: 50, gratitude: 0 } }, opponentModels: {}, events: [] } as unknown as AiActorMemory;
+    const snap = (teamForSpeaker: string) => buildAuthorizedSnapshotFromGame({}, { turn: 8, threatenedRegions: ['NSW'], rivalVictoryProgress: 0.8, teammateCash: 100, victoryThreshold: 0.8, actors: [{ id: 'player', teamId: 'team_player', kind: 'human', name: 'You' }, { id: 'ai', teamId: teamForSpeaker, kind: 'ai', name: 'Riley' }] });
+    const run = (speaker: string, teamForSpeaker: string) => evaluateProactiveIntelligence({ speakerActorId: speaker, recipientActorId: 'player', turn: 8, memory, snapshot: snap(teamForSpeaker), comms: createEmptyCommunicationState(), isLiveIntentMatch: true });
+    const rival = run('ai', 'team_opponent');
+    const rivalText = rival.map(m => m.text).join(' | ');
+    const rivalAll = evaluateProactiveIntelligence({ speakerActorId: 'ai', recipientActorId: 'player', turn: 8, memory, snapshot: snap('team_opponent'), comms: createEmptyCommunicationState(), settings: { aiCommunicationProactiveFrequency: 'high' }, isLiveIntentMatch: true });
+    const allText = [...rival, ...rivalAll].map(m => m.text).join(' | ');
+    if (/cover it|almost out of cash|what player did|of the victory threshold/.test(allText) || rival.some(m => m.kind === 'team_request' || m.suggestedActions)) return allText;
+    const mate = evaluateProactiveIntelligence({ speakerActorId: 'ai', recipientActorId: 'player', turn: 8, memory, snapshot: snap('team_player'), comms: createEmptyCommunicationState(), isLiveIntentMatch: true });
+    const grudge = evaluateProactiveIntelligence({ speakerActorId: 'ai', recipientActorId: 'player', turn: 20, memory, snapshot: snap('team_opponent'), comms: { ...createEmptyCommunicationState(), lastProactiveTurnByKey: { rival_near_victory: 20, threat_NSW: 20 } }, isLiveIntentMatch: true });
+    return (rival.length >= 1 && /contested/.test(rivalText) && /4 of 5 days/.test(rivalText) && mate.some(m => m.kind === 'team_request' && /cover it/.test(m.text)) && grudge.some(m => /what you did/.test(m.text)) && v101ActorWords('ai', 'player') === 'the rival' && v101ActorWords('player', 'player') === 'you')
+      || json({ rivalText, mate: mate.map(m => m.text), grudge: grudge.map(m => m.text) });
+  });
+
+  check('v101ai_19_ask_what_should_we_do_has_inputs', 'Asked "what should we do" the rival-voiced answer is built from live regions and the five-day count, and the stock "nothing to tell you" line is gone and not filed as memory', () => {
+    const state = live({ regionDeposits: { NSW: { player: 1000, ai: 900 } }, dominanceTracker: { player: 0, ai: 4 }, aiMemoriesByActor: {} });
+    const answer = ask('what should we do', state);
+    const quiet = ask('what should we do', live());
+    const comm = quiet.communication;
+    return (/contested/.test(answer.mainAnswer) && /4 of 5 days/.test(answer.mainAnswer) && !/victory threshold/.test(answer.mainAnswer) && !/I have nothing to tell you/.test(quiet.mainAnswer) && comm?.fallback === true && v101AskGenericAnswer(null, null).includes(V101_ASK_INTELLIGENCE_POINTER))
+      || json({ a: answer.mainAnswer, q: quiet.mainAnswer, fb: comm?.fallback });
+  });
+
+  check('v101ai_20_guardian_cache_key_follows_the_state', 'A Guardian verdict is replayed only while the state it depends on is unchanged: cash, actions, region, bag, loans, contracts and the day each change the key', () => {
+    const actor = (over?: Obj): Obj => ({ id: 'player', currentRegion: 'NSW', inventory: ['Coral'], loans: [], actionsUsedThisTurn: 0, money: 900, ...(over || {}) });
+    const ctx = (a: Obj, extra?: Obj) => ({ gameState: { actorsById: { player: a }, regionControlStats: { totalControlled: { player: 1 } } }, actorId: 'player', currentCash: 900, currentActionTokens: 3, activeContracts: [], activeExpeditions: [], activePlans: [], ...(extra || {}) });
+    const key = (a: Obj, extra?: Obj) => v101GuardianStateKey(ctx(a, extra));
+    const same = key(actor()) === key(actor());
+    const changed = [key(actor({ currentRegion: 'VIC' })), key(actor({ inventory: [] })), key(actor({ loans: [{}] })), key(actor({ actionsUsedThisTurn: 1 })), key(actor(), { activeContracts: ['c1'] }), key(actor(), { currentCash: 400 }), key(actor(), { currentActionTokens: 2 })];
+    if (!same || new Set([key(actor()), ...changed]).size !== 8) return json({ same, distinct: new Set([key(actor()), ...changed]).size });
+    // through the real pipeline: the same situation hits the cache, a changed region does not
+    const gs = (region: string): Obj => ({ actorsById: { player: actor({ currentRegion: region }) }, day: 2, turn: 4 });
+    const evalCtx = (state: Obj): GuardianEvaluationContext => ({ settings: { ...createDefaultGuardianAiSettings(), enabled: true }, gameState: state, actorId: 'player', actionType: 'travel', actionPayload: {}, source: 'human_direct', day: 2, turn: 4, currentActionTokens: 3, currentCash: 900, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false });
+    const a1 = evaluateGuardianRiskPipeline(evalCtx(gs('NSW')));
+    const a2 = evaluateGuardianRiskPipeline(evalCtx(gs('NSW')));
+    const b1 = evaluateGuardianRiskPipeline(evalCtx(gs('VIC')));
+    return (a1 === a2 && b1 !== a1) || `cache identity: same state ${a1 === a2}, changed region ${b1 !== a1}`;
+  });
+
+  check('v101ai_21_goal_alignment_whole_words_in_v101_matches', 'In a V10.1 match a card matches the goal on whole, distinct, meaningful words (at most 16 points); a V10.0 match and an unstamped one keep the old +8 per substring', () => {
+    if (v101ObjectiveTokenAlignment('Explore and grow your position travel travel local', 'Travel from NSW to VIC to expand market access and access local regional opportunities') !== 8
+      || v101ObjectiveTokenAlignment('collect gold coins', 'Collected goldfields coinage') !== 0
+      || v101ObjectiveTokenAlignment('Control Queensland', 'Deposit into Queensland to take control') !== 16
+      || v101ObjectiveTokenAlignment('', 'anything') !== 0 || v101ObjectiveTokenAlignment('with your that', 'with your that') !== 0) return 'helper table wrong';
+    const goal = { id: 'g', sourceType: 'explore', sourceId: 'explore', title: 'Explore and grow your position', description: 'Travel, attempt challenges, and gather resources', requirements: [], blockers: [], progress: { completed: 0, total: 1 }, completionState: 'open', recommendedNextStep: { label: 'Travel or attempt a local challenge' } } as unknown as CurrentObjective;
+    const travel = { id: 't1', title: 'Travel to VIC', description: 'Travel from NSW to VIC to expand market access and access local regional opportunities', actionType: 'travel', isValid: true, apCost: 1, utilityScore: 50, targetId: 'VIC' };
+    const align = (rulesVersion: number | undefined) => rankContextualRecommendations([travel], goal, { apRemaining: 3, cash: 1000, limit: 3, state: rulesVersion === undefined ? {} : { rulesVersion } })[0];
+    const fresh = align(V101_RULES_VERSION); const old = align(V100_RULES_VERSION); const none = align(undefined);
+    if (!fresh || !old || !none) return 'the travel card was not ranked';
+    return ((fresh.objectiveAlignment ?? 99) <= 16 && !fresh.whyPoints.some(w => /advances your current goal/.test(w)) && (old.objectiveAlignment ?? 0) >= 24 && none.objectiveAlignment === old.objectiveAlignment && old.whyPoints.some(w => /advances your current goal/.test(w)))
+      || json({ fresh: fresh.objectiveAlignment, old: old.objectiveAlignment, none: none.objectiveAlignment });
+  });
+
+  check('v101ai_22_nothing_new_is_saved', 'The package adds no match state: no V10.1 state key belongs to it, and the Ask hand-over (the Play card\'s move) lives on the question\'s own copy of the state', () => {
+    const state = live();
+    const before = json(state);
+    ask('best actions', { ...state, v101PlayRecommendation: { actionType: 'work', title: 'Work', reason: '', apCost: 1, score: 1 } });
+    return (json(state) === before && !V101_ADDED_STATE_KEYS.some(k => /advice|ask|planner|guardian|proactive/i.test(k)) && !('v101PlayRecommendation' in state)) || 'state changed or a key was added';
+  });
+
   return results;
 }
 
@@ -260581,7 +260936,7 @@ function dispatchGameSettingsChange(
           const humanCondition: any = v101CoPilotPanelAnalysis?.humanCondition ?? null;
           const primaryProblem: any = v101CoPilotPanelAnalysis?.primaryProblem ?? null;
           if (!humanCondition) return null;
-          const topMove = v9ActionSetView?.recommended || null;
+          const topMove = v101CoPilotPanelTopMove(v9ActionSetView);
 
           const getConditionGradeBadgeClass = (statusGrade?: string) => {
             switch (statusGrade) {
@@ -260696,17 +261051,17 @@ function dispatchGameSettingsChange(
                     <span className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider flex items-center gap-1">
                       <span>🎯</span> Recommended Action
                     </span>
-                    {topMove && typeof topMove.confidence === 'number' && (
+                    {topMove && topMove.confidencePercent !== null && (
                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30">
-                        {Math.round(topMove.confidence * 100)}% Confidence
+                        {topMove.confidencePercent}% Confidence
                       </span>
                     )}
                   </div>
                   <div className="text-gray-200 font-medium">
-                    {topMove ? topMove.label : 'Maintain standard regional progression plan.'}
+                    {topMove ? topMove.title : 'Maintain standard regional progression plan.'}
                   </div>
                   <div className="text-gray-400 text-[11px] mt-0.5 line-clamp-1">
-                    {topMove ? (topMove.reasons[0] || topMove.description || 'The top move on your Play screen.') : 'No action required.'}
+                    {topMove ? topMove.reason : 'No action required.'}
                   </div>
                   {topMove && <div className="text-gray-500 text-[10px] mt-0.5" data-testid="copilot-panel-same-move">{V101_COPILOT_PANEL_SAME_MOVE_NOTE}</div>}
                 </div>
