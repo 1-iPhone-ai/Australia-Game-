@@ -2,6 +2,7 @@
 // SECTION 1: IMPORTS
 // ============================================================================
 import React, { useState, useEffect, useCallback, useMemo, useReducer, useRef, useContext, createContext, ChangeEvent, useLayoutEffect } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server'; // V10.1 (SECTION 20BB): the self-tests render the real challenge line to static markup
 
 // ============================================================================
 // SECTION 1B: BUILT-IN AI MEMORY, PERSISTENT MEMORY AND AI COMMUNICATION
@@ -71990,7 +71991,7 @@ export function generateCoPilotPlayerActionCandidates(
   // V9.9 (SECTION 20AR): the market candidate is a real trade at the market's real price. It used to sell the first
   // inventory entry for a flat $100 at "1 AP" (a sale is free, so it could never pass its own check) or buy
   // 'minerals', which the Resource Market does not sell.
-  candidates.push(v99BuildTradeCandidate({ id: makeId(4, 'trade'), actor: actorObj, world: gs, settings: gameSettings, rival: context?.aiPlayer || gs?.actorsById?.ai || null, tariffState: gs, apSettings, wealthGoal: goal === 'wealth', cash, reserve: minReserveFloor })); // V10.1 (SECTION 20BB): the quantity is sized to the spare cash
+  candidates.push(v99BuildTradeCandidate({ id: makeId(4, 'trade'), actor: actorObj, world: gs, settings: gameSettings, rival: context?.aiPlayer || gs?.actorsById?.ai || null, tariffState: gs, apSettings, wealthGoal: goal === 'wealth', cash, reserve: minReserveFloor, spendCap: maxSpendPerAction })); // V10.1 (SECTION 20BB): the quantity is sized to the spare cash
   // Always-legal income fallback (same 'work' action the team AI actors use: +$50 wage, 1 AP).
   // Without it, once cash sits at the reserve floor with debt outstanding every remaining
   // candidate is a costed one and the turn ends at 0/3 forever.
@@ -128880,6 +128881,12 @@ export interface BalanceSimConfig {
   features: BalanceFeatures; label?: string;
   /** Optional starting handicap/advantage for snowball & comeback fixtures (cash added to subject). */
   subjectCashDelta?: number;
+  /** V10.1 (SECTION 20BB): 'v100' / 'v101' = the lab plays the LIVE game's economy under that rules stamp (levels, seasons, the Sell Market's own sale price, bulk purchases, pay curve); absent = the lab as shipped. */
+  liveEconomy?: 'v100' | 'v101';
+  /** V10.1 (SECTION 20BB): the V10.1 challenge rules (odds ceiling, pay curve, fatigue) on the lab as shipped (no levels, no market model); liveEconomy already includes its stamp's rules. */
+  rulesStamp?: 'v100' | 'v101';
+  /** V10.1 (SECTION 20BB): with liveEconomy, the character both actors play ('Tourist', else the neutral 'Balanced'). */
+  character?: string;
 }
 
 type BalanceExec =
@@ -128920,11 +128927,15 @@ interface BalActor {
   loans: any[]; investments: string[]; level: number; xp: number; stats: { strength: number; charisma: number; luck: number; intelligence: number };
   character: { name: string }; completedThisSeason: string[]; consecutiveWins: number; actionsUsedThisTurn: number; overridesUsedToday: number;
   overrideActionsGranted: number; debuffs: Array<{ type: string; remainingDays: number }>; masteryUnlocks: string[]; equipment: string[];
+  /** V10.1 (SECTION 20BB): set only when the lab plays the live economy (liveEconomy): the rules stamp, challenge fatigue and repeat-win counts. */
+  rules?: 'v100' | 'v101'; live?: boolean; fatigue?: number; mastery?: Record<string, number>;
 }
 
 export interface BalanceWorld {
   config: BalanceSimConfig; day: number; prices: Record<string, number>; trend: string; actors: Record<string, BalActor>;
   deposits: Record<string, Record<string, number>>; contracts: Record<string, any>; rng: number;
+  /** V10.1 (SECTION 20BB): units sold into / bought from the market, with the live economy (liveEconomy). */
+  supply?: Record<string, number>; pressure?: Record<string, number>;
   log: Array<{ day: number; actorId: string; category: BalanceCategory; label: string; value: number; apSpent: number; cashDelta: number }>;
   decisions: DecisionQualityProfile[]; snapshots: StrategicBalanceSnapshot[]; leaderByDay: Array<string | null>; predictedVsActual: Array<{ kind: string; predicted: number; actual: number }>;
 }
@@ -128961,6 +128972,7 @@ export function createBalanceWorld(cfg: BalanceSimConfig): BalanceWorld {
   if (b === a) b = BAL_REGIONS[(BAL_REGIONS.indexOf(a) + 3) % BAL_REGIONS.length];
   w.actors.player = balNewActor('player', 'Subject', 'human', cfg.startingMoney + (cfg.subjectCashDelta || 0), a);
   w.actors.ai = balNewActor('ai', 'Rival', 'ai', cfg.startingMoney, b);
+  Object.values(w.actors).forEach(actor => balLiveSetup(w, actor)); // V10.1 (SECTION 20BB): no-op unless the config plays the live economy
   return w;
 }
 
@@ -128980,6 +128992,7 @@ export function balanceMetricValue(w: BalanceWorld, id: string): number {
 }
 
 function balChallengeChance(a: BalActor, c: { difficulty: number; type: string }): number {
+  if (a.rules) return balChallengeOdds(a, c); // V10.1 (SECTION 20BB): the live economy (ceiling and fatigue under V10.1)
   return computeChallengeSuccessChanceCore({ difficulty: c.difficulty, type: c.type, stats: a.stats, characterName: a.character.name, level: a.level });
 }
 function balChallengeWager(a: BalActor): number { return Math.max(0, Math.min(500, Math.floor(a.money))); }
@@ -128990,7 +129003,7 @@ function balAvgRegionPrice(w: BalanceWorld, region: string): number {
 function balBestChallengeEv(w: BalanceWorld, a: BalActor, region: string): number {
   const wager = balChallengeWager(a);
   return Math.max(0, ...((REGIONS[region]?.challenges || []) as any[]).filter(c => !a.completedThisSeason.includes(c.name)).map(c => {
-    const p = balChallengeChance(a, c); const r = computeChallengeRewardCore({ wager, rewardMultiplier: c.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1 }).reward;
+    const p = balChallengeChance(a, c); const r = a.rules ? balChallengeReward(a, c, wager) : computeChallengeRewardCore({ wager, rewardMultiplier: c.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1 }).reward;
     return p * r - (1 - p) * wager;
   }));
 }
@@ -129013,7 +129026,7 @@ export function enumerateBalanceOptions(w: BalanceWorld, id: string): BalanceOpt
   // Challenges in the current region (retry allowed until won; once per match on success)
   ((REGIONS[a.currentRegion]?.challenges || []) as any[]).filter(c => !a.completedThisSeason.includes(c.name)).forEach(c => {
     const wager = balChallengeWager(a); const p = balChallengeChance(a, c);
-    const r = computeChallengeRewardCore({ wager, rewardMultiplier: c.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1 }).reward;
+    const r = a.rules ? balChallengeReward(a, c, wager) : computeChallengeRewardCore({ wager, rewardMultiplier: c.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1 }).reward;
     const ev = p * r - (1 - p) * wager;
     push({ id: `ch_${c.name}`, category: 'challenge', label: `Challenge: ${c.name} ($${wager})`, apCost: 1, cashCost: wager, value: ev * cashW, immediateCash: ev, risk: wager > 0 ? Math.sqrt(p * (1 - p)) * (r + wager) : 0, reversible: false, exec: { kind: 'challenge', name: c.name, difficulty: c.difficulty, type: c.type, reward: c.reward, wager }, legal: ap >= 1 && wager > 0, reason: needAp(1) || (wager > 0 ? null : 'No cash to wager') });
   });
@@ -129027,7 +129040,16 @@ export function enumerateBalanceOptions(w: BalanceWorld, id: string): BalanceOpt
     push({ id: `tr_${r}`, category: 'travel', label: `Travel to ${r} ($${cost})`, apCost: 1, cashCost: cost, parts: { resource, positional, regionPull }, value: resource + positional + regionPull - cost, immediateCash: resource - cost, risk: 0, reversible: true, exec: { kind: 'travel', to: r, cost }, legal: ap >= 1 && a.money >= cost && !blocked, reason: needAp(1) || (blocked ? 'Travel blocked (sabotage)' : a.money >= cost ? null : 'Cannot afford travel') });
   });
   // Market (0 AP): sell held goods; buy goods trading well below base (mean reversion)
-  Array.from(new Set(a.inventory)).sort().forEach(item => {
+  // V10.1 (SECTION 20BB): the live economy sells the whole stack at the Sell Market's own price (region, season, oversupply) and buys the quantity that earns the most (any number of units, one action).
+  if (a.live) {
+    Array.from(new Set(a.inventory)).sort().forEach(item => {
+      const units = a.inventory.filter(x => x === item).length; const sale = balLiveSaleQuote(w, a, item, units);
+      push({ id: `sell_${item}`, category: 'market', label: `Sell ${units} ${item} ($${sale.total})`, apCost: 0, cashCost: 0, value: metric === 'money' ? sale.total : 0, immediateCash: sale.total, risk: 0, reversible: false, exec: { kind: 'sell', item } });
+    });
+    const best = balLiveBestBuy(w, a);
+    if (best) push({ id: `buy_${best.resource}`, category: 'market', label: `Buy ${best.quantity} ${best.resource} ($${best.buyTotal}) to resell for $${best.saleTotal}`, apCost: 1, cashCost: best.buyTotal, value: best.profit, immediateCash: best.profit, risk: best.buyTotal * 0.05, reversible: true, exec: { kind: 'buy', item: best.resource, quantity: best.quantity }, legal: ap >= 1 && a.money >= best.buyTotal && a.inventory.length < MAX_INVENTORY, reason: needAp(1) });
+  }
+  if (!a.live) Array.from(new Set(a.inventory)).sort().forEach(item => {
     const price = Math.floor((w.prices[item] ?? getResourceMarketPrice(item)) * getSabotageSellMultiplier(a.debuffs));
     const base = getResourceMarketPrice(item);
     const holdGain = Math.max(0, (base - price) * (1 - Math.pow(0.88, Math.min(days, 5))));
@@ -129035,7 +129057,7 @@ export function enumerateBalanceOptions(w: BalanceWorld, id: string): BalanceOpt
   });
   // Canonical Resource Market purchase: always at the BASE price (plus tariff), and it uses an action. Buying is
   // for crafting/contracts; the daily price only matters when selling (no buy-low/sell-high loop exists).
-  BASE_MARKET_RESOURCES.filter(r => w.prices[r] !== undefined && w.prices[r] > getResourceMarketPrice(r) * 1.12).sort().slice(0, 3).forEach(item => {
+  if (!a.live) BASE_MARKET_RESOURCES.filter(r => w.prices[r] !== undefined && w.prices[r] > getResourceMarketPrice(r) * 1.12).sort().slice(0, 3).forEach(item => {
     const base = getResourceMarketPrice(item); const premium = Math.floor(w.prices[item] - base);
     push({ id: `buy_${item}`, category: 'market', label: `Buy ${item} ($${base}) to resell at $${Math.floor(w.prices[item])}`, apCost: 1, cashCost: base, value: premium, immediateCash: premium, risk: base * 0.1, reversible: true, exec: { kind: 'buy', item }, legal: ap >= 1 && a.money >= base && a.inventory.length < MAX_INVENTORY, reason: needAp(1) || (a.money >= base ? null : 'Cannot afford') });
   });
@@ -129239,10 +129261,11 @@ function balExecute(w: BalanceWorld, id: string, o: BalanceOption): boolean {
     case 'challenge': {
       const p = balChallengeChance(a, e);
       const win = balNext(w) < p;
-      const r = computeChallengeRewardCore({ wager: e.wager, rewardMultiplier: e.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1 }).reward;
+      const r = a.rules ? balChallengeReward(a, e, e.wager) : computeChallengeRewardCore({ wager: e.wager, rewardMultiplier: e.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1 }).reward;
       ok = balReduce(w, id, { type: 'challenge', price: e.wager, parameters: { wager: e.wager, isWin: win, reward: r, challengeName: e.name } });
       if (ok && win) { a.completedThisSeason = [...a.completedThisSeason, e.name]; a.consecutiveWins += 1; } // canonical COMPLETE_CHALLENGE on success only
       if (ok && !win) a.consecutiveWins = 0;
+      if (ok && a.rules) balLiveAfterChallenge(a, e, win); // V10.1 (SECTION 20BB): experience, repeat wins and fatigue in the live economy
       break;
     }
     case 'travel': {
@@ -129250,8 +129273,8 @@ function balExecute(w: BalanceWorld, id: string, o: BalanceOption): boolean {
       if (ok) { const res = REGIONAL_RESOURCES[e.to] || []; if (res.length && a.inventory.length < MAX_INVENTORY) a.inventory = [...a.inventory, res[Math.floor(balNext(w) * res.length)]]; }
       break;
     }
-    case 'sell': ok = balReduce(w, id, { type: 'sell', item: e.item, price: Math.floor((w.prices[e.item] ?? getResourceMarketPrice(e.item)) * getSabotageSellMultiplier(a.debuffs)), parameters: { quantity: 1 } }); break;
-    case 'buy': ok = balReduce(w, id, { type: 'buy_market', item: e.item, price: getResourceMarketPrice(e.item), parameters: { quantity: e.quantity || 1 } }); break;
+    case 'sell': ok = a.live ? balLiveSell(w, a, e.item) : balReduce(w, id, { type: 'sell', item: e.item, price: Math.floor((w.prices[e.item] ?? getResourceMarketPrice(e.item)) * getSabotageSellMultiplier(a.debuffs)), parameters: { quantity: 1 } }); break;
+    case 'buy': ok = a.live ? balLiveBuy(w, a, e.item, e.quantity || 1) : balReduce(w, id, { type: 'buy_market', item: e.item, price: getResourceMarketPrice(e.item), parameters: { quantity: e.quantity || 1 } }); break;
     case 'deposit': ok = balReduce(w, id, { type: 'region_deposit', targetRegion: e.region, investmentAmount: e.amount }); break;
     case 'invest': ok = balReduce(w, id, { type: 'invest', targetRegion: e.region }); break;
     case 'loan': ok = balReduce(w, id, { type: 'emergency_loan' }); break;
@@ -129294,6 +129317,7 @@ function balEndOfDay(w: BalanceWorld): void {
     const next = advanceActiveRegionalContractsDay(w.contracts, { player: w.actors.player.currentRegion, ai: w.actors.ai.currentRegion });
     if (next) w.contracts = next;
   }
+  balLiveEndOfDay(w); // V10.1 (SECTION 20BB): oversupply, purchase pressure, fatigue and seasons in the live economy (no-op otherwise)
   const upd = computeDailyMarketUpdate(w.day + 1, w.prices, w.trend, null);
   w.prices = upd.nextPrices; w.trend = upd.nextTrend;
   void settings;
@@ -189486,6 +189510,8 @@ export interface V99TradeCandidateInput {
   /** V10.1 (SECTION 20BB): the cash on hand and the cash the advice never spends; a V10.1 purchase card sizes its quantity to what is left (absent = the actor's money, no reserve). */
   cash?: number;
   reserve?: number;
+  /** V10.1 (SECTION 20BB): the most one action may spend (the Co-Pilot's per-action cap); the card never proposes a purchase above it. */
+  spendCap?: number;
 }
 
 /**
@@ -189559,7 +189585,7 @@ export function v99BuildTradeCandidate(i: V99TradeCandidateInput): CoPilotAction
     const cash = Number.isFinite(Number(i.cash)) ? Number(i.cash) : Number(actor.money) || 0;
     const room = MAX_INVENTORY - inventory.length;
     const best = v101ChooseTradeBuy({
-      resources: RESOURCE_MARKET_RESOURCES, maxUnits: room, cash: cash - Math.max(0, Number(i.reserve) || 0),
+      resources: RESOURCE_MARKET_RESOURCES, maxUnits: room, cash: Math.min(cash - Math.max(0, Number(i.reserve) || 0), Number.isFinite(Number(i.spendCap)) ? Number(i.spendCap) : Infinity),
       buyQuote: (resource, quantity) => v101QuotePurchaseFromState(resource, quantity, actorId, region, i.tariffState, stateOptions), saleQuote: bulkSale
     });
     const apCost101 = v99MarketBuyActionCost(actor, i.apSettings);
@@ -209294,7 +209320,7 @@ export const V101_MARKET_PRESSURE_NOTE = "Prices follow today's market, this reg
 //  (b) the pay multiplier falls as the odds rise (a risk-reward curve): the long shots keep their full multiplier, a sure
 //      thing pays less, so 90% odds no longer also pay 2.4x;
 //  (c) every challenge attempted tires the actor a little (the existing override-fatigue plumbing of the odds formula:
-//      -3% odds per attempt, to -15%, halved each night), so the same button pressed three times in a turn is worse each time.
+//      -1% odds per attempt, to -5%, halved each night), so the same button pressed three times in a turn is worse each time.
 /** The most a challenge's chance of winning can be in a V10.1 match (V10.0: 95%). */
 export const V101_ODDS_CEILING = 0.85;
 /** Below these odds a challenge pays its full multiplier; above, the pay falls V101_PAYOUT_SLOPE per point of odds, to V101_PAYOUT_FLOOR. */
@@ -209302,8 +209328,8 @@ export const V101_PAYOUT_KNEE = 0.5;
 export const V101_PAYOUT_SLOPE = 1.4;
 export const V101_PAYOUT_FLOOR = 0.45;
 /** Each challenge attempted adds this to the actor's fatigue (it lowers every later challenge's odds by the same amount), to V101_FATIGUE_MAX. */
-export const V101_FATIGUE_PER_CHALLENGE = 0.03;
-export const V101_FATIGUE_MAX = 0.15;
+export const V101_FATIGUE_PER_CHALLENGE = 0.01;
+export const V101_FATIGUE_MAX = 0.05;
 
 /** The odds ceiling for the match: 85% in a V10.1 match, undefined (the formula's own 95%) in any other. */
 export function v101OddsCeilingFor(state: unknown): number | undefined {
@@ -209322,7 +209348,7 @@ export function v101PayoutFactorFor(state: unknown, successChance: number): numb
   return isV101Match(state) ? v101ChallengePayoutFactor(successChance) : 1;
 }
 
-/** The actor's fatigue after one more challenge attempt: +3%, to 15% (a fatigue already above 15% from overrides is left alone). */
+/** The actor's fatigue after one more challenge attempt: +1%, to 5% (a fatigue already above 5% from overrides is left alone). */
 export function v101FatigueAfterChallenge(current: unknown): number {
   const now = Number.isFinite(Number(current)) ? Math.max(0, Number(current)) : 0;
   return now >= V101_FATIGUE_MAX ? now : Math.min(V101_FATIGUE_MAX, now + V101_FATIGUE_PER_CHALLENGE);
@@ -209482,8 +209508,476 @@ export function v101AiInvestmentTurn(state: { day?: unknown; turnCounter?: unkno
   return isV101Match(state) ? investmentPayoutTurn(state) : (Number(state?.turnCounter) || Number(state?.day) || 1);
 }
 
+
+// ---- 4. The balance lab sees the market loop and the one-button challenge ---------------------------------------------------
+// The lab (SECTION 20M) priced a Resource Market purchase at one unit per action, listed at most three items trading well
+// above base, sold at the list price with no region or oversupply terms and kept every actor at level 1 for the whole match,
+// so it reported "no buy-low/sell-high loop exists" and a healthy challenge economy while the live game had both problems.
+// With `liveEconomy: 'v100' | 'v101'` in the config the lab plays the live game's economy under that rules stamp instead:
+// seasons (a challenge can be won again each season), experience and levels (+1 to every stat per level), the Sell Market's
+// own sale price (region demand, season, oversupply: v99QuoteBulkSale), a Resource Market purchase of any quantity at the
+// stamp's own price (flat base + tariff for V10.0, v101QuoteMarketPurchase for V10.1), purchase pressure, the odds ceiling,
+// the pay curve and challenge fatigue. Without it the lab is exactly what it was (every existing lab test keeps its numbers).
+
+/** Starting stats of the characters the lab can play (the live CHARACTERS table). */
+const V101_LAB_STATS: Record<string, { strength: number; charisma: number; luck: number; intelligence: number }> = {
+  Tourist: { strength: 3, charisma: 5, luck: 4, intelligence: 3 }
+};
+
+/** The season on a day, as the live match rolls it (7 days each: Summer, Autumn, Winter, Spring). */
+export function v101LabSeason(day: number): string {
+  return ['Summer', 'Autumn', 'Winter', 'Spring'][Math.floor((Math.max(1, day) - 1) / 7) % 4];
+}
+
+/** Sets an actor up for the live economy (the lab's own actor, mutated). */
+function balLiveSetup(w: BalanceWorld, a: BalActor): void {
+  const rules = w.config.liveEconomy || w.config.rulesStamp;
+  if (!rules) return;
+  a.rules = rules;
+  a.fatigue = 0;
+  a.mastery = {};
+  if (!w.config.liveEconomy) return;
+  a.live = true;
+  const name = w.config.character && V101_LAB_STATS[w.config.character] ? w.config.character : 'Balanced';
+  a.character = { name };
+  if (V101_LAB_STATS[name]) a.stats = { ...V101_LAB_STATS[name] };
+  w.supply = {};
+  w.pressure = {};
+}
+
+/** The odds of an actor winning a challenge in the lab: the canonical formula, with the V10.1 ceiling and fatigue when the lab plays V10.1. */
+function balChallengeOdds(a: BalActor, c: { difficulty: number; type: string }): number {
+  return computeChallengeSuccessChanceCore({
+    difficulty: c.difficulty, type: c.type, stats: a.stats, characterName: a.character.name, level: a.level,
+    ...(a.rules === 'v101' ? { fatiguePenalty: a.fatigue || 0, oddsCeiling: V101_ODDS_CEILING } : {})
+  });
+}
+
+/** What a win pays an actor in the lab: the canonical payout, with the repeat-win mastery of the live game and, in V10.1, the pay curve. */
+function balChallengeReward(a: BalActor, c: { name?: string; difficulty: number; type: string; reward: number }, wager: number): number {
+  const mastery = a.live && c.name ? (a.mastery?.[c.name] || 0) + 1 : 1;
+  return computeChallengeRewardCore({
+    wager, rewardMultiplier: c.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: mastery,
+    ...(a.rules === 'v101' ? { payoutFactor: v101ChallengePayoutFactor(balChallengeOdds(a, c)) } : {})
+  }).reward;
+}
+
+function balLiveSaleInput(w: BalanceWorld, a: BalActor, item: string): V99SellPriceInput {
+  return {
+    resource: item, listPrice: w.prices[item] ?? getResourceMarketPrice(item), region: a.currentRegion, unitsAlreadySold: (w.supply || {})[item] || 0,
+    activeEvents: null, season: v101LabSeason(w.day), seller: a, isUnderdog: false, leaderTax: false, approachesEnabled: false, sabotageEnabled: false
+  };
+}
+
+/** What the lab's Sell Market pays for `count` units (the live sale price, unit by unit). */
+function balLiveSaleQuote(w: BalanceWorld, a: BalActor, item: string, count: number): V99BulkSaleQuote {
+  return v99QuoteBulkSale(balLiveSaleInput(w, a, item), count);
+}
+
+/** What the lab's Resource Market charges for `quantity` units, by the rules the lab plays (V10.0: flat base + 10% tariff; V10.1: the V10.1 quote). */
+function balLiveBuyQuote(w: BalanceWorld, a: BalActor, item: string, quantity: number): V101PurchaseQuote {
+  const units = Math.max(1, Math.floor(quantity));
+  if (a.rules === 'v101') {
+    return v101QuoteMarketPurchase({ resource: item, region: a.currentRegion, quantity: units, listPrice: w.prices[item] ?? getResourceMarketPrice(item), tariffRate: 0.1, pressureUnits: (w.pressure || {})[item] || 0, season: v101LabSeason(w.day) });
+  }
+  const unit = Math.round(getResourceMarketPrice(item) * 1.1);
+  const unitPrices = Array.from({ length: units }, () => unit);
+  return { quantity: units, unitPrices, total: unit * units, first: unit, last: unit, gross: getResourceMarketPrice(item), tariffPercent: 10 };
+}
+
+/** The lab's best purchase to resell here: the item and quantity together (the same chooser the Recommended Action's card uses). */
+function balLiveBestBuy(w: BalanceWorld, a: BalActor): V101TradePick | null {
+  return v101ChooseTradeBuy({
+    resources: BASE_MARKET_RESOURCES, maxUnits: MAX_INVENTORY - a.inventory.length, cash: a.money,
+    buyQuote: (item, quantity) => balLiveBuyQuote(w, a, item, quantity),
+    saleQuote: (item, quantity) => balLiveSaleQuote(w, a, item, quantity)
+  });
+}
+
+function balLiveSell(w: BalanceWorld, a: BalActor, item: string): boolean {
+  const units = a.inventory.filter(x => x === item).length;
+  if (units < 1) return false;
+  const quote = balLiveSaleQuote(w, a, item, units);
+  a.inventory = a.inventory.filter(x => x !== item);
+  a.money += quote.total;
+  w.supply = { ...(w.supply || {}), [item]: ((w.supply || {})[item] || 0) + units };
+  return true;
+}
+
+function balLiveBuy(w: BalanceWorld, a: BalActor, item: string, quantity: number): boolean {
+  const room = MAX_INVENTORY - a.inventory.length;
+  const units = Math.min(Math.max(1, Math.floor(quantity)), room);
+  if (units < 1) return false;
+  const quote = balLiveBuyQuote(w, a, item, units);
+  if (a.money < quote.total) return false;
+  a.money -= quote.total;
+  a.inventory = [...a.inventory, ...Array.from({ length: units }, () => item)];
+  a.actionsUsedThisTurn += 1;
+  if (a.rules === 'v101') w.pressure = v101AddPurchasePressure(w.pressure, item, units);
+  return true;
+}
+
+/** What a challenge attempt does to an actor in the lab: experience and levels on a win, repeat-win mastery, and (V10.1) fatigue on every attempt. */
+function balLiveAfterChallenge(a: BalActor, c: { name: string; difficulty: number }, won: boolean): void {
+  if (a.rules === 'v101') a.fatigue = v101FatigueAfterChallenge(a.fatigue);
+  if (!won || !a.live) return;
+  a.mastery = { ...(a.mastery || {}), [c.name]: ((a.mastery || {})[c.name] || 0) + 1 };
+  let xp = a.xp + c.difficulty * 20;
+  while (xp >= a.level * 100) {
+    xp -= a.level * 100;
+    a.level += 1;
+    a.stats = { strength: a.stats.strength + 1, charisma: a.stats.charisma + 1, luck: a.stats.luck + 1, intelligence: a.stats.intelligence + 1 };
+  }
+  a.xp = xp;
+}
+
+/** The end of a lab day in the live economy: oversupply and purchase pressure fade, fatigue halves, a new season frees the challenges. */
+function balLiveEndOfDay(w: BalanceWorld): void {
+  const live = Boolean(w.config.liveEconomy);
+  if (live) {
+    w.supply = v99DecaySupplyDemand(w.supply);
+    if (w.config.liveEconomy === 'v101') w.pressure = v101DecayPurchasePressure(w.pressure);
+  }
+  const newSeason = v101LabSeason(w.day) !== v101LabSeason(w.day + 1);
+  Object.values(w.actors).forEach(a => {
+    if (a.rules) a.fatigue = Math.max(0, (a.fatigue || 0) * OVERRIDE_FATIGUE_DECAY);
+    if (live && newSeason) a.completedThisSeason = [];
+  });
+}
+
+
+// ---- Self-tests (suite v101ec) --------------------------------------------------------------------------------------------
 export function runV101EconomySelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
+  const state = (stamp: number | null, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+    ...(stamp === null ? {} : { rulesVersion: stamp }), day: 3, turnCounter: 5, season: 'Summer', selectedMode: 'ai', resourcePrices: {}, supplyDemand: {}, activeEvents: [], ...extra
+  });
+  const s101 = (extra: Record<string, unknown> = {}) => state(V101_RULES_VERSION, extra);
+  const s100 = (extra: Record<string, unknown> = {}) => state(V100_RULES_VERSION, extra);
+  const neutral: V99AdviceActorView = { id: 'player', character: { name: 'Explorer' }, masteryUnlocks: [], debuffs: [], currentRegion: 'NSW', inventory: [], money: 3000 };
+
+  check('v101ec_01_round_trip_never_pays', 'In a V10.1 match buying then selling the same item in the same region always loses at least the tariff, for every resource, region, season, price level and quantity', () => {
+    const regions = ['NSW', 'WA', 'TAS'];
+    const seasons = ['Summer', 'Winter'];
+    let checked = 0;
+    for (const resource of RESOURCE_MARKET_RESOURCES) {
+      const base = getResourceMarketPrice(resource);
+      for (const region of regions) for (const season of seasons) for (const level of [0.5, 1, 2]) for (const quantity of [1, 8, 50]) {
+        const list = Math.round(base * level);
+        const buy = v101QuoteMarketPurchase({ resource, region, quantity, listPrice: list, tariffRate: 0.1, pressureUnits: 0, season, activeEvents: [] });
+        const sale = v99QuoteBulkSale({ resource, listPrice: list, region, unitsAlreadySold: 0, activeEvents: [], season, seller: neutral, isUnderdog: false, leaderTax: false, approachesEnabled: false, sabotageEnabled: false }, quantity);
+        checked++;
+        if (sale.total * 1.1 > buy.total + quantity) return `${resource} x${quantity} in ${region} (${season}, list ${list}): paid ${buy.total}, sold for ${sale.total}`;
+        if (quantity > 1 && !(sale.total < buy.total)) return `${resource} x${quantity}: the sale ${sale.total} is not below the purchase ${buy.total}`;
+      }
+    }
+    return checked > 1000 || `only ${checked} cases`;
+  });
+
+  check('v101ec_02_old_matches_keep_the_flat_price', 'A V10.0-stamped, an unstamped and a classic-rules match buy at the base price plus the tariff, move for move (Hydropower x50 in QLD = $132 each, $6,600), whatever the market is doing', () => {
+    const live = { resourcePrices: { Hydropower: 230 }, activeEvents: [{ region: 'QLD', effect: { resourcePrice: { Hydropower: 1.4 } } }], purchasePressure: { Hydropower: 40 } };
+    const stamps: Array<number | null> = [V100_RULES_VERSION, null, 999];
+    const rows = stamps.map(stamp => {
+      const st = state(stamp, live);
+      const q = v99QuoteResourcePurchase('Hydropower', 50, 'player', 'QLD', st);
+      return { unit: v99MarketBuyUnitPrice('Hydropower', 'player', 'QLD', st), q };
+    });
+    const bad = rows.filter(r => r.unit !== 132 || r.q.total !== 6600 || r.q.unitPrice !== 132 || r.q.lastUnitPrice !== undefined || r.q.tariffPercent !== 10);
+    const estimate = v101PurchaseCostEstimate(s100(live), 'ai', 'QLD', 'Hydropower', 7) === getResourceMarketPrice('Hydropower') * 7 && v101PurchaseCostEstimate(state(null), 'ai', 'QLD', 'Hydropower', 7) === 840;
+    return (bad.length === 0 && estimate && v99PurchasePriceLabel(rows[0].q) === '$132 each (incl. 10% tariff)') || json({ bad, estimate });
+  });
+
+  check('v101ec_03_one_quote_for_every_screen', 'The Resource Market row, the quantity preview, the card and the purchase all read one V10.1 quote: unit prices never fall, the total is their sum, and today\'s price, region and season move it', () => {
+    const st = s101({ resourcePrices: { Gold: 240 }, season: 'Summer', purchasePressure: { Gold: 6 } });
+    const one = v99MarketBuyUnitPrice('Gold', 'player', 'NSW', st);
+    const many = v99QuoteResourcePurchase('Gold', 12, 'player', 'NSW', st);
+    const direct = v101QuotePurchaseFromState('Gold', 12, 'player', 'NSW', st);
+    const calm = v99MarketBuyUnitPrice('Gold', 'player', 'NSW', s101({ resourcePrices: { Gold: 150 } }));
+    const rising = direct.unitPrices.every((p, k) => k === 0 || p >= direct.unitPrices[k - 1]);
+    const label = v99PurchasePriceLabel(many);
+    return (one === direct.first && many.total === direct.total && sum(direct.unitPrices) === direct.total && many.lastUnitPrice === direct.last && rising && direct.last > direct.first
+      && one > calm && label.includes('rising to') && label.includes('10% tariff')) || json({ one, calm, total: many.total, first: direct.first, last: direct.last, label });
+  });
+
+  check('v101ec_04_purchase_pressure_state', 'Purchase pressure: sanitised on load, added unit by unit, faded by 30% a day in a V10.1 match only, never mutating its input', () => {
+    const raw = { Gold: 12.9, Opals: -3, Coral: 'x', Nonsense: 5, Wine: 99999 };
+    const clean = sanitizePurchasePressure(raw);
+    const frozen = Object.freeze({ Gold: 10 });
+    const added = v101AddPurchasePressure(frozen, 'Gold', 5);
+    const faded = v101DayPressurePatch(s101({ purchasePressure: { Gold: 10, Wine: 1 } }));
+    const old = v101DayPressurePatch(s100({ purchasePressure: { Gold: 10 } }));
+    const none = v101DayPressurePatch(s101({}));
+    return (json(clean) === json({ Gold: 12, Wine: V101_PRESSURE_UNITS_MAX }) && sanitizePurchasePressure(5) === null && sanitizePurchasePressure([1]) === null
+      && added.Gold === 15 && frozen.Gold === 10 && json(faded) === json({ purchasePressure: { Gold: 7 } }) && json(old) === '{}' && json(none) === '{}'
+      && v101PressureFactor(5) === 1.05 && v101PressureFactor(500) === 1.25 && json(readPurchasePressure(s101({ purchasePressure: { Gold: 3 } }))) === '{"Gold":3}' && json(readPurchasePressure({})) === '{}'
+      && V101_ADDED_STATE_KEYS.includes('purchasePressure')) || json({ clean, added, faded, old });
+  });
+
+  check('v101ec_05_reducer_buys_and_fades', 'The match reducer adds bought units to the pressure, and the new day fades it in a V10.1 match but leaves a V10.0 match untouched (and a day still passes)', () => {
+    const after = gameStateReducer({ ...s101(), purchasePressure: { Gold: 4 } }, { type: 'UPDATE_PURCHASE_PRESSURE', payload: { resource: 'Gold', amount: 6 } }) as Record<string, unknown>;
+    const bought = readPurchasePressure(after).Gold;
+    const nextDay101 = gameStateReducer({ ...s101(), day: 4, purchasePressure: { Gold: 10 } }, { type: 'NEXT_DAY' }) as Record<string, unknown>;
+    const nextDay100 = gameStateReducer({ ...s100(), day: 4, purchasePressure: { Gold: 10 } }, { type: 'NEXT_DAY' }) as Record<string, unknown>;
+    return (bought === 10 && readPurchasePressure(nextDay101).Gold === 7 && nextDay101.day === 5 && readPurchasePressure(nextDay100).Gold === 10 && nextDay100.day === 5) || json({ bought, d101: nextDay101.purchasePressure, d100: nextDay100.purchasePressure });
+  });
+
+  check('v101ec_06_card_picks_item_and_quantity_together', 'The recommendation chooses the item and the quantity together by total profit: its N is the brute-force best, within cash and space, and the card names N, the total cost and the profit', () => {
+    // A trader whose bonuses beat the tariff (Businessman + Investment Genius) is the one case where a V10.1 purchase can earn money.
+    const trader: V99AdviceActorView = { id: 'player', money: 4000, currentRegion: 'NSW', inventory: [], character: { name: 'Businessman' }, masteryUnlocks: ['Investment Genius'], debuffs: [] };
+    const world = s101({ resourcePrices: {}, supplyDemand: {} });
+    const settings: V99AdviceSettingsView = { challengeApproachesEnabled: false, sabotageEnabled: false };
+    const card = v99BuildTradeCandidate({ id: 'trade', actor: trader, world, settings, rival: null, tariffState: world, apSettings: DEFAULT_GAME_SETTINGS, wealthGoal: false, cash: 4000, reserve: 250 });
+    const p = (card.parameters || {}) as Record<string, unknown>;
+    const resource = String(p.resource);
+    const quantity = Number(p.quantity);
+    const buyAll = v101QuotePurchaseFromState(resource, MAX_INVENTORY, 'player', 'NSW', world, { buyer: trader });
+    const saleAll = v101MakeBulkSaleQuoter(trader, world, settings, null)(resource, MAX_INVENTORY);
+    let best = 0; let bestQ = 0; let cost = 0; let revenue = 0;
+    for (let q = 1; q <= MAX_INVENTORY; q++) { cost += buyAll.unitPrices[q - 1]; revenue += saleAll.unitPrices[q - 1]; if (cost > 4000 - 250) break; if (revenue - cost > best) { best = revenue - cost; bestQ = q; } }
+    const total = sum(buyAll.unitPrices.slice(0, quantity));
+    return (card.isValid && quantity > 1 && quantity === bestQ && p.v101TotalCost === total && card.costEstimate === total && card.expectedStateDelta.cashDelta === -total
+      && card.title.includes(`${quantity} ×`) && card.expectedOutcome.includes(`${quantity} ${resource}`) && p.countsAsMarketPurchase === true) || json({ valid: card.isValid, reason: card.invalidationReason, quantity, bestQ, total, title: card.title });
+  });
+
+  check('v101ec_07_card_for_a_neutral_player_is_not_a_money_machine', 'A V10.1 purchase card never proposes a buy-to-resell for a neutral character (no purchase earns money), and a V10.0 card is exactly as it was (one unit, the flat price)', () => {
+    const settings: V99AdviceSettingsView = { challengeApproachesEnabled: false, sabotageEnabled: false };
+    const live = { resourcePrices: { Gold: 220, Coral: 40 }, supplyDemand: {} };
+    const w101 = s101(live); const w100 = s100(live);
+    const c101 = v99BuildTradeCandidate({ id: 't', actor: neutral, world: w101, settings, rival: null, tariffState: w101, apSettings: DEFAULT_GAME_SETTINGS, wealthGoal: false, cash: 3000, reserve: 250 });
+    const c100 = v99BuildTradeCandidate({ id: 't', actor: neutral, world: w100, settings, rival: null, tariffState: w100, apSettings: DEFAULT_GAME_SETTINGS, wealthGoal: false, cash: 3000, reserve: 250 });
+    const p100 = (c100.parameters || {}) as Record<string, unknown>;
+    return (c101.isValid === false && /resells here for more/.test(String(c101.invalidationReason)) && c100.isValid && p100.quantity === 1 && c100.expectedOutcome.startsWith('1 ') && p100.v101TotalCost === undefined && p100.countsAsMarketPurchase === undefined
+      && c100.costEstimate === v99MarketBuyUnitPrice(String(p100.resource), 'player', 'NSW', w100)) || json({ c101: [c101.isValid, c101.invalidationReason], c100: [c100.isValid, c100.title, p100.quantity] });
+  });
+
+  check('v101ec_08_sell_card_sells_the_stack', 'In a V10.1 match the sell card sells the whole stack at the Sell Market\'s unit-by-unit quote and says so; in a V10.0 match it still sells one unit', () => {
+    const settings: V99AdviceSettingsView = { challengeApproachesEnabled: false, sabotageEnabled: false };
+    const seller: V99AdviceActorView = { ...neutral, inventory: ['Coral', 'Coral', 'Coral', 'Coral', 'Wine'], currentRegion: 'QLD' };
+    const w101 = s101({ resourcePrices: { Coral: 100, Wine: 20 } }); const w100 = s100({ resourcePrices: { Coral: 100, Wine: 20 } });
+    const c101 = v99BuildTradeCandidate({ id: 't', actor: seller, world: w101, settings, rival: null, tariffState: w101, apSettings: DEFAULT_GAME_SETTINGS, wealthGoal: false });
+    const c100 = v99BuildTradeCandidate({ id: 't', actor: seller, world: w100, settings, rival: null, tariffState: w100, apSettings: DEFAULT_GAME_SETTINGS, wealthGoal: false });
+    const bulk = v99QuoteBulkSale({ resource: 'Coral', listPrice: 100, region: 'QLD', unitsAlreadySold: 0, activeEvents: [], season: 'Summer', seller, isUnderdog: false, leaderTax: false, approachesEnabled: false, sabotageEnabled: false }, 4);
+    const p101 = (c101.parameters || {}) as Record<string, unknown>; const p100 = (c100.parameters || {}) as Record<string, unknown>;
+    return (p101.quantity === 4 && p101.v101TotalValue === bulk.total && c101.expectedStateDelta.cashDelta === bulk.total && c101.title.includes('4 × Coral') && p100.quantity === 1 && c100.title.startsWith('Sell Coral') && p100.v101TotalValue === undefined)
+      || json({ q101: p101.quantity, total: p101.v101TotalValue, bulk: bulk.total, t100: c100.title });
+  });
+
+  check('v101ec_09_do_it_carries_the_quantity', '"Do It" hands the card\'s quantity to the buy and sell handlers; a card without one (V10.0) calls them exactly as before', () => {
+    const calls: string[] = [];
+    const hands = {
+      travel: () => { /* unused */ }, sell: (r: string, price: number, q?: number) => { calls.push(`sell ${r} ${price} ${q === undefined ? '-' : q}`); },
+      buy: (r: string, q?: number) => { calls.push(`buy ${r} ${q === undefined ? '-' : q}`); return true; }, buyEquipment: () => { /* unused */ }, travelCost: () => 0
+    };
+    v99RunHumanDoIt('buy_market', hands, { parameters: { item: 'Gold', quantity: 6 } });
+    v99RunHumanDoIt('buy_market', hands, { parameters: { item: 'Gold', quantity: 1 } });
+    v99RunHumanDoIt('sell', hands, { parameters: { item: 'Coral', listPrice: 90, quantity: 4 } });
+    v99RunHumanDoIt('sell', hands, { parameters: { item: 'Coral', listPrice: 90 } });
+    return json(calls) === json(['buy Gold 6', 'buy Gold -', 'sell Coral 90 4', 'sell Coral 90 -']) || json(calls);
+  });
+
+  check('v101ec_10_canonical_engine_charges_the_quote', 'The engine charges a V10.1 purchase its quoted total and records the pressure; a purchase without the V10.1 fields costs unit price x quantity as before', () => {
+    const w = createBalanceWorld(createBalanceSimConfig({ seed: 5, days: 10 }));
+    const run = (parameters: Record<string, unknown>) => {
+      const res = reduceGameAction(canonicalStateFromLiveRuntime(balBundle(w)), { actorId: 'player', type: 'buy_market', item: 'Coral', price: 100, parameters } as unknown as GameAction, { active: true, operation: 'buy_market', actorId: 'player' } as ActionExecutionContext);
+      const next = (res && res.nextState ? res.nextState : {}) as unknown as Record<string, unknown>;
+      const actors = (next.actorsById || {}) as Record<string, { money?: number; inventory?: string[] }>;
+      return { ok: Boolean(res && res.success), money: actors.player && typeof actors.player.money === 'number' ? actors.player.money : NaN, held: actors.player && actors.player.inventory ? actors.player.inventory.length : -1, pressure: next.purchasePressure };
+    };
+    const before = w.actors.player.money;
+    const v101 = run({ quantity: 3, v101TotalCost: 333, countsAsMarketPurchase: true });
+    const old = run({ quantity: 3 });
+    return (v101.ok && before - v101.money === 333 && v101.held === 3 && json(v101.pressure) === '{"Coral":3}' && old.ok && before - old.money === 300 && old.pressure === undefined
+      && v101ExplicitPurchaseTotal({ v101TotalCost: 12.4 }) === 12 && v101ExplicitPurchaseTotal({}) === null && v101ExplicitSaleTotal({ v101TotalValue: -5 }) === null) || json({ before, v101, old });
+  });
+
+  check('v101ec_11_odds_ceiling', 'A V10.1 match caps the chance of winning a challenge at 85% (the Recommended Action, the dialog\'s formula and the rival\'s); a V10.0 match keeps 95%', () => {
+    const strong = { strength: 9, charisma: 9, luck: 9, intelligence: 9 };
+    const core95 = computeChallengeSuccessChanceCore({ difficulty: 1, type: 'physical', stats: strong, characterName: 'Tourist', level: 6 });
+    const core85 = computeChallengeSuccessChanceCore({ difficulty: 1, type: 'physical', stats: strong, characterName: 'Tourist', level: 6, oddsCeiling: V101_ODDS_CEILING });
+    const actor: V99ChallengeActorView = { id: 'player', character: { name: 'Tourist' }, stats: strong, level: 6, overrideFatigue: 0 };
+    const offer: V99ChallengeOffer = { name: 'Test Run', type: 'physical', difficulty: 1, reward: 1.5 };
+    const c101 = v99ClassicChallengeChance(offer, actor, s101(), null, null);
+    const c100 = v99ClassicChallengeChance(offer, actor, s100(), null, null);
+    const cOld = v99ClassicChallengeChance(offer, actor, state(null), null, null);
+    const low = computeChallengeSuccessChanceCore({ difficulty: 3, type: 'physical', stats: { strength: 2, charisma: 2, luck: 2, intelligence: 2 }, level: 1, oddsCeiling: 0.85 });
+    return (core95 === 0.95 && core85 === 0.85 && c101 === 0.85 && c100 === 0.95 && cOld === 0.95 && low < 0.4 && v101OddsCeilingFor(s101()) === 0.85 && v101OddsCeilingFor(s100()) === undefined && v101OddsCeilingFor({}) === undefined)
+      || json({ core95, core85, c101, c100, cOld, low });
+  });
+
+  check('v101ec_12_pay_falls_as_odds_rise', 'The pay curve pays the full multiplier up to 50% odds, falls as the odds rise and never rises again; 90% odds do not also pay x2.4; a V10.0 payout is the multiplier exactly (pinned: Tourist, $500, x2, second win = $1,500)', () => {
+    const odds = Array.from({ length: 101 }, (_, k) => k / 100);
+    const factors = odds.map(v101ChallengePayoutFactor);
+    const monotone = factors.every((f, k) => k === 0 || f <= factors[k - 1] + 1e-12);
+    const tourist: V99ChallengeActorView = { id: 'player', character: { name: 'Tourist' }, challengeMastery: { 'Rock Carving': 1 }, consecutiveWins: 0, masteryUnlocks: [] };
+    const offer: V99ChallengeOffer = { name: 'Rock Carving', type: 'physical', difficulty: 2, reward: 2 };
+    const pinned = v99ChallengeWinReward(offer, tourist, 500, false);
+    const sameWithFactorOne = v99ChallengeWinReward(offer, tourist, 500, false, 1);
+    const curved = v99ChallengeWinReward(offer, tourist, 500, false, v101ChallengePayoutFactor(0.85));
+    const firstWin = computeChallengeRewardCore({ wager: 500, rewardMultiplier: 2.4, characterName: 'Tourist', masteryCount: 1 }).reward;
+    return (monotone && factors[0] === 1 && v101ChallengePayoutFactor(0.5) === 1 && v101ChallengePayoutFactor(0.85) < 0.6 && v101ChallengePayoutFactor(0.95) === V101_PAYOUT_FLOOR && v101PayoutFactorFor(s100(), 0.9) === 1 && v101PayoutFactorFor(state(null), 0.9) === 1
+      && v101PayoutFactorFor(s101(), 0.9) < 0.6 && pinned === 1500 && sameWithFactorOne === 1500 && curved < 1000 && firstWin === 1440)
+      || json({ monotone, f85: v101ChallengePayoutFactor(0.85), pinned, curved, firstWin });
+  });
+
+  check('v101ec_13_list_and_card_agree_in_dollars', 'The challenge list prints win, loss and average in dollars from the card\'s own functions: at the card\'s wager and odds its win equals the card\'s, with the Tourist bonus named', () => {
+    const tourist: V99ChallengeActorView = { id: 'player', money: 2000, character: { name: 'Tourist' }, stats: { strength: 3, charisma: 5, luck: 4, intelligence: 3 }, level: 1, currentRegion: 'NSW', completedThisSeason: [], challengesCompleted: [], challengeMastery: {}, consecutiveWins: 0, masteryUnlocks: [], overrideFatigue: 0 };
+    const world = s101({ weather: 'Sunny' });
+    const cards = v99BuildClassicChallengeCandidates({ actor: tourist, world, settings: DEFAULT_GAME_SETTINGS, rival: null, cash: 2000, reserve: 0, apSettings: DEFAULT_GAME_SETTINGS, makeId: (i, slug) => `${i}_${slug}` });
+    const card = cards.find(c => c.isValid) || cards[0];
+    if (!card) return 'no challenge card';
+    const p = (card.parameters || {}) as Record<string, unknown>;
+    const offer = p.challenge as V99ChallengeOffer;
+    const chance = Number(p.successChance); const wager = Number(p.wager);
+    const truth = v101ChallengeTruth({ challenge: offer, actor: tourist, successChance: chance, wager, leaderPenalty: false, payoutFactor: v101PayoutFactorFor(world, chance) });
+    const html = renderToStaticMarkup(<V101ChallengeTruthLine truth={truth} />);
+    const flat = v101ChallengeTruth({ challenge: { ...offer, reward: 2 }, actor: tourist, successChance: 0.4, wager: 100, leaderPenalty: false });
+    return (truth.win === Number(p.winReward) && truth.lose === wager && truth.average === Math.round(chance * truth.win - (1 - chance) * wager) && html.includes('Win +$') && html.includes('Tourist +20%') && html.includes('Lose -$') && html.includes('data-testid="v101-challenge-truth"')
+      && flat.win === 240 && flat.effectiveMultiplier === 2.4 && /Tourist \+20%/.test(v101ChallengeTruthText(flat)) && v101PayLine(2, 240, 100) === 'base ×2, ×2.4 for you' && v101PayLine(1.8, 180, 100) === 'pays ×1.8')
+      || json({ win: truth.win, card: p.winReward, html });
+  });
+
+  check('v101ec_14_fatigue_and_the_canonical_roll', 'Every challenge attempted tires the actor a little, to a cap, in a V10.1 match only; the engine\'s roll of a recommended challenge applies it and pays the pay curve, a V10.0 roll neither', () => {
+    const actor: V99ChallengeActorView = { id: 'player', money: 3000, character: { name: 'Tourist' }, stats: { strength: 3, charisma: 9, luck: 9, intelligence: 9 }, level: 4, currentRegion: 'NSW', completedThisSeason: [], challengesCompleted: [], challengeMastery: {}, consecutiveWins: 0, masteryUnlocks: [], overrideFatigue: 0 };
+    const open = v99OpenChallengesFor(actor, 'NSW', s101(), DEFAULT_GAME_SETTINGS);
+    if (open.length === 0) return 'no open challenge in NSW';
+    const params = { challengeName: open[0].name, wager: 500 };
+    const roll = (world: Record<string, unknown>, draw: number) => v99ResolveCanonicalChallenge(actor, params, world, DEFAULT_GAME_SETTINGS, null, () => draw);
+    const w101 = roll(s101({ weather: 'Sunny' }), 0.01); const w100 = roll(s100({ weather: 'Sunny' }), 0.01);
+    const lost101 = roll(s101({ weather: 'Sunny' }), 0.999);
+    const upd101 = v99ChallengeActorUpdate(actor, w101); const upd100 = v99ChallengeActorUpdate(actor, w100); const updLoss = v99ChallengeActorUpdate(actor, lost101);
+    const f1 = v101FatigueAfterChallenge(0); const f2 = v101FatigueAfterChallenge(f1);
+    let f = 0; for (let k = 0; k < 20; k++) f = v101FatigueAfterChallenge(f);
+    return (w101.ok && w100.ok && w101.successChance === 0.85 && w100.successChance > 0.85 && w101.reward < w100.reward && upd101.overrideFatigue === V101_FATIGUE_PER_CHALLENGE && updLoss.overrideFatigue === V101_FATIGUE_PER_CHALLENGE && !('overrideFatigue' in upd100)
+      && f1 === V101_FATIGUE_PER_CHALLENGE && f2 > f1 && f === V101_FATIGUE_MAX && v101FatigueAfterChallenge(0.2) === 0.2 && v101FatigueForMatch(s100(), 0.02) === 0.02 && v101FatigueForMatch(s101(), 0.02) > 0.02)
+      || json({ c101: w101.successChance, c100: w100.successChance, r101: w101.reward, r100: w100.reward, upd101, f1, f2, f });
+  });
+
+  check('v101ec_15_workshop_says_when_a_recipe_loses', 'The Workshop line prices the materials with the tariff, counts the 10% of crafts that fail, and calls a losing recipe a loss (Steel Ingots), in every match', () => {
+    const loser = CRAFTING_RECIPES.find(r => r.id === 'steel_ingots') || CRAFTING_RECIPES.find(r => v101CraftEconomics(r, v101MaterialCostFor(s100(), 'player', 'NSW')).losesMoney);
+    if (!loser) return 'no losing recipe found to check';
+    const classic = v101CraftEconomics(loser, v101MaterialCostFor(s100(), 'player', 'NSW'));
+    const modern = v101CraftEconomics(loser, v101MaterialCostFor(s101(), 'player', 'NSW'));
+    const text = v101WorkshopValueText(classic);
+    const materialsAtBase = Object.entries(loser.inputs).reduce((t, [input, count]) => t + Math.round(getResourceMarketPrice(input) * 1.1) * Number(count), 0);
+    const winner = v101CraftEconomics({ output: 'Gold', inputs: { Coral: 1 } }, () => 10);
+    return (classic.losesMoney && classic.materials === materialsAtBase && classic.average === Math.round(0.9 * classic.sells - classic.materials) && /a loss/.test(text) && /10% of crafts fail/.test(text) && text.includes('tariff')
+      && modern.materials >= classic.materials && winner.losesMoney === false && !/a loss/.test(v101WorkshopValueText(winner))) || json({ classic, modern, text });
+  });
+
+  check('v101ec_16_investment_quotes_use_the_payout_day', 'The investment quote uses the turn the nightly payout uses (day + 1 in a two-player match, turn counter + 1 in a team match); the rival\'s ROI projection moves only in a V10.1 match', () => {
+    const payout = (day: number) => getActorScaledInvestmentReturn(100, { level: 1, character: { name: 'Tourist' } }, day + 1);
+    const two = { day: 20, turnCounter: 39, selectedMode: 'ai' };
+    const team = { day: 20, turnCounter: 39, selectedMode: 'team_human_ai_vs_ai_ai' };
+    const quoted = getActorScaledInvestmentReturn(100, { level: 1, character: { name: 'Tourist' } }, investmentPayoutTurn(two));
+    const oldQuote = getActorScaledInvestmentReturn(100, { level: 1, character: { name: 'Tourist' } }, two.turnCounter);
+    return (investmentPayoutTurn(two) === 21 && investmentPayoutTurn(team) === 40 && investmentPayoutTurn({}) === 2 && quoted === payout(20) && oldQuote > quoted
+      && v101AiInvestmentTurn({ ...two, rulesVersion: V100_RULES_VERSION }) === 39 && v101AiInvestmentTurn({ ...two }) === 39 && v101AiInvestmentTurn({ ...two, rulesVersion: V101_RULES_VERSION }) === 21)
+      || json({ quoted, old: oldQuote, p: payout(20), t: [investmentPayoutTurn(two), investmentPayoutTurn(team)] });
+  });
+
+  check('v101ec_17_no_promise_nothing_keeps', 'The season tooltip shows the yield bonus only where investments use it, the standing panel no longer prints "Yields: 125%", and the pass-turn card no longer promises an action rollover', () => {
+    const spring = v101SeasonInvestmentLine('Spring', true);
+    const spent = generateCoPilotPlayerActionCandidates({ gameState: s101(), player: { id: 'player', money: 1000, inventory: [], currentRegion: 'NSW', character: { name: 'Tourist' } } } as unknown as Parameters<typeof generateCoPilotPlayerActionCandidates>[0]);
+    const pass = spent.candidates.find(c => c.actionType === 'conserve_ap');
+    return (spring !== null && /^Investment income: \+25%$/.test(spring) && v101SeasonInvestmentLine('Spring', false) === null && !/125/.test(V101_STANDING_YIELD_TEXT) && /unchanged/.test(V101_STANDING_YIELD_TEXT)
+      && !/rollover bonus|Rollover \+1/i.test(`${V101_PASS_TURN_TITLE} ${V101_PASS_TURN_DESCRIPTION} ${V101_PASS_TURN_OUTCOME}`) && /do not carry over/.test(V101_PASS_TURN_DESCRIPTION)
+      && (!pass || (pass.title === V101_PASS_TURN_TITLE && !/Rollover \+1/.test(pass.expectedOutcome)))) || json({ spring, pass: pass ? pass.title : null });
+  });
+
+  check('v101ec_18_saves_carry_the_pressure_only_in_v101_matches', 'A save keeps a V10.1 match\'s purchase pressure (cleaned of junk), loads without it for an older match, and the older-version rung removes a stray copy', () => {
+    const base = JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData;
+    const withState = (gameVersion: string, extra: Record<string, unknown>): SaveGameData => ({ ...base, metadata: { ...base.metadata, gameVersion }, gameState: { ...(base.gameState as unknown as Record<string, unknown>), ...extra } as unknown as SaveGameData['gameState'] });
+    const readPressure = (d: SaveGameData | null) => (d ? (d.gameState as unknown as Record<string, unknown>).purchasePressure : 'no data');
+    const modern = prepareSaveLoadTransaction(json(withState(GAME_VERSION, { rulesVersion: V101_RULES_VERSION, purchasePressure: { Gold: 4.7, Junk: 9, Coral: -1 } })));
+    const absent = prepareSaveLoadTransaction(json(withState(GAME_VERSION, { rulesVersion: V101_RULES_VERSION })));
+    const stray = migrateSaveTo1010(withState('10.0.0', { rulesVersion: V100_RULES_VERSION, purchasePressure: { Gold: 4 } }));
+    return (modern.ok && json(readPressure(modern.data)) === '{"Gold":4}' && absent.ok && readPressure(absent.data) === undefined && stray.changed && !('purchasePressure' in (stray.data.gameState as unknown as Record<string, unknown>)))
+      || json({ modern: readPressure(modern.data), absent: readPressure(absent.data), stray: stray.changed });
+  });
+
+  const labFinals = (cfg: Partial<BalanceSimConfig>, policy: BalancePolicyId, seeds: number[]): number[] =>
+    seeds.map(seed => runBalanceMatch(createBalanceSimConfig({ seed, days: 29, winCondition: 'net_worth', ...cfg }), policy, 'balanced').final.player).sort((a, b) => a - b);
+  const labMedian = (cfg: Partial<BalanceSimConfig>, policy: BalancePolicyId, seeds: number[]): number => { const finals = labFinals(cfg, policy, seeds); return finals[Math.floor(finals.length / 2)]; };
+
+  check('v101ec_19_lab_as_shipped_is_unchanged', 'The balance lab without the live economy gives the numbers it gave before V10.1 (seeds 3 and 7, balanced, challenge first and market only: pinned)', () => {
+    const got: Record<string, number[]> = {};
+    for (const seed of [3, 7]) for (const policy of ['balanced', 'challenge_first', 'market_only'] as BalancePolicyId[]) {
+      const r = runBalanceMatch(createBalanceSimConfig({ seed, days: 29, winCondition: 'net_worth' }), policy, 'balanced');
+      got[`${seed}_${policy}`] = [r.final.player, r.final.ai, r.apUsed];
+    }
+    const want = { '3_balanced': [14574, 11371, 87], '3_challenge_first': [13873, 11371, 87], '3_market_only': [4467, 12576, 338], '7_balanced': [11564, 17374, 87], '7_challenge_first': [8444, 14196, 87], '7_market_only': [16191, 21752, 452] };
+    return json(got) === json(want) || json(got);
+  });
+
+  check('v101ec_20_lab_sees_the_market_loop_and_it_is_closed', 'With the live economy the lab sees the buy-and-resell loop under the V10.0 rules (it earns real money, never a loss) and finds it closed under V10.1 (it never beats its starting cash)', () => {
+    const seeds = [1, 2, 3, 4, 6];
+    const oldRun = labFinals({ liveEconomy: 'v100' }, 'market_only', seeds);
+    const newRun = labFinals({ liveEconomy: 'v101' }, 'market_only', seeds);
+    const before = oldRun[Math.floor(oldRun.length / 2)]; const after = newRun[Math.floor(newRun.length / 2)];
+    return (before > 5000 && after < 1000 && newRun[newRun.length - 1] < 5000 && before > 8 * Math.max(1, after)) || json({ before, after, afterMax: newRun[newRun.length - 1] });
+  });
+
+  check('v101ec_21_no_one_button_dominates', 'After V10.1 neither the market-only nor the challenge-first policy finishes above 1.5x the balanced policy (Tourist, 29 days, 4 seeds), no sensible policy goes bankrupt, and the V10.0 challenge economy was far richer', () => {
+    const seeds = [1, 2, 3, 4];
+    const cfg101: Partial<BalanceSimConfig> = { liveEconomy: 'v101', character: 'Tourist' };
+    const mid = (xs: number[]) => xs[Math.floor(xs.length / 2)];
+    const balancedRun = labFinals(cfg101, 'balanced', seeds);
+    const balanced = mid(balancedRun);
+    const challenge = labMedian(cfg101, 'challenge_first', seeds);
+    const market = labMedian(cfg101, 'market_only', seeds);
+    const old = labMedian({ liveEconomy: 'v100', character: 'Tourist' }, 'challenge_first', seeds);
+    return (challenge <= 1.5 * balanced && market <= 1.5 * balanced && balancedRun[0] > 0 && old > 1.4 * challenge) || json({ balanced, challenge, market, old, minimum: balancedRun[0] });
+  });
+
+  check('v101ec_22_mixed_play_is_not_gutted', 'The V10.1 challenge rules cost the balanced policy no more than a third on the lab as shipped (about 14% over 120 seeds: see the report) (level-1 play, 20 seeds, mean final worth; the rival plays the same rules)', () => {
+    const seeds = Array.from({ length: 20 }, (_, k) => k + 1);
+    const mean = (cfg: Partial<BalanceSimConfig>, list: number[]) => sum(labFinals(cfg, 'balanced', list)) / list.length;
+    const v100 = mean({}, seeds); const v101 = mean({ rulesStamp: 'v101' }, seeds);
+    return (v101 >= 0.65 * v100 && mean({ rulesStamp: 'v100' }, seeds.slice(0, 6)) === mean({}, seeds.slice(0, 6))) || json({ v100: Math.round(v100), v101: Math.round(v101) });
+  });
+
+  check('v101ec_23_first_run_goal_stays_reachable', 'Following the Recommended Action, the guided first match\'s goal ($2,000 and 3 challenge wins by day 7, Tourist, NSW) is reached on 90% of 30 seeds under the V10.1 rules', () => {
+    const seasonOf = (d: number) => ['Summer', 'Autumn', 'Winter', 'Spring'][Math.floor((d - 1) / 7) % 4];
+    const settings = { ...DEFAULT_GAME_SETTINGS };
+    let reached = 0; const seeds = 30;
+    for (let seed = 1; seed <= seeds; seed++) {
+      let t = (seed * 977) >>> 0;
+      const rnd = () => { const r = mulberry32Next(t); t = r.nextState; return r.value; };
+      let p: Record<string, unknown> & { money: number; consecutiveWins: number; overrideFatigue: number; completedThisSeason: string[]; challengeMastery: Record<string, number> } = {
+        id: 'player', money: 1000, level: 1, xp: 0, stats: { strength: 3, charisma: 5, luck: 4, intelligence: 3 }, character: { name: FIRST_RUN_CHARACTER_NAME }, currentRegion: FIRST_RUN_START_REGION,
+        completedThisSeason: [], challengesCompleted: [], challengeMastery: {}, consecutiveWins: 0, overrideFatigue: 0, masteryUnlocks: [], inventory: [], debuffs: []
+      };
+      let wins = 0;
+      let hit = false;
+      for (let day = 1; day <= FIRST_RUN_GOAL.byDay && !hit; day++) {
+        const world = { weather: 'Sunny', season: seasonOf(day), activeEvents: [], day, rulesVersion: V101_RULES_VERSION, selectedMode: 'single', resourcePrices: {} };
+        for (let slot = 0; slot < 3 && !hit; slot++) {
+          const cards = v99BuildClassicChallengeCandidates({ actor: p, world, settings, rival: null, cash: p.money, reserve: 0, apSettings: settings, makeId: (i, s) => `${i}_${s}` }).filter(c => c.isValid).sort((a, b) => b.utilityScore - a.utilityScore);
+          const card = cards[0];
+          if (!card) { p = { ...p, money: p.money + 50 }; } else {
+            const q = (card.parameters || {}) as Record<string, unknown> & { challenge: V99ChallengeOffer };
+            p = { ...p, overrideFatigue: v101FatigueAfterChallenge(p.overrideFatigue) };
+            if (rnd() < Number(q.successChance)) {
+              wins++;
+              const leveled = playerReducer({ ...p, money: p.money + Number(q.winReward) }, { type: 'GAIN_XP', payload: { amount: q.challenge.difficulty * 20 } }) as typeof p;
+              p = { ...leveled, consecutiveWins: p.consecutiveWins + 1, completedThisSeason: [...p.completedThisSeason, q.challenge.name], challengeMastery: { ...p.challengeMastery, [q.challenge.name]: (p.challengeMastery[q.challenge.name] || 0) + 1 } };
+            } else p = { ...p, money: p.money - Number(q.wager), consecutiveWins: 0 };
+          }
+          if (p.money >= FIRST_RUN_GOAL.money && wins >= FIRST_RUN_GOAL.challenges) hit = true;
+        }
+        p = { ...p, overrideFatigue: p.overrideFatigue * OVERRIDE_FATIGUE_DECAY };
+      }
+      if (hit) reached++;
+    }
+    return reached >= Math.ceil(seeds * 0.9) || `only ${reached} of ${seeds} seeds reached the goal`;
+  });
+
   return results;
 }
 // <<V101-SLOT ECON end>>
