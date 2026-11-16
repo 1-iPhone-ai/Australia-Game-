@@ -264602,7 +264602,7 @@ function dispatchGameSettingsChange(
                             <span className="text-sm font-bold w-16 text-right">{fmtMoney(Math.min(uiState.wagerAmount, maxWager))}</span>
                           </div>
                           {/* V10.1 (SECTION 20BB): what a win and a loss are worth in dollars at this wager and these odds, from the functions the Recommended Action's card uses (v99ChallengeWinReward + the live odds) */}
-                          <V101ChallengeTruthLine truth={v101ChallengeTruth({ challenge, actor: player, successChance, wager: Math.min(uiState.wagerAmount, maxWager), leaderPenalty: getUnderdogBonus('player').leader === 'player' && getWealthState().ratio > 2, payoutFactor: v101PayoutFactorFor(gameState, successChance) })} className="text-xs mb-2" />
+                          {!(gameSettings.challengeApproachesEnabled === true && !isGrandTourFinale && resolveChallengeDefinition(challenge, player.currentRegion)) && /* approaches have their own picker and numbers */ <V101ChallengeTruthLine truth={v101ChallengeTruth({ challenge, actor: player, successChance, wager: Math.min(uiState.wagerAmount, maxWager), leaderPenalty: getUnderdogBonus('player').leader === 'player' && getWealthState().ratio > 2, payoutFactor: v101PayoutFactorFor(gameState, successChance) })} className="text-xs mb-2" />}
 
                           <div className="flex space-x-2">
                             {gameSettings.challengeApproachesEnabled === true && !isGrandTourFinale && resolveChallengeDefinition(challenge, player.currentRegion) ? (
