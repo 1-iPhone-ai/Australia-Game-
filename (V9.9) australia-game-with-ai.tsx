@@ -209087,6 +209087,8 @@ export function runV101AdviceSelfTests(): V9SelfTestResult[] {
 // SECTION 20BI: V10.1 WORLD LAYER HONESTY — ADVICE AND OFF-SWITCHES THAT AGREE WITH THE MATCH
 // ============================================================================
 // <<V101-SLOT WORLD begin>>
+// A static render of the real components for the v101wl tests (react-dom is already a dependency; an import may sit anywhere at the top level of a module).
+import { renderToStaticMarkup as v101RenderStatic } from 'react-dom/server';
 // (work package WORLD, SECTION 20BI. What a V10.1 match's world layer says and does, in one place.)
 //
 // W1 Dead-end advice (every match). regionalContractsEnabled and stateInfrastructureEnabled default to OFF, yet the world
@@ -209171,10 +209173,11 @@ const V101_OPPORTUNITY_SYSTEM: Record<string, V101WorldSystem> = { infrastructur
  * Nothing switched off: the very same object comes back.
  */
 export function v101WorldPresentLr<T extends LivingRegionsState | null | undefined>(state: T, off: V101WorldOff): T {
-  if (!state || (!off.infra && !off.contracts)) return state;
+  if (!state || !state.regions || (!off.infra && !off.contracts)) return state;
   const regions: Record<string, DynamicRegionalState> = {};
   Object.keys(state.regions).forEach(code => {
     const reg = state.regions[code];
+    if (!reg || !Array.isArray(reg.opportunities)) { regions[code] = reg; return; }
     const kept = reg.opportunities.filter(o => { const sys = V101_OPPORTUNITY_SYSTEM[o.kind]; return !(sys && off[sys]); });
     regions[code] = kept.length === reg.opportunities.length ? reg : { ...reg, opportunities: kept };
   });
@@ -209187,13 +209190,18 @@ export function v101WorldPresentLrInputs<T extends LRInputs | null | undefined>(
 }
 /** Regional Factions as the screens should read it: requests that ask for a switched-off system's work are not shown. */
 export function v101WorldPresentRf<T extends RegionalFactionsState | null | undefined>(state: T, off: V101WorldOff): T {
-  if (!state || (!off.infra && !off.contracts)) return state;
+  if (!state || !Array.isArray(state.requests) || (!off.infra && !off.contracts)) return state;
   const requests = state.requests.filter(r => { const sys = V101_REQUEST_SYSTEM[r.type]; return !(sys && off[sys]); });
   return requests.length === state.requests.length ? state : { ...state, requests } as T;
 }
 export function v101WorldPresentRfInputs<T extends RFInputs | null | undefined>(inputs: T, off: V101WorldOff): T {
   if (!inputs || (!off.infra && !off.contracts)) return inputs;
   return { ...inputs, lr: v101WorldPresentLrInputs(inputs.lr, off), regions: v101WorldPresentLr(inputs.regions, off) } as T;
+}
+
+/** True when the Guided Learning "Infrastructure" lesson may be taught: the region has a suggestion AND the match has infrastructure switched on. */
+export function v101InfrastructureAdviceOn(settings: unknown, suggestion: unknown): boolean {
+  return !worldSystemOff(settings, 'infra') && Boolean(suggestion);
 }
 
 /** What a modal shows instead of its screen when its system is switched off in a V10.1 match. */
@@ -209319,6 +209327,316 @@ export const V101_RELATIONSHIP_RELEVANCE_BOUND = 5;
 
 export function runV101WorldSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  const noop = () => undefined;
+
+  // ---- fixtures ------------------------------------------------------------------------------------------------------------
+  const setReg = (st: LivingRegionsState, lr: LRInputs, code: string, sectors: Partial<Record<LRSector, number>>, momentum: number): LivingRegionsState => {
+    const r = st.regions[code];
+    const next = lrRecompute({ ...r, sectors: { ...r.sectors, ...sectors }, momentum: { ...r.momentum, value: momentum, band: lrMomentumBand(momentum) } }, lr, {}).region;
+    return { ...st, regions: { ...st.regions, [code]: next } };
+  };
+  /** Queensland growing faster than its freight capacity: a transport need, an infrastructure gap, one open contract. */
+  const qld = (extra: Partial<RFInputs> = {}): RFInputs => ({ ...createRFFixtureInputs({ regions: (st, lr) => setReg(st, lr, 'QLD', { trade: 55, logistics: 60, mining: 30 }, 0.45) }), ...extra });
+  const atTurn = (s: RFInputs, turn: number): RFInputs => ({ ...s, turn, lr: { ...s.lr, turn } });
+  const play = (s: RFInputs): RegionalFactionsState => { let st = initializeRegionalFactions(s); for (let t = 6; t < 9; t++) st = rfAdvanceRound(st, atTurn(s, t)).state; return st; };
+  const lrViewOf = (s: RFInputs, timeWord?: 'day' | 'round'): LivingRegionsWorldView => ({ state: s.regions, inputs: s.lr, viewerId: 'player', viewerKeys: ['player'], names: { player: 'You', ai: 'Riley' }, timeWord });
+  const NONE: V101WorldOff = { infra: false, contracts: false };
+  const INFRA_OFF: V101WorldOff = { infra: true, contracts: false };
+  const CONTRACTS_OFF: V101WorldOff = { infra: false, contracts: true };
+  const canonicalWith = (stamp: number | undefined, settings: Record<string, unknown> | 'unknown'): CanonicalGameState => {
+    const s = JSON.parse(JSON.stringify(canonicalStateFromSave(validateSaveDataCore(createV95SaveFixture({ money: 60000 }))))) as CanonicalGameState;
+    s.gameState = { ...(s.gameState as unknown as Record<string, unknown>), ...(stamp === undefined ? {} : { rulesVersion: stamp }) } as unknown as CanonicalGameState['gameState'];
+    s.gameSettings = settings === 'unknown' ? DEFAULT_GAME_SETTINGS : { ...DEFAULT_GAME_SETTINGS, ...settings };
+    return s;
+  };
+  const act = (s: CanonicalGameState, action: GameAction): ActionTransitionResult => reduceGameAction(s, action, { active: true, operation: String(action.type), actorId: action.actorId });
+  const invest = (s: CanonicalGameState, amount: number) => act(s, { type: 'invest_infrastructure_project', actorId: 'player', investmentAmount: amount, parameters: { projectId: 'infra_desal_sa', amount } });
+  const cashOf = (s: CanonicalGameState) => Number(s.actorsById.player?.money);
+  const putIn = (s: CanonicalGameState) => Number(s.infrastructureProjects?.infra_desal_sa?.totalInvestedMoney || 0);
+  const theme = { card: 'c', border: 'b', shadow: 's', button: 'p', buttonSecondary: 'q' };
+
+  // ---- W2: the gate table -----------------------------------------------------------------------------------------------
+  check('v101wl_01_gate_table', 'The entry-point gate: a V10.1 match with the system off is refused with a reason; a V10.0, unstamped or classic match, or one with the system on (or no setting at all), is let through', () => {
+    const entries = Object.keys(V101_WORLD_ENTRY_SYSTEM) as V101WorldEntry[];
+    const bad: string[] = [];
+    entries.forEach(entry => {
+      const system = V101_WORLD_ENTRY_SYSTEM[entry];
+      const key = system === 'infra' ? 'stateInfrastructureEnabled' : 'regionalContractsEnabled';
+      const stamps: Array<[string, unknown]> = [['v101', { rulesVersion: 1010 }], ['v100', { rulesVersion: 1000 }], ['old', {}], ['none', null]];
+      const flags: Array<[string, unknown]> = [['off', { [key]: false }], ['on', { [key]: true }], ['missing', {}]];
+      stamps.forEach(([sn, gs]) => flags.forEach(([fn, st]) => {
+        const g = v101WorldEntryGate(gs, st, entry);
+        const wantAllowed = !(sn === 'v101' && fn === 'off');
+        if (g.allowed !== wantAllowed || (g.allowed && g.reason !== null) || (!g.allowed && !(g.reason && /switched off/.test(g.reason)))) bad.push(`${entry}/${sn}/${fn}`);
+      }));
+      // The other system being off never closes this entry.
+      const other = system === 'infra' ? 'regionalContractsEnabled' : 'stateInfrastructureEnabled';
+      if (!v101WorldEntryGate({ rulesVersion: 1010 }, { [other]: false, [key]: true }, entry).allowed) bad.push(`${entry}/cross`);
+    });
+    return (entries.length === 7 && bad.length === 0) || json({ n: entries.length, bad });
+  });
+  check('v101wl_02_off_means_false', 'A system is "off" only when its setting is exactly false; the helper reads both switches and names the right one in the reason', () => {
+    const t: Array<[unknown, boolean]> = [[{ stateInfrastructureEnabled: false }, true], [{ stateInfrastructureEnabled: true }, false], [{}, false], [null, false], [{ stateInfrastructureEnabled: 0 }, false], [{ stateInfrastructureEnabled: 'false' }, false]];
+    const wrong = t.filter(([s, want]) => worldSystemOff(s, 'infra') !== want);
+    const both = v101WorldOff({ stateInfrastructureEnabled: false, regionalContractsEnabled: true });
+    return (wrong.length === 0 && both.infra && !both.contracts && /infrastructure/i.test(v101WorldOffReason('infra')) && /contracts/i.test(v101WorldOffReason('contracts')) && worldSystemOff(DEFAULT_GAME_SETTINGS, 'infra') && worldSystemOff(DEFAULT_GAME_SETTINGS, 'contracts')) || json({ wrong, both });
+  });
+
+  // ---- W2: the reducer gate ---------------------------------------------------------------------------------------------
+  check('v101wl_03_reducer_invest', 'The canonical reducer refuses investing when a V10.1 match switched infrastructure off; a V10.0 or unstamped match, a match with it on, and a caller that passed no settings invest exactly as before', () => {
+    const off = { stateInfrastructureEnabled: false };
+    const blocked = canonicalWith(1010, off); const rb = invest(blocked, 1000);
+    const v100 = canonicalWith(1000, off); const r100 = invest(v100, 1000);
+    const old = canonicalWith(undefined, off); const rold = invest(old, 1000);
+    const on = canonicalWith(1010, { stateInfrastructureEnabled: true }); const ron = invest(on, 1000);
+    const unknown = canonicalWith(1010, 'unknown'); const runk = invest(unknown, 1000);
+    const got = { blocked: [putIn(rb.nextState), cashOf(rb.nextState)], v100: [putIn(r100.nextState), cashOf(r100.nextState)], old: [putIn(rold.nextState)], on: [putIn(ron.nextState)], unknown: [putIn(runk.nextState)], start: [putIn(blocked), cashOf(blocked)] };
+    return (putIn(rb.nextState) === putIn(blocked) && cashOf(rb.nextState) === cashOf(blocked) && !rb.success
+      && putIn(r100.nextState) === putIn(v100) + 1000 && cashOf(r100.nextState) === cashOf(v100) - 1000
+      && putIn(rold.nextState) === putIn(old) + 1000 && putIn(ron.nextState) === putIn(on) + 1000 && putIn(runk.nextState) === putIn(unknown) + 1000) || json(got);
+  });
+  check('v101wl_04_reducer_contract_and_build', 'The reducer also refuses accepting a contract and starting a build when a V10.1 match switched the system off, and lets a V10.0 match do both', () => {
+    const acc = (s: CanonicalGameState) => act(s, { type: 'accept_regional_contract', actorId: 'player', parameters: { contractId: 'ag_logistics_nsw' } });
+    const build = (s: CanonicalGameState) => act(s, { type: 'build_infrastructure', actorId: 'player', targetRegion: 'NSW', price: 350, parameters: { projectId: 'v101_depot', infrastructureType: 'trade_depot' } });
+    const off = { regionalContractsEnabled: false, stateInfrastructureEnabled: false };
+    const a1 = acc(canonicalWith(1010, off)); const a0 = acc(canonicalWith(1000, off)); const aOn = acc(canonicalWith(1010, { ...off, regionalContractsEnabled: true }));
+    const b1 = build(canonicalWith(1010, off)); const b0 = build(canonicalWith(1000, off));
+    const status = (r: ActionTransitionResult) => (r.nextState.regionalContracts as Record<string, { status?: string }> | undefined)?.ag_logistics_nsw?.status;
+    const made = (r: ActionTransitionResult) => Boolean(r.nextState.infrastructureProjects?.v101_depot);
+    return (status(a1) === 'available' && status(a0) === 'active' && status(aOn) === 'active' && !made(b1) && made(b0)) || json({ a1: status(a1), a0: status(a0), aOn: status(aOn), b1: made(b1), b0: made(b0) });
+  });
+  check('v101wl_05_reducer_reason_pure', 'The reducer check reads the stamp from the live match or from its nested copy and leaves fulfilling an accepted contract alone', () => {
+    const off = { stateInfrastructureEnabled: false, regionalContractsEnabled: false };
+    const labels = ['invest_infrastructure_project', 'investInfrastructure', 'start_infrastructure_project', 'build_infrastructure', 'accept_regional_contract', 'acceptContract'];
+    const refused = labels.map(l => v101WorldReducerBlock({ rulesVersion: 1010 }, off, l) !== null && v101WorldReducerBlock({ gameState: { rulesVersion: 1010 } }, off, l) !== null && v101WorldReducerBlock({ rulesVersion: 1000 }, off, l) === null && v101WorldReducerBlock({}, off, l) === null);
+    return (refused.every(Boolean) && v101WorldReducerBlock({ rulesVersion: 1010 }, off, 'fulfill_regional_contract') === null && v101WorldReducerBlock({ rulesVersion: 1010 }, off, 'cancel_regional_contract') === null && v101WorldReducerBlock({ rulesVersion: 1010 }, null, 'invest_infrastructure_project') === null) || json(refused);
+  });
+
+  // ---- W1: advice for a system the match switched off -------------------------------------------------------------------
+  check('v101wl_06_region_context', 'The region panel offers "Suggested development" and "Relevant contract" and an "Infrastructure gap" line only for systems the match has on', () => {
+    const view = lrViewOf(qld());
+    const base = buildV9RegionContext('QLD', view, null, null);
+    const noInfra = buildV9RegionContext('QLD', view, null, null, INFRA_OFF);
+    const noContracts = buildV9RegionContext('QLD', view, null, null, CONTRACTS_OFF);
+    const oppLine = (c: V9RegionContext | null) => c?.lines.find(l => l.label === 'Opportunity')?.value || '';
+    return (base !== null && Boolean(base.suggestion) && Boolean(base.contract) && /Infrastructure gap/.test(oppLine(base))
+      && noInfra !== null && noInfra.suggestion === null && !/Infrastructure gap/.test(oppLine(noInfra)) && Boolean(noInfra.contract)
+      && noContracts !== null && noContracts.contract === null && Boolean(noContracts.suggestion)
+      && json(buildV9RegionContext('QLD', view, null, null, NONE)) === json(base)) || json({ base, noInfra, noContracts });
+  });
+  check('v101wl_07_default_match_advice', 'In a default match (both systems off) the screens read Living Regions through a view with no infrastructure gap, no project suggestion and no contract wave, while the stored state is left untouched', () => {
+    const s = qld();
+    const before = json(s.regions);
+    const off = v101WorldOff(DEFAULT_GAME_SETTINGS);
+    const state = v101WorldPresentLr(s.regions, off);
+    const inputs = v101WorldPresentLrInputs(s.lr, off);
+    const ctx = buildV9RegionContext('QLD', { ...lrViewOf(s), state, inputs }, null, null, off);
+    const kinds = (st: LivingRegionsState) => Object.values(st.regions).flatMap(r => r.opportunities.map(o => o.kind));
+    return (off.infra && off.contracts && json(s.regions) === before && kinds(s.regions).includes('infrastructure_gap') && kinds(s.regions).includes('contract_wave')
+      && !kinds(state).includes('infrastructure_gap') && !kinds(state).includes('contract_wave') && kinds(state).includes('cheap_entry')
+      && inputs.projects.length === 0 && inputs.contracts.length === 0 && s.lr.projects.length > 0 && s.lr.contracts.length > 0
+      && ctx !== null && ctx.suggestion === null && ctx.contract === null && !ctx.lines.some(l => /Infrastructure gap/.test(l.value))
+      && ctx.lines.some(l => l.label === 'Current need')) || json({ off, kinds: kinds(state), ctx });
+  });
+  check('v101wl_08_present_identity', 'Nothing switched off: the presentation helpers hand back the very same objects; switching one system off keeps the other system\'s advice', () => {
+    const s = qld();
+    const st = play(s);
+    const infraOnly = v101WorldPresentLr(s.regions, INFRA_OFF);
+    const kinds = (x: LivingRegionsState) => Object.values(x.regions).flatMap(r => r.opportunities.map(o => o.kind));
+    return (v101WorldPresentLr(s.regions, NONE) === s.regions && v101WorldPresentLrInputs(s.lr, NONE) === s.lr && v101WorldPresentRf(st, NONE) === st && v101WorldPresentRfInputs(s, NONE) === s
+      && !kinds(infraOnly).includes('infrastructure_gap') && kinds(infraOnly).includes('contract_wave') && v101WorldPresentLr(null, INFRA_OFF) === null && v101WorldPresentRf(undefined, INFRA_OFF) === undefined) || json(kinds(infraOnly));
+  });
+  check('v101wl_09_faction_requests_filtered', 'Faction requests that ask for a switched-off system\'s work are not shown (fund / avoid a project with infrastructure off, contract work with contracts off); the faction state itself is not changed', () => {
+    const s = qld();
+    const st = play(s);
+    const withTypes: RegionalFactionsState = { ...st, requests: [
+      { ...st.requests[0], id: 'a', type: 'fund_project' }, { ...st.requests[0], id: 'b', type: 'avoid_project' }, { ...st.requests[0], id: 'c', type: 'complete_contract' }, { ...st.requests[0], id: 'd', type: 'assist_crisis' }] };
+    const ids = (x: RegionalFactionsState) => x.requests.map(r => r.id).join('');
+    const before = json(withTypes);
+    return (st.requests.length > 0 && ids(v101WorldPresentRf(withTypes, INFRA_OFF)) === 'cd' && ids(v101WorldPresentRf(withTypes, CONTRACTS_OFF)) === 'ab' && ids(v101WorldPresentRf(withTypes, { infra: true, contracts: true })) === ''
+      && json(withTypes) === before && v101WorldPresentRfInputs(s, INFRA_OFF).lr.projects.length === 0 && v101WorldPresentRfInputs(s, INFRA_OFF).lr.contracts.length > 0) || json({ ids: ids(v101WorldPresentRf(withTypes, INFRA_OFF)) });
+  });
+  check('v101wl_10_learning_lesson', 'The Guided Learning "Infrastructure" lesson is not taught while the match has infrastructure off, and still is while it is on', () => {
+    const ctx = buildV9RegionContext('QLD', lrViewOf(qld()), null, null);
+    const lesson = LEARNING_CONCEPT_BY_ID.infrastructure;
+    const lessonCtx = (settings: unknown) => ({ ...createLearningContextFixture(), infrastructureEnabled: v101InfrastructureAdviceOn(settings, ctx?.suggestion), infrastructureHint: ctx?.suggestion || null }) as LearningContext;
+    const offHint = lesson.relevant(lessonCtx(DEFAULT_GAME_SETTINGS));
+    const onHint = lesson.relevant(lessonCtx({ ...DEFAULT_GAME_SETTINGS, stateInfrastructureEnabled: true }));
+    return (v101InfrastructureAdviceOn({ stateInfrastructureEnabled: false }, 'x') === false && v101InfrastructureAdviceOn({ stateInfrastructureEnabled: true }, 'x') === true && v101InfrastructureAdviceOn({ stateInfrastructureEnabled: true }, null) === false
+      && offHint === null && typeof onHint === 'string' && onHint.length > 0) || json({ offHint, onHint });
+  });
+
+  // ---- W2: rendered entry points -----------------------------------------------------------------------------------------
+  check('v101wl_11_region_panel_render', 'The real region panel shows a one-line reason instead of an Invest or Contracts button for a switched-off system, and keeps both buttons where they are allowed', () => {
+    const ctx = buildV9RegionContext('QLD', lrViewOf(qld()), null, null);
+    const html = (props: Record<string, unknown>) => v101RenderStatic(<V9RegionContextPanel ctx={ctx} theme={theme} onAsk={noop} more={null} {...props} />);
+    const off = html({ investOffReason: v101WorldOffReason('infra'), contractsOffReason: v101WorldOffReason('contracts') });
+    const on = html({ onInvest: noop, onContracts: noop });
+    return (/data-testid="v101-invest-off"/.test(off) && /data-testid="v101-contracts-off"/.test(off) && !/>Invest<\/button>/.test(off) && !/>Contracts<\/button>/.test(off) && /switched off in this match/.test(off)
+      && />Invest<\/button>/.test(on) && />Contracts<\/button>/.test(on) && !/v101-invest-off/.test(on)) || off.slice(0, 600);
+  });
+  check('v101wl_12_switched_off_card', 'The modal that replaces a switched-off screen names the system, says it is off and where to turn it on, and has a way out', () => {
+    const html = v101RenderStatic(<V101WorldSwitchedOffCard title="Infrastructure & Mega-Projects" reason={v101WorldOffReason('infra')} onClose={noop} />);
+    return (/v101-world-off-card/.test(html) && /Infrastructure &amp; Mega-Projects/.test(html) && /switched off in this match/.test(html) && /Settings &gt; Competition/.test(html) && />Close</.test(html)) || html.slice(0, 400);
+  });
+  check('v101wl_13_ask_ai_options', 'Ask-AI offers no "fund project" or "accept contract" option for a system a V10.1 match switched off, and offers both as before otherwise', () => {
+    const { world } = createGIFixtureWorld({ money: 200000 });
+    const p = world.projects.find(x => x.status === 'unlocked');
+    const c = world.contracts[0];
+    if (!p || !c) return 'fixture lacks a project or a contract';
+    const fund = (w: GIWorld) => buildGIOption('fund_project', 'fund', w, [{ kind: 'project', id: p.id, label: p.title, confidence: 1, source: 'context' }]);
+    const accept = (w: GIWorld) => buildGIOption('accept_contract', 'accept', w, [{ kind: 'contract', id: c.id, label: c.title, confidence: 1, source: 'context' }]);
+    const off: GIWorld = { ...world, settings: { ...world.settings, worldSwitchedOff: { infra: true, contracts: true } } };
+    const on: GIWorld = { ...world, settings: { ...world.settings, worldSwitchedOff: NONE } };
+    return (fund(world)?.legal === true && fund(on)?.legal === true && fund(off)?.legal === false && /switched off/.test(String(fund(off)?.blockReason))
+      && accept(off)?.legal === false && /switched off/.test(String(accept(off)?.blockReason)) && accept(on)?.legal === accept(world)?.legal) || json({ fund: fund(off), accept: accept(off) });
+  });
+
+  // ---- W3: Fund now -------------------------------------------------------------------------------------------------------
+  check('v101wl_14_fund_plan_never_all_cash', 'The "Fund now" amounts: one funding step, a quarter of what is left, or the most you can afford; each within your cash and the cost left; the pre-selected one is never all of your cash', () => {
+    const project = { id: 'p1', title: 'Inland Rail Freight Hub', totalCost: 85000, totalInvestedMoney: 0 };
+    const cases: Array<[number, number | null]> = [[1000, null], [0, null], [21250, null], [30000, 21250], [50000, 21250], [60000, 50000], [100000, 50000], [500000, 50000]];
+    const bad: string[] = [];
+    cases.forEach(([cash, wantDefault]) => {
+      const plan = v101FundPlan(project, cash);
+      if (!plan) { bad.push(`${cash}: no plan`); return; }
+      if (plan.defaultAmount !== wantDefault) bad.push(`${cash}: default ${plan.defaultAmount} want ${wantDefault}`);
+      if (plan.defaultAmount !== null && plan.defaultAmount >= cash) bad.push(`${cash}: default is all cash`);
+      plan.options.forEach(o => { if (o.amount > plan.remaining || o.amount <= 0 || (o.affordable && o.amount > cash) || o.affordable !== (o.amount <= cash)) bad.push(`${cash}: option ${o.id} ${o.amount}`); });
+    });
+    const partlyFunded = v101FundPlan({ ...project, totalInvestedMoney: 80000 }, 100000);
+    const gone = v101FundPlan({ ...project, totalInvestedMoney: 85000 }, 100000);
+    return (bad.length === 0 && v101FundPlan(null, 5) === null && v101FundPlan({ title: 'x' }, 5) === null && partlyFunded !== null && partlyFunded.remaining === 5000 && partlyFunded.options.every(o => o.amount <= 5000) && partlyFunded.options.some(o => o.amount === 5000) && new Set(partlyFunded.options.map(o => o.amount)).size === partlyFunded.options.length
+      && gone !== null && gone.options.length === 0 && gone.defaultAmount === null) || json({ bad, partlyFunded, gone });
+  });
+  check('v101wl_15_fund_confirm_text', 'The confirm sentence states the dollars, what you keep and what the project still needs, and says when it is all your cash; amounts you do not hold or the project does not need are refused', () => {
+    const plan = v101FundPlan({ id: 'p1', title: 'Inland Rail Freight Hub', totalCost: 85000, totalInvestedMoney: 0 }, 1000);
+    if (!plan) return 'no plan';
+    const all = v101FundConfirmText(plan, 1000);
+    const some = v101FundConfirmText({ ...plan, cash: 100000 }, 50000);
+    return (/\$1,000/.test(all) && /all of your cash/.test(all) && /\$84,000 would still be needed/.test(all) && /not refunded/.test(all)
+      && /\$50,000 into Inland Rail/.test(some) && /keep \$50,000/.test(some) && /\$35,000 would still be needed/.test(some) && !/all of your cash/.test(some)
+      && v101FundAmountValid(plan, 1000) && !v101FundAmountValid(plan, 1001) && !v101FundAmountValid(plan, 0) && !v101FundAmountValid(plan, -5) && !v101FundAmountValid(plan, 10.5) && !v101FundAmountValid({ ...plan, cash: 999999 }, 85001)) || json({ all, some });
+  });
+  check('v101wl_16_fund_chooser_render', 'The real "Fund now" control opens to amounts and a confirm sentence with nothing pre-chosen when only your whole cash is in reach; the confirm button appears only for a chosen amount', () => {
+    const poor = v101FundPlan({ id: 'p1', title: 'Inland Rail Freight Hub', totalCost: 85000, totalInvestedMoney: 0 }, 1000)!;
+    const rich = v101FundPlan({ id: 'p1', title: 'Inland Rail Freight Hub', totalCost: 85000, totalInvestedMoney: 0 }, 100000)!;
+    const closed = v101RenderStatic(<V101FundNowChooser plan={poor} onConfirm={noop} />);
+    const poorOpen = v101RenderStatic(<V101FundNowChooser plan={poor} onConfirm={noop} initialOpen />);
+    const richOpen = v101RenderStatic(<V101FundNowChooser plan={rich} onConfirm={noop} initialOpen />);
+    const poorPicked = v101RenderStatic(<V101FundNowChooser plan={poor} onConfirm={noop} initialOpen initialPicked={1000} />);
+    return (/>Fund now</.test(closed) && !/v101-fund-chooser/.test(closed)
+      && /v101-fund-chooser/.test(poorOpen) && !/v101-fund-confirm/.test(poorOpen) && /You have \$1,000/.test(poorOpen) && /\$85,000 is still needed/.test(poorOpen) && /not enough cash/.test(poorOpen) && /Most I can afford \(\$1,000\)/.test(poorOpen)
+      && /v101-fund-confirm-button/.test(richOpen) && /Put \$50,000 into Inland Rail/.test(richOpen) && /\$35,000 would still be needed/.test(richOpen)
+      && /Put \$1,000 into Inland Rail Freight Hub \(all of your cash\)/.test(poorPicked)) || poorOpen.slice(0, 900);
+  });
+  check('v101wl_17_stakeholder_panel_fund_now', 'In the real Stakeholders panel a V10.1 match shows what is still needed against your cash and the amount chooser; a V10.0 match keeps its old "Fund now" button, now saying what it does', () => {
+    const s = qld(); const st = play(s);
+    const req = st.requests.find(r => r.type === 'fund_project');
+    if (!req) return 'fixture has no fund request';
+    const view: RegionalFactionsWorldView = { state: st, inputs: s, viewerId: 'player', viewerKeys: ['player'], names: { player: 'You' } };
+    const project = { id: req.targetId, title: 'Inland Rail Freight Hub', totalCost: 85000, totalInvestedMoney: 0 };
+    const v101 = v101RenderStatic(<RegionStakeholdersPanel view={view} regionId="QLD" turn={8} onCommit={noop} onChoose={noop} onFund={noop} fundPlanFor={() => v101FundPlan(project, 1000)} onFundAmount={noop} />);
+    const v100 = v101RenderStatic(<RegionStakeholdersPanel view={view} regionId="QLD" turn={8} onCommit={noop} onChoose={noop} onFund={noop} />);
+    return (/data-testid="v101-fund-open"/.test(v101) && /Still needed: \$85,000 · you have \$1,000/.test(v101) && !/Puts all your cash/.test(v101)
+      && />Fund now</.test(v100) && /Puts all your cash \(up to what the project still needs\) in at once/.test(v100) && !/v101-fund-open/.test(v100) && !/Still needed/.test(v100)) || v101.slice(0, 900);
+  });
+  check('v101wl_18_unwinnable_requests', 'A V10.1 match\'s factions do not ask for a project the human could not pay for (more than twice their cash is left); a V10.0 match issues the same request as before', () => {
+    const issued = (extra: Partial<RFInputs>) => play(qld(extra)).requests.filter(r => r.type === 'fund_project').map(r => `${r.targetId}@${r.deadlineTurn}`);
+    const plain = issued({}); const v100 = issued({ v101Rules: false, humanCash: 1000 });
+    const poor = issued({ v101Rules: true, humanCash: 1000 }); const edge = issued({ v101Rules: true, humanCash: 42500 }); const justShort = issued({ v101Rules: true, humanCash: 42499 }); const rich = issued({ v101Rules: true, humanCash: 200000 });
+    return (plain.length === 1 && json(v100) === json(plain) && poor.length === 0 && edge.length === 1 && justShort.length === 0 && json(rich) === json(plain)
+      && v101FundRequestReachable(85000, 42500) && !v101FundRequestReachable(85000, 42499) && !v101FundRequestReachable(0, 1000) && !v101FundRequestReachable(NaN, 1000) && !v101FundRequestReachable(1000, NaN)) || json({ plain, v100, poor, edge, justShort, rich });
+  });
+
+  // ---- W4: one project list -----------------------------------------------------------------------------------------------
+  check('v101wl_19_shared_project_list', 'A V10.1 match gives World Reaction, Living Regions and National Systems all 32 projects in the same order; a V10.0 or unstamped match keeps its first 16 and first 24', () => {
+    const all: Record<string, unknown> = {};
+    [...PRESET_INFRASTRUCTURE_PROJECTS, ...V93_INFRASTRUCTURE_PROJECTS].forEach(p => { all[p.id] = p; });
+    const ids = (l: unknown[]) => l.map(p => (p as { id: string }).id);
+    const order = Object.keys(all);
+    const v101Swr = ids(v101WorldProjects({ rulesVersion: 1010 }, all, 16)); const v101Lr = ids(v101WorldProjects({ rulesVersion: 1010 }, all, 24)); const v101Ns = ids(v101WorldProjects({ rulesVersion: 1010 }, all, V101_WORLD_PROJECT_CAP));
+    const v100Swr = ids(v101WorldProjects({ rulesVersion: 1000 }, all, 16)); const v100Lr = ids(v101WorldProjects({ rulesVersion: 1000 }, all, 24));
+    const oldSwr = ids(v101WorldProjects({}, all, 16)); const oldLr = ids(v101WorldProjects(null, all, 24));
+    return (order.length === 32 && json(v101Swr) === json(order) && json(v101Lr) === json(order) && json(v101Ns) === json(order)
+      && json(v100Swr) === json(order.slice(0, 16)) && json(v100Lr) === json(order.slice(0, 24)) && json(oldSwr) === json(order.slice(0, 16)) && json(oldLr) === json(order.slice(0, 24))
+      && order.slice(16).every(id => v101Swr.includes(id))) || json({ n: order.length, v101Swr: v101Swr.length, v101Lr: v101Lr.length, v100Swr: v100Swr.length, v100Lr: v100Lr.length });
+  });
+  check('v101wl_20_project_list_edges', 'The shared list is capped at 96, keeps the order a match holds, accepts a list or a record, skips empty entries and survives missing data', () => {
+    const many: Record<string, unknown> = {}; for (let i = 0; i < 120; i++) many[`p${i}`] = { id: `p${i}` };
+    const lst = v101WorldProjects({ rulesVersion: 1010 }, many, 16);
+    const arr = v101WorldProjects({ rulesVersion: 1010 }, [{ id: 'z' }, null, { id: 'a' }, undefined], 16);
+    return (V101_WORLD_PROJECT_CAP === 96 && lst.length === 96 && (lst[0] as { id: string }).id === 'p0' && (lst[95] as { id: string }).id === 'p95'
+      && json(arr) === json([{ id: 'z' }, { id: 'a' }]) && v101WorldProjects({ rulesVersion: 1010 }, null, 16).length === 0 && v101WorldProjects({ rulesVersion: 1010 }, undefined, 16).length === 0 && v101WorldProjects({}, 'text', 16).length === 0
+      && v101WorldProjects({ rulesVersion: 1000 }, many, 16).length === 16) || json({ n: lst.length, arr });
+  });
+
+  // ---- W5: honest rewards and labels --------------------------------------------------------------------------------------
+  check('v101wl_21_honest_rewards', 'Every reward a faction request promises says what a fulfilled request really does (relationship +12, no cash); the old promises no rule kept are gone, and older saves show the true sentence', () => {
+    const s = qld(); const st = play(s);
+    const crisis = rfRequestFor(RF_DEF_BY_ID.qld_port_authority, st.factions.qld_port_authority, { id: 'g', type: 'increase_stability', regionId: 'QLD', targetId: 'maritime_hub_qld', label: 'x', sinceTurn: 6, status: 'active' }, s, st);
+    const rewards = [...st.requests.map(r => r.reward), crisis?.reward || ''].filter(Boolean);
+    const forbidden = /standing opportunities|contract relevance|regional goodwill|↑/;
+    const legacy = ['Relationship ↑ · future contract relevance ↑', 'Relationship ↑↑ · standing opportunities ↑ · future contract relevance ↑', 'Relationship ↑↑ · regional goodwill ↑', 'Relationship ↑ with this group (others may disagree)'];
+    return (rewards.length >= 2 && rewards.every(r => !forbidden.test(r) && /Relationship \+\d+/.test(r) && /no cash|keep your word/.test(r))
+      && legacy.every(l => !forbidden.test(v101RewardText(l).replace('(others may disagree)', ''))) && v101RewardText(legacy[0]) === V101_REWARD_RELATIONSHIP && v101RewardText(legacy[3]) === V101_REWARD_AVOID
+      && v101RewardText('A custom promise') === 'A custom promise' && v101RewardText(undefined) === '' && v101RewardText(42) === '') || json({ rewards });
+  });
+  check('v101wl_22_relationship_term', 'A V10.1 Contracts list lifts contracts from a group that likes you and sinks those from one that does not, by at most 5 points and with the reason shown; V10.0 scores are unchanged', () => {
+    const s = qld(); let st = play(s);
+    const contract = { id: 'maritime_hub_qld', issuingRegionId: 'QLD', regionId: 'QLD', issuingFactionId: 'qld_port_authority' };
+    const fid = 'qld_port_authority';
+    const withRel = (value: number): RegionalFactionsState => ({ ...st, factions: { ...st.factions, [fid]: { ...st.factions[fid], relationshipsByActor: { ...st.factions[fid].relationshipsByActor, player: { value, reliability: 50, history: [] } } } } });
+    const base = rfContractRelevance(withRel(0), contract, 'player');
+    const score = (v: number, term: boolean) => rfContractRelevance(withRel(v), contract, 'player', { relationshipTerm: term }).score;
+    const liked = rfContractRelevance(withRel(80), contract, 'player', { relationshipTerm: true });
+    const hated = rfContractRelevance(withRel(-80), contract, 'player', { relationshipTerm: true });
+    return (base.factionId === fid && score(0, true) === base.score && score(80, false) === base.score && score(-80, false) === base.score
+      && score(30, true) === base.score + 3 && score(80, true) === base.score + V101_RELATIONSHIP_RELEVANCE_BOUND && score(1000, true) === base.score + V101_RELATIONSHIP_RELEVANCE_BOUND && score(-80, true) === base.score - V101_RELATIONSHIP_RELEVANCE_BOUND
+      && score(4, true) === base.score && liked.reasons.some(r => /good opinion/.test(r)) && hated.reasons.some(r => /poor opinion/.test(r))) || json({ base: base.score, a: score(30, true), b: score(80, true), c: score(-80, true) });
+  });
+  check('v101wl_23_time_word', 'The word for the world systems\' numbers is "day" in a V10.0 or V10.1 one-on-one match (the number IS the day the HUD shows) and "round" in team mode and in an older match', () => {
+    const t: Array<[unknown, string]> = [[{ rulesVersion: 1010, selectedMode: 'ai' }, 'day'], [{ rulesVersion: 1000, selectedMode: 'grand_tour' }, 'day'], [{ rulesVersion: 1010, selectedMode: 'single' }, 'day'], [{ rulesVersion: 1010, selectedMode: 'team_human_ai_vs_ai_ai' }, 'round'], [{ selectedMode: 'ai' }, 'round'], [{ rulesVersion: 900, selectedMode: 'ai' }, 'round'], [null, 'round'], [undefined, 'round']];
+    const wrong = t.filter(([gs, want]) => v101TimeWord(gs) !== want);
+    return (wrong.length === 0 && v101TimeWordCap('day') === 'Day' && v101TimeWordCap('round') === 'Round' && v101TimeWordCap(undefined) === 'Round' && v101TimeWordCap('week') === 'Round' && v101TimeWord({ rulesVersion: 1010, selectedMode: 'ai' }) === v101TimeWord({ rulesVersion: 1000, selectedMode: 'ai' })) || json(wrong);
+  });
+  check('v101wl_24_day_labels', 'Faction request text says "day" where the HUD says Day (the request line, the strip, the issue notice) and still says "round" in team mode and old matches', () => {
+    const s = qld({ timeWord: 'day' }); const st = play(s);
+    const req = st.requests.find(r => r.type === 'fund_project');
+    if (!req) return 'fixture has no request';
+    const mk = (word: 'day' | 'round' | undefined): RegionalFactionsWorldView => ({ state: st, inputs: s, viewerId: 'player', viewerKeys: ['player'], names: {}, timeWord: word });
+    const panel = (word: 'day' | 'round' | undefined) => v101RenderStatic(<RegionStakeholdersPanel view={mk(word)} regionId="QLD" turn={9} onCommit={noop} onChoose={noop} />);
+    const strip = (word: 'day' | 'round' | undefined) => v101RenderStatic(<FactionsPlayStrip view={mk(word)} turn={7} onView={noop} onCommit={noop} />);
+    const issued = (extra: Partial<RFInputs>) => play(qld(extra)).derived.filter(d => d.kind === 'faction_request_issued').map(d => d.text).join('|');
+    const when = `${req.deadlineTurn}`;
+    return (new RegExp(`by day ${when}`).test(panel('day')) && !/by round/.test(panel('day')) && new RegExp(`by round ${when}`).test(panel('round')) && new RegExp(`by round ${when}`).test(panel(undefined))
+      && new RegExp(`by day ${when}`).test(strip('day')) && new RegExp(`by round ${when}`).test(strip('round'))
+      && new RegExp(`\\(by day ${when}\\)`).test(issued({ timeWord: 'day' })) && new RegExp(`\\(by round ${when}\\)`).test(issued({ timeWord: 'round' })) && new RegExp(`\\(by round ${when}\\)`).test(issued({}))) || json({ req: [req.deadlineTurn, req.issuedTurn], p: (panel('day').match(/by (day|round) \d+/g) || []), strip: (strip('day').match(/by (day|round) \d+/g) || []), issued: issued({ timeWord: 'day' }), when });
+  });
+  check('v101wl_25_living_regions_day_labels', 'The Living Regions answer heads its recent history with "Day N" when the HUD counts days, and keeps "Round N" otherwise', () => {
+    const s = qld(); const reg = s.regions.regions.QLD;
+    const withHistory: LivingRegionsState = { ...s.regions, regions: { ...s.regions.regions, QLD: { ...reg, history: [{ turn: 7, kind: 'momentum', text: 'Queensland picked up speed' } as DynamicRegionalState['history'][number]] } } };
+    const { world } = createGIFixtureWorld({});
+    const answer = (word: 'day' | 'round' | undefined) => {
+      const gw: GIWorld = { ...world, turn: 8, livingRegions: { ...lrViewOf(s, word), state: withHistory } };
+      const out = composeLivingRegionsAnswer({ topic: 'status', regionId: 'QLD', actorKey: 'player', projectId: null, contractId: null }, gw);
+      return out.sections.flatMap(sec => sec.claims.map(c => c.text)).join(' | ');
+    };
+    return (/Day 7: Queensland picked up speed/.test(answer('day')) && !/Round 7:/.test(answer('day')) && /Round 7: Queensland picked up speed/.test(answer('round')) && /Round 7:/.test(answer(undefined))) || answer('day').slice(0, 500);
+  });
+  check('v101wl_26_default_match_unchanged_core', 'A V10.0 match with both systems off still gets the project list, requests and reducer behaviour it always had (the whole V10.1 layer is a no-op for it)', () => {
+    const s = qld(); const st = play(s);
+    const same = json(play(qld({ v101Rules: false }))) === json(st) && json(play(qld({ timeWord: 'round' }))) === json(st);
+    const v100Gate = (['region_invest', 'faction_fund', 'infrastructure_modal', 'ask_fund_project', 'region_contracts', 'contracts_modal', 'ask_accept_contract'] as V101WorldEntry[]).every(e => v101WorldEntryGate({ rulesVersion: 1000 }, DEFAULT_GAME_SETTINGS, e).allowed);
+    const classic = (['region_invest', 'contracts_modal'] as V101WorldEntry[]).every(e => v101WorldEntryGate({ rulesVersion: v101RulesVersionForNewMatch({ classicRulesV100: true }) }, DEFAULT_GAME_SETTINGS, e).allowed);
+    const fresh = (['region_invest', 'contracts_modal'] as V101WorldEntry[]).every(e => !v101WorldEntryGate({ rulesVersion: v101RulesVersionForNewMatch({}) }, DEFAULT_GAME_SETTINGS, e).allowed);
+    return (same && v100Gate && classic && fresh) || json({ same, v100Gate, classic, fresh });
+  });
   return results;
 }
 // <<V101-SLOT WORLD end>>
@@ -244152,7 +244470,7 @@ function dispatchGameSettingsChange(
       winLabel: v9CohesionInputs.win.label, winMetric: String(gameSettings.winCondition), leading, daysLeft: Math.max(0, Number(gameSettings.totalDays || 30) - Number(gameState.day || 1)),
       rivalName: getActorDisplayName(isTeamMode ? 'ai' : 'ai') || 'your rival', teamMode: isTeamMode, teamMission: v9CohesionInputs.team?.mission || null, teamRole: v9CohesionInputs.team?.you || null,
       contractsEnabled: Boolean(gameSettings.regionalContractsEnabled), contractAvailableTitle: reachable?.title || null, contractActiveTitle: active?.title || null,
-      infrastructureEnabled: !worldSystemOff(gameSettings, 'infra') && Boolean(regionCtx?.suggestion), /* V10.1 (SECTION 20BI): the Infrastructure lesson is not taught while the match has infrastructure switched off */ infrastructureHint: regionCtx?.suggestion && needLine ? `${REGIONS[region]?.name || region} has a ${needLine.value.toLowerCase()} need. ${regionCtx.suggestion}.` : null, investmentsEnabled: Boolean(gameSettings.investmentsEnabled),
+      infrastructureEnabled: v101InfrastructureAdviceOn(gameSettings, regionCtx?.suggestion), /* V10.1 (SECTION 20BI): the Infrastructure lesson is not taught while the match has infrastructure switched off */ infrastructureHint: regionCtx?.suggestion && needLine ? `${REGIONS[region]?.name || region} has a ${needLine.value.toLowerCase()} need. ${regionCtx.suggestion}.` : null, investmentsEnabled: Boolean(gameSettings.investmentsEnabled),
       loanCount: (player?.loans || []).length, loansPossible: (player?.loans || []).length < MAX_ACTIVE_LOANS, liquidityProblem: cash < 300,
       decisionActive: Boolean(v9Cohesion.decision), criticalActive: v9Cohesion.focus.source === 'critical', copilotControlling: playerControlState.copilotHoldsControl,
       playerBusy: Boolean(uiState.showTravelModal || uiState.showMarket || uiState.showResourceMarket || uiState.showRegionalContractsModal || uiState.showSettings || uiState.showChallenges || uiState.showShop || uiState.showCoPilotProposalModal),
