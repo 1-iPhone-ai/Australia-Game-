@@ -19,7 +19,9 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aussie-node-'));
 const bundle = path.join(tmp, 'game.mjs');
 const t0 = Date.now();
 await build({
-  entryPoints: [gameFile], bundle: true, platform: 'node', format: 'esm', outfile: bundle, jsx: 'automatic',
+  // V10.1 (SECTION 20BI): the wrapper entry puts a static renderer (bundled with the game's own React copy) on globalThis for the v101wl rendered-markup tests; the game file itself imports no react-dom/server.
+  stdin: { contents: `export * from ${JSON.stringify(gameFile)};\nimport { renderToStaticMarkup as __v101r } from 'react-dom/server';\nglobalThis.__v101RenderStatic = __v101r;\n`, resolveDir: root, sourcefile: 'v101-entry.js', loader: 'js' },
+  bundle: true, platform: 'node', format: 'esm', outfile: bundle, jsx: 'automatic',
   sourcemap: false, logLevel: 'error', nodePaths: [path.join(root, 'node_modules')], absWorkingDir: root,
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
   define: { 'process.env.NODE_ENV': '"development"' },

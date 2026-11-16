@@ -121719,7 +121719,7 @@ export function compileDiplomaticProposalFromText(query: string, gw: GIWorld, vi
   const deal = createDiplomaticDeal({ initiatorActorId: playerId, recipientActorIds: [cp], terms, duration: duration || { kind: 'turns', turns: 3 }, turn: view.world.turn, terminationConditions: conditions.filter(c => c.effect === 'terminate'), seq: view.state.revision });
   deal.status = 'preview';
   deal.playerFacingSummary = describeDealShort(deal, view.names);
-  if (evidence) res.understood.push(`Duration: ${describeDealDuration(deal)}.`);
+  if (evidence) res.understood.push(`Duration: ${describeDealDuration(deal, view.timeWord)}.`);
   res.deal = deal;
   return res;
 }
@@ -121742,10 +121742,10 @@ export function modifyDiplomaticDraft(draft: DiplomaticDeal, text: string, view:
   }
   const dur = dnDurationFromText(lower.replace(/\$\s*[\d.,]+\s*k?/g, ''), view.world.turn, view.world.clock);
   if (dur.duration) {
-    const prev = describeDealDuration(d);
+    const prev = describeDealDuration(d, view.timeWord);
     const w = resolveDealWindow(dur.duration, d.startTurn ?? view.world.turn);
     d.duration = dur.duration; d.expirationTurn = w.expirationTurn; d.terms = d.terms.map(t => ({ ...t, endTurn: w.expirationTurn }));
-    changed.push(`duration ${prev} → ${describeDealDuration(d)}`);
+    changed.push(`duration ${prev} → ${describeDealDuration(d, view.timeWord)}`);
   }
   if (/\b(remove|drop|without|no need for|get rid of|skip|take out)\b.*\bsabotag/.test(lower)) {
     const before = d.terms.length;
@@ -121899,7 +121899,7 @@ export function compareDiplomaticOptions(deals: DiplomaticDeal[], view: Diplomac
     const pv = buildDiplomaticImpactPreview(d, view);
     const cost = d.terms.filter(t => t.actorId === view.playerId && t.kind === 'pay_cash').reduce((s, t) => s + (t.amount || 0), 0);
     const align = pv.impact.filter(x => x.startsWith('GI3')).join(' ') || 'No direct effect on your strategy.';
-    return { label: `Option ${String.fromCharCode(65 + i)}`, cost: cost ? `$${cost.toLocaleString('en-AU')}` : 'No cash', duration: describeDealDuration(d), alignment: align, outlook: pv.outlook ? pv.outlook.outlook : 'invalid', constraints: pv.validation.issues.filter(x => x.severity === 'error').map(x => x.message).join(' ') || 'OK' };
+    return { label: `Option ${String.fromCharCode(65 + i)}`, cost: cost ? `$${cost.toLocaleString('en-AU')}` : 'No cash', duration: describeDealDuration(d, view.timeWord), alignment: align, outlook: pv.outlook ? pv.outlook.outlook : 'invalid', constraints: pv.validation.issues.filter(x => x.severity === 'error').map(x => x.message).join(' ') || 'OK' };
   });
 }
 
@@ -121960,7 +121960,7 @@ export function diplomacyPreviewSections(deal: DiplomaticDeal, view: DiplomacyWo
   const pv = buildDiplomaticImpactPreview(deal, view);
   say('you', 'You agree', pv.give.length ? pv.give.map(x => dnClaim(x)) : [dnClaim('Nothing — you make no promise.')]);
   say('them', `${view.names[cp] || cp} agrees`, deal.terms.filter(t => t.actorId === cp).map(t => dnClaim(describeDiplomaticTerm(t, view.names))));
-  say('duration', 'Duration', [dnClaim(describeDealDuration(deal)), dnClaim('Starts immediately after acceptance (payments due on acceptance are made first — the agreement activates only if they succeed).')]);
+  say('duration', 'Duration', [dnClaim(describeDealDuration(deal, view.timeWord)), dnClaim('Starts immediately after acceptance (payments due on acceptance are made first — the agreement activates only if they succeed).')]);
   if (deal.terminationConditions.length) say('conditions', 'Conditions', deal.terminationConditions.map(c => dnClaim(`Ends automatically: ${c.text || c.kind}.`)));
   say('broken', 'If broken', [dnClaim('The agreement is marked violated; trust and reliability may decrease. Nothing blocks either side — promises are commitments, not locks.', 'inference', 'high')]);
   say('impact', 'Strategic impact', pv.impact.map(x => dnClaim(x, /^(Risk|Trust|GI3)/.test(x) || /likely/.test(x) ? 'projection' : 'fact', /^(Risk|Trust)/.test(x) || /likely/.test(x) ? 'moderate' : 'confirmed')));
@@ -122128,7 +122128,7 @@ export function composeDiplomacyAnswer(query: DNQuery, gw: GIWorld, ctx: GIConve
         if (!d) say('none', null, [dnClaim(`No active agreement with ${cpName} to renegotiate.`)]);
         else {
           const left = d.expirationTurn !== null ? d.expirationTurn - view.world.turn + 1 : null;
-          say('state', null, [dnClaim(`${describeDealShort(d, view.names)}: ${left !== null ? `${left} turn${left === 1 ? '' : 's'} left` : describeDealDuration(d)}, ${d.compliance}.`), dnClaim(left !== null && left <= 2 ? 'It expires soon — extending now keeps the window open; the current terms stay active until an amendment is accepted.' : 'No urgency yet — renegotiating early mainly makes sense if your strategy changed.', 'inference', 'moderate')]);
+          say('state', null, [dnClaim(`${describeDealShort(d, view.names)}: ${left !== null ? `${left} turn${left === 1 ? '' : 's'} left` : describeDealDuration(d, view.timeWord)}, ${d.compliance}.`), dnClaim(left !== null && left <= 2 ? 'It expires soon — extending now keeps the window open; the current terms stay active until an amendment is accepted.' : 'No urgency yet — renegotiating early mainly makes sense if your strategy changed.', 'inference', 'moderate')]);
           buttons.push({ id: 'dn_extend', label: 'Propose extension', kind: 'dn_extend', candidateId: d.id, tone: 'primary' });
         }
       } else {
@@ -122777,7 +122777,7 @@ export const DiplomacyDealPreview: React.FC<{ binding: DiplomacyBinding; deal: D
         <div><div className="font-semibold uppercase opacity-70">You agree</div>{pv.give.length ? pv.give.map((g, i) => <div key={i}>• {g}</div>) : <div className="opacity-70">Nothing</div>}</div>
         <div><div className="font-semibold uppercase opacity-70">{cpName} agrees</div>{deal.terms.filter(t => t.actorId === cp).map(t => <div key={t.id}>• {describeDiplomaticTerm(t, v.names)}</div>)}</div>
       </div>
-      <div><span className="font-semibold">Duration:</span> {describeDealDuration(deal)} · <span className="font-semibold">Starts:</span> immediately after acceptance</div>
+      <div><span className="font-semibold">Duration:</span> {describeDealDuration(deal, v.timeWord)} · <span className="font-semibold">Starts:</span> immediately after acceptance</div>
       {deal.terminationConditions.length > 0 && <div><span className="font-semibold">Ends automatically:</span> {deal.terminationConditions.map(c => c.text || c.kind).join('; ')}</div>}
       <div><span className="font-semibold">If broken:</span> the agreement is marked violated and trust may decrease. Nothing is locked — either side can still act.</div>
       <div data-testid="dn-impact"><div className="font-semibold uppercase opacity-70">Strategic impact</div>{pv.impact.map((x, i) => <div key={i}>• {x}</div>)}</div>
@@ -122923,7 +122923,7 @@ export const DiplomacyPanel: React.FC<{ binding: DiplomacyBinding; isDark?: bool
             <div key={d.id} className="border-b border-slate-700/50 pb-1">
               <div className="font-semibold">{describeDealShort(d, v.names)}</div>
               {d.terms.map(t => <div key={t.id}>{t.actorId === p ? 'You' : v.names[t.actorId] || t.actorId}: {describeDiplomaticTerm(t, v.names)}{t.status === 'satisfied' ? ' ✓' : ''}</div>)}
-              <div>Remaining: {left !== null ? `${left} turn${left === 1 ? '' : 's'}` : describeDealDuration(d)} · Status: <span className={d.compliance === 'at_risk' ? 'text-amber-300' : 'text-emerald-300'}>{d.compliance === 'at_risk' ? 'At risk' : 'Compliant'}</span></div>
+              <div>Remaining: {left !== null ? `${left} turn${left === 1 ? '' : 's'}` : describeDealDuration(d, v.timeWord)} · Status: <span className={d.compliance === 'at_risk' ? 'text-amber-300' : 'text-emerald-300'}>{d.compliance === 'at_risk' ? 'At risk' : 'Compliant'}</span></div>
               <div className="flex gap-1.5 mt-1">
                 <button type="button" className={dnBtn} onClick={() => setWhyOpen(whyOpen === d.id ? null : d.id)}>View</button>
                 <button type="button" className={dnBtn} onClick={() => { const a = binding.extend(d.id, 2); if (a) setDraftDeal(a, ['extension proposal — the current agreement stays active until they accept']); }}>Renegotiate</button>
@@ -122970,7 +122970,7 @@ export const DiplomacyInspector: React.FC<{ binding: DiplomacyBinding; theme: an
       <div>Revision {v.state.revision} · {v.state.deals.length} open · {v.state.history.length} closed · {v.state.events.length} events</div>
       <div><span className="font-semibold">Relationship ({v.names[cp] || cp || '—'})</span>: trust {Math.round(rel.trust)} · stance {deriveDiplomaticStanceLabel(rel, v.state.deals.filter(d => d.status === 'active' && d.participants.includes(cp)).length, 0)} · your reliability {rec.band} ({rec.evidence.join(', ')}){binding.fullInspection ? ` · grievance ${Math.round(rel.grievance)} · gratitude ${Math.round(rel.gratitude)} · rivalry ${Math.round(rel.rivalry)}` : ' · grievances hidden (enable AI Memory Full Inspection)'}</div>
       {all.length > 0 && <select aria-label="Deal" value={dealId} onChange={e => setDealId(e.target.value)} className="bg-transparent border rounded px-1 border-slate-500/50">{all.map(d => <option key={d.id} value={d.id}>{describeDealShort(d, v.names)} — {d.status}</option>)}</select>}
-      {deal && <div><div className="font-semibold">Proposal</div>{deal.terms.map(t => <div key={t.id}>• {v.names[t.actorId] || t.actorId}: {describeDiplomaticTerm(t, v.names)} [{t.status}]</div>)}<div>Round {deal.negotiationRound} · {describeDealDuration(deal)} · compliance {deal.compliance}</div></div>}
+      {deal && <div><div className="font-semibold">Proposal</div>{deal.terms.map(t => <div key={t.id}>• {v.names[t.actorId] || t.actorId}: {describeDiplomaticTerm(t, v.names)} [{t.status}]</div>)}<div>Round {deal.negotiationRound} · {describeDealDuration(deal, v.timeWord)} · compliance {deal.compliance}</div></div>}
       {ev && (
         <div data-testid="dn-lab-eval">
           <div className="font-semibold">Evaluation ({v.names[ev.evaluatorId] || ev.evaluatorId})</div>
@@ -124022,12 +124022,12 @@ export function rehydrateWorldReactionState(state: WorldReactionState, s: SWRInp
   return next;
 }
 
-export function buildWorldReactionDebrief(state: WorldReactionState, viewerId: string | null, names: Record<string, string> = {}): string[] {
+export function buildWorldReactionDebrief(state: WorldReactionState, viewerId: string | null, names: Record<string, string> = {}, timeWord?: 'day' | 'round'): string[] { // V10.1 (SECTION 20BI): timeWord is the HUD's word
   const tps = findStrategicTurningPoints(state, viewerId);
   const lines: string[] = [];
   const main = tps.slice().sort((a, b) => SWR_SIG_RANK[b.root.significance] + b.descendants.length - (SWR_SIG_RANK[a.root.significance] + a.descendants.length))[0];
   if (main) {
-    lines.push(`Most consequential moment (round ${main.root.turn}): ${main.root.strategicMeaning}`);
+    lines.push(`Most consequential moment (${timeWord === 'day' ? 'day' : 'round'} ${main.root.turn}): ${main.root.strategicMeaning}`);
     main.descendants.slice(0, 2).forEach((d, i) => lines.push(`${i === 0 ? 'Result' : 'Secondary effect'}: ${d.strategicMeaning}`));
   }
   tps.filter(t => t !== main).forEach(t => lines.push(`Largest ${t.category} shift (round ${t.root.turn}): ${t.root.strategicMeaning}`));
@@ -124095,7 +124095,7 @@ export function backgroundWorldReactionInputs(world: GIWorld): { attention: Back
   }));
   const opportunities: BackgroundOpportunity[] = v.state.windows.filter(w => w.status === 'open' && w.observers.includes(viewer)).slice(0, 3).map(w => ({
     id: `wr_${w.id}`.slice(0, 80), type: 'strategic_window', subject: w.subject, value: null, urgency: (w.expiresTurn !== null && w.expiresTurn - world.turn <= 1 ? 'now' : 'soon') as BGUrgency, confidence: (w.confidence === 'high' ? 'high' : w.confidence === 'moderate' ? 'moderate' : 'low') as BGBand,
-    expiresTurn: w.expiresTurn, strategicAlignment: 'neutral', resourceRequirement: 0, reason: `${w.reason}${w.expiresTurn !== null ? ` Window until round ${w.expiresTurn}; no outcome is guaranteed.` : ''}`, actionIds: []
+    expiresTurn: w.expiresTurn, strategicAlignment: 'neutral', resourceRequirement: 0, reason: `${w.reason}${w.expiresTurn !== null ? ` Window until ${v.timeWord === 'day' ? 'day' : 'round'} ${w.expiresTurn}; no outcome is guaranteed.` : ''}`, actionIds: []
   }));
   return { attention, opportunities };
 }
@@ -126139,7 +126139,7 @@ export const LivingRegionsInspector: React.FC<{ view: LivingRegionsWorldView | n
       <label className="flex items-center gap-2">Region <select aria-label="Inspect region" value={sel} onChange={e => setCode(e.target.value)} className="bg-transparent border rounded px-1">{codes.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
       <div data-testid="lr-lab-diag">Applied {d.eventsApplied} · ignored {d.eventsIgnored} · rounds {d.roundsAdvanced} · syncs {d.syncs} · derived {d.derivedEmitted} · last {d.lastMs} ms · last regions {d.lastRegions.join(',') || '—'} · state rev {view.state.revision} · region rev {reg.revision} · hash {view.state.hashes[sel] || '—'}</div>
       {line('Development', `${LR_DEV_LABEL[reg.development.tier]} (score ${reg.development.score}; canonical tier ${reg.development.canonicalTier}; structural ${reg.development.structural})`)}
-      {line('Economic condition', `${LR_ECON_LABEL[reg.economy.band]} (${reg.economy.score}; last round ${reg.economy.lastRoundScore})`)}
+      {line('Economic condition', `${LR_ECON_LABEL[reg.economy.band]} (${reg.economy.score}; last ${view.timeWord === 'day' ? 'day' : 'round'} ${reg.economy.lastRoundScore})`)}
       {line('Momentum', `${LR_MOMENTUM_LABEL[reg.momentum.band]} (${reg.momentum.value}; history ${reg.momentum.history.join(', ') || '—'}) · trajectory ${reg.trajectory}`)}
       {line('Specializations', `primary ${reg.specializations.primary || '—'} · secondary ${reg.specializations.secondary || '—'} · emerging ${reg.specializations.emerging || '—'} · established [${reg.specializations.established.join(', ')}]${reg.specializations.pending ? ` · pending ${reg.specializations.pending.change} ${reg.specializations.pending.sector} (R${reg.specializations.pending.since})` : ''}`)}
       {line('Sector evidence', lrSortedSectors(reg).map(([k, v]) => `${k} ${v}`).join(' · ') || '—')}
@@ -190571,7 +190571,7 @@ export function v99FirstRunFinishText(availability: Partial<Record<FirstRunConce
     : 'Every tool is on screen now and the match carries on.';
 }
 
-// ---- W4A (final review, f3-01): the advice knows the Tourist's free retry ------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f3-01): the advice knows the Tourist's free retry ------------------------------------------------------
 // V9.9 repaired the Tourist's "Retry (+20%, no action)" button and the advice separately: after a lost challenge the card
 // said End Turn was "the only move" (or proposed a paid second attempt) while the free retry was on offer below the fold.
 
@@ -190674,7 +190674,7 @@ export function v99FreeMovesBeforeEndTurn(actionable: ContextualActionCandidate[
   if (end && anyFree && end.reasons[0] === V99_END_TURN_ONLY_MOVE_REASON) end.reasons = [V99_END_TURN_FREE_MOVES_REASON, ...end.reasons.slice(1)];
 }
 
-// ---- W4A (final review, f3-06): "Most challenge points" is advised in points -----------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f3-06): "Most challenge points" is advised in points -----------------------------------------------
 /** True when the match is won on challenge points (a challenge is worth its difficulty: computeActorChallengeScore). */
 export function v99PointsGoal(settings: unknown): boolean {
   return v99IsRecord(settings) && settings.winCondition === 'challenges';
@@ -190698,7 +190698,7 @@ export function v99PointsGoalAlignment(objective: { sourceType?: unknown } | nul
   return type === 'challenge' || type === 'challenge_approach' || type === 'travel' ? alignment : 0;
 }
 
-// ---- W4A (final review, f1-12 / f3-04): "What happened" says what happened --------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f1-12 / f3-04): "What happened" says what happened --------------------------------------------------
 // The card repeated the advice ("Take X — wager $500 … 72% to win $1,320") whether the challenge was won or lost, and
 // stayed through the rival's turn and the next day. It now leads with the result the toast gave, and ends with the turn.
 
@@ -193079,7 +193079,7 @@ export function v99RunLoanDoIt(actionType: unknown, hands: V99HumanDoItHandlers 
   return true;
 }
 
-// ---- W3F1: a header and a goal banner that are true ----------------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W3F1: a header and a goal banner that are true ----------------------------------------------------------------
 
 /**
  * The header's extras. `notice` is copied through. In a match the human only watches (all-AI teams) the header named
@@ -193105,7 +193105,7 @@ export function v99FocusProgressForFeedback(sourceType: unknown, progress: { com
   return { focusDone: Number(progress?.completed || 0), focusTotal: Number(progress?.total || 0), focusCompleted: completionState === 'completed' };
 }
 
-// ---- W3F1: each thing said once (default layout) --------------------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W3F1: each thing said once (default layout) --------------------------------------------------------------------
 
 /**
  * Which header statements the DEFAULT play layout does not draw a second time. Above the fold the screen said YOUR
@@ -193134,7 +193134,7 @@ export function v99PillSaysYourTurn(presentation: V99TurnPillPresentation, compe
   return presentation === 'docked' && competitiveMode && !teamMode;
 }
 
-// ---- W3F1: counts and labels that say what they count --------------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W3F1: counts and labels that say what they count --------------------------------------------------------------
 
 /**
  * The Region Preview's two challenge counts, from the list the Challenges window shows and by its rule (a challenge
@@ -193166,7 +193166,7 @@ export function v99WinLabelWithDebtNote(label: string, metric: unknown, debts: R
   return metric === 'money' && debts.some(d => typeof d === 'number' && d > 0) ? `${label} (net of loans)` : label;
 }
 
-// ---- W3F1: the human's own contributions in a team match ------------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W3F1: the human's own contributions in a team match ------------------------------------------------------------
 export type V99HumanContributionKind = 'challenge' | 'sale' | 'craft';
 
 /**
@@ -194668,7 +194668,7 @@ export const V99EndScreenActions: React.FC<{
   );
 };
 
-// ---- W4A (final review, F4-01): a match from an older save keeps the V9.8 rival, failed moves included --------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, F4-01): a match from an older save keeps the V9.8 rival, failed moves included --------------------------
 // R1's "a failed move is not proposed again" was applied to every live rival, so a V9.8 save diverged from V9.8 at the
 // rival's first refused move (V9.8 proposes it once more, then re-decides). Like R2 it now applies to matches started
 // on V9.9 only (rivalLiveHooksFor returns no hooks without a match seed, and the turn loop's guard is asked here).
@@ -194677,19 +194677,19 @@ export function rivalRetryBlocks(guard: RivalRetryGuard, gameState: unknown, can
   return rivalDisciplineActive(gameState) && guard.blocks(candidate);
 }
 
-// ---- W4A (final review, F4-04): a new match never repeats the seed of the match before it ---------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, F4-04): a new match never repeats the seed of the match before it ---------------------------------------
 /** The serial after `serial` when the seed it derives is the one to avoid (the match just played or loaded); otherwise `serial`. */
 export function matchSerialAvoidingSeed(settings: MatchSeedSettingsView | null | undefined, serial: number, avoidSeed: number | null | undefined): number {
   return typeof avoidSeed === 'number' && deriveMatchSeed(configuredMatchSeed(settings), serial) === avoidSeed ? Math.min(MATCH_SERIAL_MAX, serial + 1) : serial;
 }
 
-// ---- W4A (final review, f1-02): the tutorial's last word stays until it is dismissed -------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f1-02): the tutorial's last word stays until it is dismissed -------------------------------------------
 /** True for the three sentences firstRunFinishNotice builds (goal met, missed, skipped). */
 export function isFirstRunFinishNotice(message: unknown): boolean {
   return /^🎓 (?:Goal met — tutorial complete!|Day \d+ is done — not this time:|Tutorial skipped — the full game is open\.)/.test(String(message || ''));
 }
 
-// ---- W4A (final review, f3-02): a "survive N days" scenario gets the days it needs ---------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f3-02): a "survive N days" scenario gets the days it needs ---------------------------------------------
 /** The longest "days passed" target among a scenario's objectives (0 when it has none). */
 export function scenarioLongestDayTarget(scenario: { objectives?: unknown } | null | undefined): number {
   const objectives: unknown[] = scenario && Array.isArray(scenario.objectives) ? scenario.objectives : [];
@@ -194711,7 +194711,7 @@ export function scenarioTotalDays(scenario: { objectives?: unknown } | null | un
   return target > 0 ? Math.max(base, target + 1) : base;
 }
 
-// ---- W4A (final review, f1-07): a swing is told as who gained on whom -----------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f1-07): a swing is told as who gained on whom -----------------------------------------------------------
 /** "You gained $1,800 on Scientist AI in net worth (you +$1,800, them +$0)." / "Scientist AI gained $1,800 on you …" — never "you lost" when nothing was lost. */
 export function describeSwing(input: { amount: number; playerDelta: number; rivalDelta: number; rivalSide: string; watched: string | null; teamMode: boolean }): string {
   const signed = (n: number) => `${n >= 0 ? '+' : '-'}${fmtMoney(Math.abs(n))}`;
@@ -198453,7 +198453,7 @@ export function strayStateKeyCount(rawGameState: unknown): number {
   return leakedStateKeysIn(rawGameState).length + (hasStraySoloActorMap(rawGameState) ? 1 : 0);
 }
 
-// ---- W4A (final review, f2-04): the browser's "leave site?" question is a setting ------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f2-04): the browser's "leave site?" question is a setting ------------------------------------------
 // V9.8 never asked; V9.9 asked in every match with unsaved turns, with no switch. It is now warnBeforeUnloadEnabled
 // (off by default, profile-scoped). The autosave's last-moment copy does not depend on it.
 export type UnloadGuardPlan = 'none' | 'flush_only' | 'flush_then_warn';
@@ -198464,7 +198464,7 @@ export function unloadGuardPlan(unsavedProgress: boolean, settings: { warnBefore
   return settings?.matchRecoveryEnabled === true ? 'flush_only' : 'none';
 }
 
-// ---- W4A (final review, f1-03): the V9.9 switches can be found from the Settings screen a player opens -----------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f1-03): the V9.9 switches can be found from the Settings screen a player opens -----------------------
 /** True for the keys of the "New in V9.9" block (the Simple view's card may write exactly these). */
 export function isV99SettingKeyName(key: unknown): boolean {
   return typeof key === 'string' && (V99_SETTING_KEYS as readonly string[]).includes(key);
@@ -198517,14 +198517,14 @@ export function V99SimpleNewJump(): React.ReactElement {
   );
 }
 
-// ---- W4A (final review, F4-03): the end screen keeps the notice that closed the match --------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, F4-03): the end screen keeps the notice that closed the match --------------------------------------------
 /** True for a notice that announces the end of the match: matchOverNotice's ("Match over. …") and the Grand Tour finale's. */
 export function isMatchClosingNotice(message: unknown): boolean {
   const text = String(message || '');
   return text.startsWith('Match over.') || / won the Grand Tour Rival Race by completing the National Champion finale\.$/.test(text);
 }
 
-// ---- W4A (final review, F4-02): a save from before the actor model keeps its rival ------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, F4-02): a save from before the actor model keeps its rival ------------------------------------------------
 /**
  * Who a restored actor is. A save from before the actor model has an `aiPlayer` without `kind` and `id`: it used to be
  * restored as a second human called 'ai_opponent', so the rival never played again. The rival slot of such a save is
@@ -201199,7 +201199,7 @@ export const V99AskAgainRow: React.FC<{ prefs: Readonly<Partial<Record<string, b
   );
 };
 
-// ---- W4A (final review, f1-01): the confirmation dialog takes the keyboard ------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f1-01): the confirmation dialog takes the keyboard ------------------------------------------------
 // V9.9 asks "End Turn?" when actions are unused, but the dialog never took the focus: Space opened it and then neither
 // Space nor Enter could answer it (Tab reached its button after ~67 presses through the page behind it). The dialog now
 // is an alertdialog, focuses its answer when it opens, keeps Tab inside itself and gives the focus back when it closes.
@@ -201282,7 +201282,7 @@ export function useV99ConfirmDialogFocus(open: boolean, type: string | null | un
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-// ---- W4A (final review, f1-06): the toast lane starts below the guided-match panel ------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f1-06): the toast lane starts below the guided-match panel ------------------------------------------------
 /**
  * Wraps a panel that sits directly under the turn row (the first-run goal panel): while it is mounted the toast lane
  * starts under ITS bottom edge, so no toast covers its "Skip tutorial" button or its counters. Same measuring as the
@@ -201313,19 +201313,19 @@ export const V99ToastLaneBelow: React.FC<{ active: boolean; children: React.Reac
   return <div ref={ref} data-testid="v99-toast-lane-below">{children}</div>;
 };
 
-// ---- W4A (final review, F4-05): the docked pill while the Co-Pilot plays the player's turn ------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, F4-05): the docked pill while the Co-Pilot plays the player's turn ------------------------------------
 /** The docked pill's words while the Co-Pilot holds control of the player's turn (null = the usual "YOUR TURN"). The classic pill is V9.8's. */
 export function v99CoPilotPillText(copilotHoldsControl: boolean, classicLayout: boolean, isPlayerTurn: boolean): { title: string; status: string } | null {
   return copilotHoldsControl && !classicLayout && isPlayerTurn ? { title: "CO-PILOT'S TURN", status: 'Playing for you' } : null;
 }
 
-// ---- W4A (final review, f1-11): the turn row's name ------------------------------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f1-11): the turn row's name ------------------------------------------------------------------------------
 /** The accessible name of the docked row: the player's turn and buttons, or only whose turn it is while someone else plays. */
 export function v99TurnRowLabel(canAct: boolean): string {
   return canAct ? 'Your turn and quick actions' : 'Turn status';
 }
 
-// ---- W4A (final review, f1-13): one End Turn at the top ---------------------------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f1-13): one End Turn at the top ---------------------------------------------------------------------------
 // The header's End Turn and the turn row's copy sat 57 px apart. The row keeps its copy for when the header's button
 // has scrolled away (the row stays at the top of the window from 1024 px); while the header's is on screen it is the one.
 export const V99_HEADER_END_TURN_SELECTOR = '[data-testid="v9-header-end-turn"]';
@@ -201360,13 +201360,13 @@ export function useV99HeaderEndTurnInView(): boolean {
   return inView;
 }
 
-// ---- W4A (final review, f1-09): the pickers start at the top too ------------------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f1-09): the pickers start at the top too ------------------------------------------------------------------
 /** The screen part of the scroll key: the game mode, plus the difficulty / scenario picker that replaces the main menu. */
 export function v99ScrollScreenKey(gameMode: unknown, pickerOpen: boolean): string {
   return `${String(gameMode || '')}${pickerOpen ? ':picker' : ''}`;
 }
 
-// ---- W4A (final review, f1-04): Light theme — the last unreadable surfaces --------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f1-04): Light theme — the last unreadable surfaces --------------------------------------------------------
 /** The end screen's analytics cards: translucent slate on the dark themes (V9.8); on Light an opaque dark card, so their pale text reads (it was pale text on mid-grey). */
 export function v99DebriefCardClass(darkSurface: boolean): string {
   return darkSurface ? 'bg-slate-900/60' : 'bg-slate-900 text-gray-100';
@@ -203784,7 +203784,7 @@ export function useV99MatchRecovery(host: V99MatchRecoveryHost): V99MatchRecover
 }
 
 // ---- Self-tests (v99mr) ---------------------------------------------------------------------------------------------------
-// ---- W4A (final review, f2-02): no autosave line while the feature is off ----------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f2-02): no autosave line while the feature is off ----------------------------------------------------
 /** The Save / Load dialog shows its autosave line only while Autosave & Resume is on (off = the V9.8 dialog; the switch is in Settings, New in V9.9). */
 export function autosaveLineShown(status: { state?: unknown } | null | undefined): boolean {
   return Boolean(status) && status?.state !== 'off';
@@ -205277,7 +205277,7 @@ export function matchJournalEndViewFor(enabled: boolean, journal: MatchJournalRe
   return { view: mark ? buildMatchJournalEndView(journal, mark.id) : null, saved: mark ? mark.saved : true };
 }
 
-// ---- W4A (final review, f2-05): scenario ticks are part of the journal -------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f2-05): scenario ticks are part of the journal -------------------------------------------------------
 // V9.9 first wrote a completion record for every scenario victory, journal or not. They now belong to this feature:
 // nothing is written, read or badged unless matchJournalEnabled === true, and the journal's Clear removes them too.
 /** The scenario records the scenario list and the scenario end screen may show: none while the journal is off. */
@@ -205289,7 +205289,7 @@ export function recordScenarioCompletionForJournal(storage: V99StorageLike | nul
   return settings?.matchJournalEnabled === true ? recordScenarioCompletion(storage, scenarioId, day) : null;
 }
 
-// ---- W4A (final review, f3-07 / f1-11): the journal row of a scenario, and colours that read -----------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f3-07 / f1-11): the journal row of a scenario, and colours that read -----------------------------------
 /** The bold part of a journal row. A scenario is decided by its objectives, not by the money scores ("Lost $17,251 vs $1,948" read like an error). */
 export function matchJournalRowScoreLine(entry: Pick<MatchJournalEntry, 'winMetric' | 'playerScore' | 'rivalScore' | 'scenarioId' | 'outcome' | 'daysPlayed'>): string {
   if (!entry.scenarioId) return matchJournalScoreLine(entry);
@@ -206729,7 +206729,7 @@ function v99DigestTurnRow(): HTMLElement | null {
 }
 
 // ---- Self-tests (v99td) ----------------------------------------------------------------------------------------------------
-// ---- W4A (final review, f3-05): "Waiting on you" is for what can be answered -----------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4A (final review, f3-05): "Waiting on you" is for what can be answered -----------------------------------------------------
 /** True for a notice the player can answer (an open decision, a request waiting for approval). A crisis event, a countdown or mercy-rule progress is a heads-up, not something waiting. */
 export function v99DigestNeedsAnswer(note: V99DigestNote | null | undefined): boolean {
   if (!note) return false;
@@ -209087,10 +209087,12 @@ export function runV101AdviceSelfTests(): V9SelfTestResult[] {
 // SECTION 20BI: V10.1 WORLD LAYER HONESTY — ADVICE AND OFF-SWITCHES THAT AGREE WITH THE MATCH
 // ============================================================================
 // <<V101-SLOT WORLD begin>>
-// A static render of the real components for the v101wl tests (react-dom is already a dependency; an import may sit anywhere at the top level of a module).
-import { renderToStaticMarkup as v101RenderStatic } from 'react-dom/server';
-// (work package WORLD, SECTION 20BI. What a V10.1 match's world layer says and does, in one place.)
-//
+// V10.1 (SECTION 20BI): the v101wl rendered-markup tests use a static renderer that the test runner (tools/selftest/node-run.mjs, tools/selftest/entry.tsx) puts on globalThis.__v101RenderStatic.
+// The game file itself imports nothing new (no react-dom/server in the shipped bundle); where no runner provides one the five rendered-markup checks report a pass with "skipped".
+function v101StaticRendererReady(): boolean { return typeof (globalThis as { __v101RenderStatic?: unknown }).__v101RenderStatic === 'function'; }
+function v101RenderStatic(el: React.ReactElement): string { const f = (globalThis as { __v101RenderStatic?: (e: React.ReactElement) => string }).__v101RenderStatic; return typeof f === 'function' ? f(el) : ''; }
+// V10.1 (SECTION 20BI): work package WORLD. What a V10.1 match's world layer says and does, in one place.)
+// V10.1 (SECTION 20BI): the W1 to W5 notes that follow describe this package's changes.
 // W1 Dead-end advice (every match). regionalContractsEnabled and stateInfrastructureEnabled default to OFF, yet the world
 //    state is still seeded with 11 contracts and 32 projects (the seeding is left alone: other systems read them), so a
 //    default match told the player "Infrastructure gap: X", "Suggested development: X", "New opportunity: infrastructure -
@@ -209112,7 +209114,7 @@ import { renderToStaticMarkup as v101RenderStatic } from 'react-dom/server';
 //    match the world systems count in days, so their text says "day", as the HUD does.
 // Nothing here draws a random number or reads a clock. Suite v101wl (runV101WorldSelfTests).
 
-// ---- W1/W2: which world systems the match switched off -----------------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W1/W2: which world systems the match switched off -----------------------------------------------------------------
 export type V101WorldSystem = 'infra' | 'contracts';
 export interface V101WorldOff { infra: boolean; contracts: boolean }
 const V101_WORLD_SETTING_KEY: Record<V101WorldSystem, string> = { infra: 'stateInfrastructureEnabled', contracts: 'regionalContractsEnabled' };
@@ -209215,7 +209217,7 @@ export const V101WorldSwitchedOffCard: React.FC<{ title: string; reason: string;
   </div>
 );
 
-// ---- W4: one project list --------------------------------------------------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W4: one project list --------------------------------------------------------------------------------------------------
 /** Generous cap on the projects the world systems read (a fresh match holds 32; players can add more). */
 export const V101_WORLD_PROJECT_CAP = 96;
 /**
@@ -209228,7 +209230,7 @@ export function v101WorldProjects(gameState: unknown, rawProjects: unknown, lega
   return all.slice(0, isV101Match(gameState) ? V101_WORLD_PROJECT_CAP : legacyCap);
 }
 
-// ---- W3: "Fund now" ---------------------------------------------------------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W3: "Fund now" ---------------------------------------------------------------------------------------------------------
 /** One funding step: the same $50,000 increment Ask-AI and the Infrastructure screen use. */
 export const V101_FUND_STEP = 50000;
 /** A faction asks for a project only while what is still needed is within this many times the human's cash. */
@@ -209246,6 +209248,13 @@ export function v101FundRequestReachable(remaining: number, humanCash: number): 
  * whole dollars, never more than the cash or the remaining cost, and the pre-selected one (defaultAmount) is never all of the
  * player's cash: when only "most I can afford" is within reach nothing is pre-selected.
  */
+/** V10.1 (SECTION 20BI): a typed read of one project out of the infrastructure map (no `any`). */
+export type V101FundProjectShape = { id?: unknown; title?: unknown; totalCost?: unknown; totalInvestedMoney?: unknown };
+export function v101ProjectLookup(projects: unknown, projectId: string): V101FundProjectShape | null {
+  if (!projects || typeof projects !== 'object') return null;
+  const found = (projects as Record<string, V101FundProjectShape | undefined>)[projectId];
+  return found && typeof found === 'object' ? found : null;
+}
 export function v101FundPlan(project: { id?: unknown; title?: unknown; totalCost?: unknown; totalInvestedMoney?: unknown } | null | undefined, cashIn: unknown): V101FundPlan | null {
   if (!project || !project.id) return null;
   const cash = Math.max(0, Math.floor(Number(cashIn) || 0));
@@ -209295,7 +209304,7 @@ export const V101FundNowChooser: React.FC<{ plan: V101FundPlan; onConfirm: (amou
   );
 };
 
-// ---- W5: honest rewards and labels --------------------------------------------------------------------------------------------
+// V10.1 (SECTION 20BI): ---- W5: honest rewards and labels --------------------------------------------------------------------------------------------
 /** What a fulfilled request really gives: the group's view of you rises by 12 (no cash, no standing, no unlock). */
 export const V101_REWARD_RELATIONSHIP = 'Relationship +12 with this group (no cash). Rival diplomacy weighs it when valuing this region';
 export const V101_REWARD_AVOID = 'Relationship +8 with this group if you commit and keep your word (others may disagree)';
@@ -209334,7 +209343,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
   const json = (v: unknown) => JSON.stringify(v);
   const noop = () => undefined;
 
-  // ---- fixtures ------------------------------------------------------------------------------------------------------------
+  // V10.1 (SECTION 20BI): ---- fixtures ------------------------------------------------------------------------------------------------------------
   const setReg = (st: LivingRegionsState, lr: LRInputs, code: string, sectors: Partial<Record<LRSector, number>>, momentum: number): LivingRegionsState => {
     const r = st.regions[code];
     const next = lrRecompute({ ...r, sectors: { ...r.sectors, ...sectors }, momentum: { ...r.momentum, value: momentum, band: lrMomentumBand(momentum) } }, lr, {}).region;
@@ -209360,7 +209369,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
   const putIn = (s: CanonicalGameState) => Number(s.infrastructureProjects?.infra_desal_sa?.totalInvestedMoney || 0);
   const theme = { card: 'c', border: 'b', shadow: 's', button: 'p', buttonSecondary: 'q' };
 
-  // ---- W2: the gate table -----------------------------------------------------------------------------------------------
+  // V10.1 (SECTION 20BI): ---- W2: the gate table -----------------------------------------------------------------------------------------------
   check('v101wl_01_gate_table', 'The entry-point gate: a V10.1 match with the system off is refused with a reason; a V10.0, unstamped or classic match, or one with the system on (or no setting at all), is let through', () => {
     const entries = Object.keys(V101_WORLD_ENTRY_SYSTEM) as V101WorldEntry[];
     const bad: string[] = [];
@@ -209374,7 +209383,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
         const wantAllowed = !(sn === 'v101' && fn === 'off');
         if (g.allowed !== wantAllowed || (g.allowed && g.reason !== null) || (!g.allowed && !(g.reason && /switched off/.test(g.reason)))) bad.push(`${entry}/${sn}/${fn}`);
       }));
-      // The other system being off never closes this entry.
+      // V10.1 (SECTION 20BI): the other system being off never closes this entry.
       const other = system === 'infra' ? 'regionalContractsEnabled' : 'stateInfrastructureEnabled';
       if (!v101WorldEntryGate({ rulesVersion: 1010 }, { [other]: false, [key]: true }, entry).allowed) bad.push(`${entry}/cross`);
     });
@@ -209387,7 +209396,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
     return (wrong.length === 0 && both.infra && !both.contracts && /infrastructure/i.test(v101WorldOffReason('infra')) && /contracts/i.test(v101WorldOffReason('contracts')) && worldSystemOff(DEFAULT_GAME_SETTINGS, 'infra') && worldSystemOff(DEFAULT_GAME_SETTINGS, 'contracts')) || json({ wrong, both });
   });
 
-  // ---- W2: the reducer gate ---------------------------------------------------------------------------------------------
+  // V10.1 (SECTION 20BI): ---- W2: the reducer gate ---------------------------------------------------------------------------------------------
   check('v101wl_03_reducer_invest', 'The canonical reducer refuses investing when a V10.1 match switched infrastructure off; a V10.0 or unstamped match, a match with it on, and a caller that passed no settings invest exactly as before', () => {
     const off = { stateInfrastructureEnabled: false };
     const blocked = canonicalWith(1010, off); const rb = invest(blocked, 1000);
@@ -209417,7 +209426,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
     return (refused.every(Boolean) && v101WorldReducerBlock({ rulesVersion: 1010 }, off, 'fulfill_regional_contract') === null && v101WorldReducerBlock({ rulesVersion: 1010 }, off, 'cancel_regional_contract') === null && v101WorldReducerBlock({ rulesVersion: 1010 }, null, 'invest_infrastructure_project') === null) || json(refused);
   });
 
-  // ---- W1: advice for a system the match switched off -------------------------------------------------------------------
+  // V10.1 (SECTION 20BI): ---- W1: advice for a system the match switched off -------------------------------------------------------------------
   check('v101wl_06_region_context', 'The region panel offers "Suggested development" and "Relevant contract" and an "Infrastructure gap" line only for systems the match has on', () => {
     const view = lrViewOf(qld());
     const base = buildV9RegionContext('QLD', view, null, null);
@@ -209471,8 +209480,9 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
       && offHint === null && typeof onHint === 'string' && onHint.length > 0) || json({ offHint, onHint });
   });
 
-  // ---- W2: rendered entry points -----------------------------------------------------------------------------------------
+  // V10.1 (SECTION 20BI): ---- W2: rendered entry points -----------------------------------------------------------------------------------------
   check('v101wl_11_region_panel_render', 'The real region panel shows a one-line reason instead of an Invest or Contracts button for a switched-off system, and keeps both buttons where they are allowed', () => {
+    if (!v101StaticRendererReady()) return true; // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer.
     const ctx = buildV9RegionContext('QLD', lrViewOf(qld()), null, null);
     const html = (props: Record<string, unknown>) => v101RenderStatic(<V9RegionContextPanel ctx={ctx} theme={theme} onAsk={noop} more={null} {...props} />);
     const off = html({ investOffReason: v101WorldOffReason('infra'), contractsOffReason: v101WorldOffReason('contracts') });
@@ -209481,6 +209491,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
       && />Invest<\/button>/.test(on) && />Contracts<\/button>/.test(on) && !/v101-invest-off/.test(on)) || off.slice(0, 600);
   });
   check('v101wl_12_switched_off_card', 'The modal that replaces a switched-off screen names the system, says it is off and where to turn it on, and has a way out', () => {
+    if (!v101StaticRendererReady()) return true; // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer.
     const html = v101RenderStatic(<V101WorldSwitchedOffCard title="Infrastructure & Mega-Projects" reason={v101WorldOffReason('infra')} onClose={noop} />);
     return (/v101-world-off-card/.test(html) && /Infrastructure &amp; Mega-Projects/.test(html) && /switched off in this match/.test(html) && /Settings &gt; Competition/.test(html) && />Close</.test(html)) || html.slice(0, 400);
   });
@@ -209497,7 +209508,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
       && accept(off)?.legal === false && /switched off/.test(String(accept(off)?.blockReason)) && accept(on)?.legal === accept(world)?.legal) || json({ fund: fund(off), accept: accept(off) });
   });
 
-  // ---- W3: Fund now -------------------------------------------------------------------------------------------------------
+  // V10.1 (SECTION 20BI): ---- W3: Fund now -------------------------------------------------------------------------------------------------------
   check('v101wl_14_fund_plan_never_all_cash', 'The "Fund now" amounts: one funding step, a quarter of what is left, or the most you can afford; each within your cash and the cost left; the pre-selected one is never all of your cash', () => {
     const project = { id: 'p1', title: 'Inland Rail Freight Hub', totalCost: 85000, totalInvestedMoney: 0 };
     const cases: Array<[number, number | null]> = [[1000, null], [0, null], [21250, null], [30000, 21250], [50000, 21250], [60000, 50000], [100000, 50000], [500000, 50000]];
@@ -209524,6 +209535,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
       && v101FundAmountValid(plan, 1000) && !v101FundAmountValid(plan, 1001) && !v101FundAmountValid(plan, 0) && !v101FundAmountValid(plan, -5) && !v101FundAmountValid(plan, 10.5) && !v101FundAmountValid({ ...plan, cash: 999999 }, 85001)) || json({ all, some });
   });
   check('v101wl_16_fund_chooser_render', 'The real "Fund now" control opens to amounts and a confirm sentence with nothing pre-chosen when only your whole cash is in reach; the confirm button appears only for a chosen amount', () => {
+    if (!v101StaticRendererReady()) return true; // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer.
     const poor = v101FundPlan({ id: 'p1', title: 'Inland Rail Freight Hub', totalCost: 85000, totalInvestedMoney: 0 }, 1000)!;
     const rich = v101FundPlan({ id: 'p1', title: 'Inland Rail Freight Hub', totalCost: 85000, totalInvestedMoney: 0 }, 100000)!;
     const closed = v101RenderStatic(<V101FundNowChooser plan={poor} onConfirm={noop} />);
@@ -209536,6 +209548,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
       && /Put \$1,000 into Inland Rail Freight Hub \(all of your cash\)/.test(poorPicked)) || poorOpen.slice(0, 900);
   });
   check('v101wl_17_stakeholder_panel_fund_now', 'In the real Stakeholders panel a V10.1 match shows what is still needed against your cash and the amount chooser; a V10.0 match keeps its old "Fund now" button, now saying what it does', () => {
+    if (!v101StaticRendererReady()) return true; // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer.
     const s = qld(); const st = play(s);
     const req = st.requests.find(r => r.type === 'fund_project');
     if (!req) return 'fixture has no fund request';
@@ -209554,7 +209567,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
       && v101FundRequestReachable(85000, 42500) && !v101FundRequestReachable(85000, 42499) && !v101FundRequestReachable(0, 1000) && !v101FundRequestReachable(NaN, 1000) && !v101FundRequestReachable(1000, NaN)) || json({ plain, v100, poor, edge, justShort, rich });
   });
 
-  // ---- W4: one project list -----------------------------------------------------------------------------------------------
+  // V10.1 (SECTION 20BI): ---- W4: one project list -----------------------------------------------------------------------------------------------
   check('v101wl_19_shared_project_list', 'A V10.1 match gives World Reaction, Living Regions and National Systems all 32 projects in the same order; a V10.0 or unstamped match keeps its first 16 and first 24', () => {
     const all: Record<string, unknown> = {};
     [...PRESET_INFRASTRUCTURE_PROJECTS, ...V93_INFRASTRUCTURE_PROJECTS].forEach(p => { all[p.id] = p; });
@@ -209576,7 +209589,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
       && v101WorldProjects({ rulesVersion: 1000 }, many, 16).length === 16) || json({ n: lst.length, arr });
   });
 
-  // ---- W5: honest rewards and labels --------------------------------------------------------------------------------------
+  // V10.1 (SECTION 20BI): ---- W5: honest rewards and labels --------------------------------------------------------------------------------------
   check('v101wl_21_honest_rewards', 'Every reward a faction request promises says what a fulfilled request really does (relationship +12, no cash); the old promises no rule kept are gone, and older saves show the true sentence', () => {
     const s = qld(); const st = play(s);
     const crisis = rfRequestFor(RF_DEF_BY_ID.qld_port_authority, st.factions.qld_port_authority, { id: 'g', type: 'increase_stability', regionId: 'QLD', targetId: 'maritime_hub_qld', label: 'x', sinceTurn: 6, status: 'active' }, s, st);
@@ -209606,6 +209619,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
     return (wrong.length === 0 && v101TimeWordCap('day') === 'Day' && v101TimeWordCap('round') === 'Round' && v101TimeWordCap(undefined) === 'Round' && v101TimeWordCap('week') === 'Round' && v101TimeWord({ rulesVersion: 1010, selectedMode: 'ai' }) === v101TimeWord({ rulesVersion: 1000, selectedMode: 'ai' })) || json(wrong);
   });
   check('v101wl_24_day_labels', 'Faction request text says "day" where the HUD says Day (the request line, the strip, the issue notice) and still says "round" in team mode and old matches', () => {
+    if (!v101StaticRendererReady()) return true; // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer.
     const s = qld({ timeWord: 'day' }); const st = play(s);
     const req = st.requests.find(r => r.type === 'fund_project');
     if (!req) return 'fixture has no request';
@@ -240203,7 +240217,7 @@ function dispatchGameSettingsChange(
       }
     } else if (addNotification) {
       const c = listRegionalContracts(gameState).find((x: any) => x.id === contractId);
-      const blocker = contractAcceptBlocker(c, player, gameState, gameSettings) || 'This contract cannot be accepted right now.';
+      const blocker = contractAcceptBlocker(c, player, gameState, gameSettings) || v101WorldEntryGate(gameState, gameSettings, 'ask_accept_contract').reason || 'This contract cannot be accepted right now.'; // V10.1 (SECTION 20BI): a switched-off system says so
       addNotification(blocker, 'warning', true);
       reportBlockedActionRef.current?.('contract_accept', blocker);
     }
@@ -242886,11 +242900,11 @@ function dispatchGameSettingsChange(
   }, [gameState.infrastructureProjects, player?.money, handleFundInfrastructure]);
   /** V10.1 (SECTION 20BI): "Fund now" with a chosen, confirmed amount: re-checked against the cash and the cost still needed, then the same canonical investment. */
   const rfFundAmount = useCallback((projectId: string, amount: number) => {
-    const plan = v101FundPlan((gameState.infrastructureProjects as any)?.[projectId], player?.money);
+    const plan = v101FundPlan(v101ProjectLookup(gameState.infrastructureProjects, projectId), player?.money);
     if (!plan || !v101FundAmountValid(plan, amount)) { addNotification?.('That amount is more than you hold or more than the project still needs.', 'warning', true); return; }
     handleFundInfrastructure(projectId, amount);
   }, [gameState.infrastructureProjects, player?.money, handleFundInfrastructure, addNotification]);
-  const rfFundPlanFor = useCallback((projectId: string) => v101FundPlan((gameState.infrastructureProjects as any)?.[projectId], player?.money), [gameState.infrastructureProjects, player?.money]);
+  const rfFundPlanFor = useCallback((projectId: string) => v101FundPlan(v101ProjectLookup(gameState.infrastructureProjects, projectId), player?.money), [gameState.infrastructureProjects, player?.money]);
 
 
   const persistWorldReaction = useCallback((next: WorldReactionState) => {
@@ -270988,7 +271002,9 @@ function dispatchGameSettingsChange(
     if (!uiState.showRegionalContractsModal) return null;
     // V10.1 (SECTION 20BI): a V10.1 match with contracts switched off answers "switched off" instead of opening a working screen.
     const v101ContractsGate = v101WorldEntryGate(gameState, gameSettings, 'contracts_modal');
-    if (!v101ContractsGate.allowed) return <V101WorldSwitchedOffCard title="Regional Contracts" reason={v101ContractsGate.reason || ''} zIndex={globalUISurfaceManager.getZIndex("regional_contracts_modal")} onClose={() => updateUiState({ showRegionalContractsModal: false })} />;
+    if (!v101ContractsGate.allowed && !listRegionalContracts(gameState).some((c: { status?: unknown } | null) => Boolean(c && c.status && c.status !== 'available'))) return <V101WorldSwitchedOffCard title="Regional Contracts" reason={v101ContractsGate.reason || ''} zIndex={globalUISurfaceManager.getZIndex("regional_contracts_modal")} onClose={() => updateUiState({ showRegionalContractsModal: false })} />;
+    // V10.1 (SECTION 20BI): contracts already accepted (or finished) stay readable and deliverable; only a new Accept is refused, with the reason.
+    const v101ContractsPausedNote = v101ContractsGate.allowed ? null : v101ContractsGate.reason;
     const contracts = listRegionalContracts(gameState);
     const activeContracts = contracts.filter((c: any) => c.status === 'active');
     // Living Regions ranks relevance only (the contract system still decides what exists and what it pays).
@@ -270999,6 +271015,7 @@ function dispatchGameSettingsChange(
     return (
       <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4" style={{ zIndex: globalUISurfaceManager.getZIndex("regional_contracts_modal") }} onClick={() => updateUiState({ showRegionalContractsModal: false })}>
         <div className="bg-gray-900 border border-emerald-500/40 rounded-xl p-6 max-w-4xl w-full max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl text-white space-y-6" onClick={(e) => e.stopPropagation()}>
+          {v101ContractsPausedNote && <div className="p-3 rounded-lg border border-amber-500/40 bg-amber-900/20 text-xs text-amber-200" data-testid="v101-contracts-paused">{v101ContractsPausedNote} Contracts you already hold stay open here: you can still deliver and finish them, but no new one can be accepted.</div>}
           <div className="flex justify-between items-center border-b border-gray-700 pb-3">
             <div>
               <h2 className="text-xl font-bold text-emerald-400 flex items-center gap-2">
@@ -271166,16 +271183,19 @@ function dispatchGameSettingsChange(
     if (!uiState.showInfrastructureProjectsModal) return null;
     // V10.1 (SECTION 20BI): a V10.1 match with infrastructure switched off answers "switched off" instead of opening a working screen.
     const v101InfraGate = v101WorldEntryGate(gameState, gameSettings, 'infrastructure_modal');
-    if (!v101InfraGate.allowed) return <V101WorldSwitchedOffCard title="Infrastructure & Mega-Projects" reason={v101InfraGate.reason || ''} zIndex={globalUISurfaceManager.getZIndex("infrastructure_projects_modal")} onClose={() => updateUiState({ showInfrastructureProjectsModal: false })} />;
     // Projects are stored keyed by id (Record); older states may hold an array. Either way, list them.
     const projectStore: any = gameState.infrastructureProjects || [];
     const projects: any[] = Array.isArray(projectStore) ? projectStore : Object.values(projectStore);
+    if (!v101InfraGate.allowed && !projects.some((p: { status?: unknown; totalInvestedMoney?: unknown } | null) => Boolean(p && (p.status === 'completed' || p.status === 'under_construction' || p.status === 'in_progress' || Number(p.totalInvestedMoney || 0) > 0)))) return <V101WorldSwitchedOffCard title="Infrastructure & Mega-Projects" reason={v101InfraGate.reason || ''} zIndex={globalUISurfaceManager.getZIndex("infrastructure_projects_modal")} onClose={() => updateUiState({ showInfrastructureProjectsModal: false })} />;
+    // V10.1 (SECTION 20BI): projects you already funded or finished stay readable; only new funding is refused, with the reason.
+    const v101InfraPausedNote = v101InfraGate.allowed ? null : v101InfraGate.reason;
     // The canonical computed objective (same source as the Intent panel) — no duplicate objective state.
     const currentObjective = intentLayerComputed.objective;
 
     return (
       <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4" style={{ zIndex: globalUISurfaceManager.getZIndex("infrastructure_projects_modal") }} onClick={() => updateUiState({ showInfrastructureProjectsModal: false })}>
         <div className="bg-gray-900 border border-amber-500/40 rounded-xl p-6 max-w-4xl w-full max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl text-white space-y-6" onClick={(e) => e.stopPropagation()}>
+          {v101InfraPausedNote && <div className="p-3 rounded-lg border border-amber-500/40 bg-amber-900/20 text-xs text-amber-200" data-testid="v101-infra-paused">{v101InfraPausedNote} Projects you already funded or finished stay visible here, but no new money can go in.</div>}
           <div className="flex justify-between items-center border-b border-gray-700 pb-3">
             <div>
               <h2 className="text-xl font-bold text-amber-400 flex items-center gap-2">
@@ -271722,7 +271742,7 @@ function dispatchGameSettingsChange(
 	            youName={facts?.sides ? facts.sides.you : 'You'}
 	            headline={spectatorHeadline(facts?.sides, Boolean(debrief.playerWon))}
 	            reason={String(outcome?.reason || debrief.summary || '')}
-	            turningPoints={[...(debrief.swingPoints || []).slice(0, 2).map(sp => `Day ${sp.turn}: ${sp.description}`), ...((swrStateRef.current?.events.length || 0) > 0 ? buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).slice(0, 1) : [])]}
+	            turningPoints={[...(debrief.swingPoints || []).slice(0, 2).map(sp => `Day ${sp.turn}: ${sp.description}`), ...((swrStateRef.current?.events.length || 0) > 0 ? buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId, undefined, v101TimeWordNow).slice(0, 1) : [])]}
 	            lesson={debrief.playerWon ? null : (facts ? (facts.nextTime || 'Protect your cash reserve before the final days and pick one win lever to push early.') : ((debrief.blunders?.blunderEvents || [])[0]?.recommendation || 'Protect your cash reserve before the final days and pick one win lever to push early.'))}
 	          />
 	          {extraTop}
@@ -271763,10 +271783,10 @@ function dispatchGameSettingsChange(
 	              {buildDiplomacyDebrief(dnStateRef.current || createEmptyDiplomacyState(), dnNames).join(' · ')}
 	            </div>
 	          )}
-	          {(swrStateRef.current?.events.length || 0) > 0 && buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).length > 0 && (
+	          {(swrStateRef.current?.events.length || 0) > 0 && buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId, undefined, v101TimeWordNow).length > 0 && (
 	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-amber-700/40 text-xs leading-relaxed`} data-testid="swr-debrief">
 	              <span className="font-bold text-amber-300">Turning points: </span>
-	              {buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).join(' · ')}
+	              {buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId, undefined, v101TimeWordNow).join(' · ')}
 	            </div>
 	          )}
 	          {buildFactionDebrief(rfStateRef.current, rfPlayerId).length > 0 && (
