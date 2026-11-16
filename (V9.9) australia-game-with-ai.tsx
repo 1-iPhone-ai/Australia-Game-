@@ -209450,13 +209450,14 @@ export function runV101ContentSelfTests(): V9SelfTestResult[] {
   check('v101ct_04_points_helper_table', 'challengePointsFor: legacy names pay their table value, authored and follow-up names their definition, a generated challenge its own difficulty once registered, an unknown name its fallback or 1', () => {
     if (!legacyD3 || !authoredD3) return 'fixtures missing';
     const variant = generateChallengeVariant(CHALLENGE_TEMPLATES.find(t => t.difficulty[0] !== t.difficulty[1]) as ChallengeTemplate, 'WA', 4242);
+    const alreadyKnown = getChallengeDefinitionByName(variant.name) !== null; // another suite may have built this board already (the registry is shared)
     const before = challengePointsFor(variant.name);
     registerChallengeDefinitions([variant]);
     const got = {
       legacy: challengePointsFor(legacyD3.name), authored: challengePointsFor(authoredD3.name), followUp: challengePointsFor(CHALLENGE_FOLLOW_UPS[0].name), generated: challengePointsFor(variant.name),
       fallback: challengePointsFor('No Such Challenge', 2), none: challengePointsFor('No Such Challenge'), junk: challengePointsFor(undefined, 'x'), inherited: challengePointsFor('constructor'), bad: challengePointsFor('No Such Challenge', 0)
     };
-    return (got.legacy === 3 && got.authored === 3 && got.followUp === CHALLENGE_FOLLOW_UPS[0].difficulty && got.generated === variant.difficulty && before === 1 && got.fallback === 2 && got.none === 1 && got.junk === 1 && got.inherited === 1 && got.bad === 1) || json({ got, before, variant: variant.difficulty });
+    return (got.legacy === 3 && got.authored === 3 && got.followUp === CHALLENGE_FOLLOW_UPS[0].difficulty && got.generated === variant.difficulty && (alreadyKnown || before === 1) && got.fallback === 2 && got.none === 1 && got.junk === 1 && got.inherited === 1 && got.bad === 1) || json({ got, before, variant: variant.difficulty });
   });
   check('v101ct_05_every_authored_name_pays_its_difficulty', 'Every authored and follow-up challenge name resolves to its own difficulty through the helper (231 points owed by the authored set were credited as 147)', () => {
     const defs = [...EXPANDED_CHALLENGES, ...CHALLENGE_FOLLOW_UPS];
