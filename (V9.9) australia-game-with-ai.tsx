@@ -209212,10 +209212,11 @@ export function v101TeamOnlySummary(settingKey: string | null | undefined, selec
   return isSettingLiveForRival(settingKey, selectedMode) ? null : V101_RIVAL_TEAM_ONLY_NOTE;
 }
 /** The "Team modes only" chip next to a control the solo rival does not read; nothing for any live setting. */
-export const V101RivalLiveChip: React.FC<{ settingKey: string; selectedMode?: string | null }> = ({ settingKey, selectedMode }) => {
+export function v101RivalLiveChipView(settingKey: string, selectedMode?: string | null): React.ReactElement | null {
   if (isSettingLiveForRival(settingKey, selectedMode)) return null;
   return <span className="ml-2 inline-block align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded border border-current opacity-70 whitespace-nowrap" title={V101_RIVAL_TEAM_ONLY_NOTE} data-testid={`v101-team-only-${settingKey}`}>{V101_RIVAL_TEAM_ONLY_LABEL}</span>;
-};
+}
+export const V101RivalLiveChip: React.FC<{ settingKey: string; selectedMode?: string | null }> = ({ settingKey, selectedMode }) => v101RivalLiveChipView(settingKey, selectedMode);
 
 // ---- RV3: the recap's saved shape ------------------------------------------------------------------------------------------
 /** Turns the recap keeps (the newest), moves it keeps per turn and the longest line of text it keeps. */
@@ -209463,8 +209464,618 @@ export function V101RivalRecapCardView({ turn, rivalName, theme, onDismiss }: V1
 /** The card as the play screen mounts it. (It keeps no state of its own: the screen decides when it is shown.) */
 export const V101RivalRecapCard: React.FC<V101RivalRecapCardProps> = props => <V101RivalRecapCardView {...props} />;
 
+// ---- RV4: a headless match for the balance check (lab tool, never called by the game) ----------------------------------------
+export interface V101ParityMatchConfig {
+  seed: number;
+  /** 'v100' = the V10.0 rival's prices and actions; 'v101' = this section's. */
+  rules: 'v100' | 'v101';
+  difficulty: V100RivalDifficulty;
+  /** Win condition (default 'money'). */
+  winCondition?: WinMetric;
+  /** Days to play (default 29 = a 30-day match). */
+  days?: number;
+  /** Rival Recap on: records the turn exactly as the game does (it must change nothing). */
+  recap?: boolean;
+  /** Weather / season changes every day (default true); false = calm autumn throughout. */
+  weatherVaries?: boolean;
+}
+export interface V101ParityMatchResult {
+  rivalMoney: number; rivalNetWorth: number; playerMoney: number; playerNetWorth: number;
+  /** Every decision the rival's chooser returned, in order ("day:type:target"). */
+  rivalTrace: string[];
+  /** How many values the rival's chooser drew from its stream in total. */
+  rivalDraws: number;
+  /** Commits that cost an action / commits that were free, over the whole match. */
+  rivalPaidActions: number; rivalFreeActions: number;
+  recap: V101RivalRecapState | null;
+}
+
+/**
+ * Plays one match between a fixed simple player (the V9.8 chooser at Medium, paying the real fares, selling free) and the
+ * live rival (the REAL chooser with the REAL live hooks and the real turn-budget functions the turn loop calls), with a small
+ * stand-in for the game's executor: it applies each action's money and stock the way executeAiAction does (including the action cost). Used by
+ * the self-tests and by the balance report (V10.0 against V10.1 rules); deterministic in its seed; draws nothing from the
+ * game's own RNG streams.
+ */
+export function runV101RivalParityMatch(cfg: V101ParityMatchConfig): V101ParityMatchResult {
+  const days = Math.max(1, Math.min(60, Math.floor(cfg.days ?? 29)));
+  const weights = createSeedGenome().weights;
+  const settings: GameSettingsState = { ...createDefaultGameSettings(), winCondition: cfg.winCondition || 'money', totalDays: days + 1, aiActionsPerDay: 3, playerActionsPerDay: 3 };
+  const world = createSeededRng(cfg.seed * 7919 + 13);
+  const rivalRng = createSeededRng(cfg.seed * 104729 + 7);
+  const playerRng = createSeededRng(cfg.seed * 1299709 + 3);
+  let rivalDraws = 0;
+  const countedRng: SeededRng = { next: () => { rivalDraws += 1; return rivalRng.next(); } };
+  const rulesStamp = cfg.rules === 'v101' ? V101_RULES_VERSION : V100_RULES_VERSION;
+  const resources = Array.from(new Set(Object.values(REGIONAL_RESOURCES).flat() as string[]));
+  const basePrice: Record<string, number> = {};
+  resources.forEach(r => { basePrice[r] = v99ResourceBasePrice(r, 100); });
+  const priceOf = (gs: Record<string, unknown>, r: string): number => { const p = (gs.resourcePrices as Record<string, number>)[r]; return Number.isFinite(p) && p > 0 ? p : v99ResourceBasePrice(r, 100); };
+  const weathers = ['Sunny', 'Cloudy', 'Rainy', 'Stormy'];
+  const seasons = ['Summer', 'Autumn', 'Winter', 'Spring'];
+  type Sim = Record<string, unknown>;
+  const mkActor = (id: string, character: typeof CHARACTERS[number], kind: ActorKind, region: string): Sim => ({ ...createActorSnapshot({ id, name: id === 'ai' ? 'Rival' : 'You', teamId: id === 'ai' ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID, kind, role: 'leader', character, currentRegion: region }), money: 1000, inventory: [] as string[], completedThisSeason: [] as string[], challengesCompleted: [] as string[], consecutiveWins: 0, investments: [] as string[], equipment: [] as string[] });
+  let player = mkActor('player', CHARACTERS[0], 'human', 'NSW');
+  let rival = mkActor('ai', CHARACTERS[1], 'ai', 'QLD');
+  const gs: Sim = {
+    ...(JSON.parse(JSON.stringify(initialGameState)) as Sim), gameMode: 'game', selectedMode: 'ai', turnOrder: ['player', 'ai'], aiDifficulty: cfg.difficulty, regionDeposits: {},
+    matchSeed: cfg.seed, rulesVersion: rulesStamp, day: 1, turnCounter: 1, currentTurn: 'player', weather: 'Sunny', season: 'Autumn', resourcePrices: { ...basePrice }
+  };
+  const mutate = (actor: Sim, patch: Sim): Sim => ({ ...actor, ...patch });
+  const stockWorth = (a: Sim): number => ((a.inventory as string[]) || []).reduce((sum, r) => sum + priceOf(gs, r), 0);
+  const trace: string[] = [];
+  let paid = 0, free = 0;
+  const v101 = cfg.rules === 'v101';
+  /** Applies one action to `side` the way the game's executor does; returns whether it committed and whether it cost no action. */
+  const run = (side: 'player' | 'ai', action: AIAction & { score?: number }): { ok: boolean; free: boolean } => {
+    const actor = side === 'ai' ? rival : player;
+    const rng = side === 'ai' ? rivalRng : playerRng;
+    const data = (v99IsRecord(action.data) ? action.data : {}) as Record<string, unknown>;
+    const money = Number(actor.money) || 0;
+    const inv = [...((actor.inventory as string[]) || [])];
+    const set = (patch: Sim) => { if (side === 'ai') rival = mutate(rival, patch); else player = mutate(player, patch); };
+    let ok = true;
+    let costsAction = true;
+    switch (action.type) {
+      case 'challenge': {
+        const ch = data.challenge as { name: string; reward: number };
+        const wager = Number(data.wager) || 0;
+        if (!ch || money < wager) { ok = false; break; }
+        const win = rng.next() < (Number(data.successChance) || 0.5);
+        const streak = side === 'ai' && cfg.rules === 'v101' ? v100StreakRewardShare(actor.consecutiveWins, false) : 0;
+        set(win
+          ? { money: money + (streak > 0 ? v100RivalRewardWithStreak(Math.floor(wager * ch.reward), streak) : Math.floor(wager * ch.reward)), challengesCompleted: [...(actor.challengesCompleted as string[]), ch.name], completedThisSeason: [...(actor.completedThisSeason as string[]), ch.name], consecutiveWins: (Number(actor.consecutiveWins) || 0) + 1 }
+          : { money: money - wager, consecutiveWins: 0 });
+        break;
+      }
+      case 'travel': {
+        const to = String(data.region);
+        const fare = side === 'ai' && !v101 ? Number(data.cost) : v101RivalTravelCost(String(actor.currentRegion), to, actor, gs, settings);
+        if (!REGIONS[to] || money < fare) { ok = false; break; }
+        const here = REGIONAL_RESOURCES[to] || [];
+        const found = here.length ? here[Math.floor(rng.next() * here.length)] : null;
+        if (found && inv.length < MAX_INVENTORY) inv.push(found);
+        set({ money: money - fare, currentRegion: to, visitedRegions: Array.from(new Set([...(actor.visitedRegions as string[]), to])), inventory: inv, completedThisSeason: [] });
+        break;
+      }
+      case 'sell': {
+        const r = String(data.resource);
+        const at = inv.indexOf(r);
+        if (at < 0) { ok = false; break; }
+        inv.splice(at, 1);
+        set({ money: money + Math.floor(priceOf(gs, r)), inventory: inv });
+        costsAction = side === 'ai' ? (v101 ? v101RivalApCost('sell', actor, settings) > 0 : true) : false; // the player's sale is free; the V10.0 rival's costs an action
+        break;
+      }
+      case 'craft': {
+        const recipe = data.recipe as { inputs: Record<string, number>; output: string } | undefined;
+        if (!recipe) { ok = false; break; }
+        for (const [res, n] of Object.entries(recipe.inputs)) for (let i = 0; i < Number(n); i += 1) { const at = inv.indexOf(res); if (at < 0) { ok = false; break; } inv.splice(at, 1); }
+        if (!ok) break;
+        if (rng.next() < 0.9) inv.push(recipe.output);
+        set({ inventory: inv });
+        break;
+      }
+      case 'invest': {
+        const inv2 = REGIONAL_INVESTMENTS[String(data.region)];
+        if (!inv2 || money < inv2.cost) { ok = false; break; }
+        set({ money: money - inv2.cost, investments: [...(actor.investments as string[]), String(data.region)] });
+        break;
+      }
+      case 'buy_equipment': {
+        const item = SHOP_ITEMS.find(i => i.id === data.itemId);
+        if (!item || money < item.cost) { ok = false; break; }
+        set({ money: money - item.cost, equipment: [...(actor.equipment as string[]), item.id] });
+        break;
+      }
+      case 'special_ability': { set({ specialAbilityUses: Math.max(0, (Number(actor.specialAbilityUses) || 0) - 1) }); break; }
+      default: ok = false;
+    }
+    return { ok, free: ok && !costsAction };
+  };
+  const stateFor = () => canonicalStateFromLiveRuntime({ gameState: gs, player, aiPlayer: rival, gameSettings: settings, actorsById: { player, ai: rival } });
+  const playerFare = (from: string, to: string, actor: unknown): number => v101RivalTravelCost(from, to, actor, gs, settings);
+  const rivalAction = (decision: AIAction | null): string => (decision ? `${gs.day}:${decision.type}:${String(v99IsRecord(decision.data) ? (decision.data.region || decision.data.resource || (v99IsRecord(decision.data.challenge) ? decision.data.challenge.name : '') || decision.data.itemId || '') : '')}` : `${gs.day}:none`);
+  let recapState: V101RivalRecapState | null = null;
+  for (let day = 1; day <= days; day += 1) {
+    gs.day = day;
+    if (cfg.weatherVaries !== false) { gs.weather = weathers[Math.floor(world.next() * weathers.length)]; gs.season = seasons[Math.floor((day - 1) / 8) % seasons.length]; }
+    // --- the player's turn: three actions (sales are free), the V9.8 chooser at Medium
+    gs.currentTurn = 'player'; gs.turnCounter = (Number(gs.turnCounter) || 0) + 1;
+    let used = 0;
+    for (let tries = 0; tries < 24 && used < 3; tries += 1) {
+      const pick = chooseAction(stateFor(), 'player', weights, playerRng, { difficultyKey: 'medium', settings, live: { travelCost: playerFare } });
+      if (!pick || pick.type === 'think') { used += 1; continue; }
+      const res = run('player', pick);
+      if (res.ok && !res.free) used += 1; else if (!res.ok) used += 1;
+    }
+    // --- the rival's turn: the real loop, the real chooser and hooks
+    gs.currentTurn = 'ai'; gs.turnCounter = (Number(gs.turnCounter) || 0) + 1;
+    const rt = createSoloAiTurnRuntime(`sim:${cfg.seed}:${day}`, 3, 0);
+    const session = startV101RecapSession(cfg.recap === true, day, Number(rival.money) || 0, Number(player.money) || 0);
+    let lastFree = false;
+    const previewFor = (isRejected: (c: AIAction & { score: number }) => boolean) => previewRivalCandidates({ gameState: gs, player, aiPlayer: rival, settings, weights, specialAbilityActive: false, isRejected }, true);
+    const guard = createRivalRetryGuard();
+    const decide = (isRejected: (action: unknown) => boolean): AIAction | null => {
+      const rejects = (c: AIAction & { score: number }) => isRejected(c) || rivalRetryBlocks(guard, gs, c);
+      const live = rivalLiveHooksFor({ options: { isRejected: rejects, paidSlot: rt.successfulActions - (rt.freeCommits || 0) >= rt.baseBudget }, aiState: rival, gameState: gs, playerState: player, settings, difficultyKey: cfg.difficulty });
+      const picked = chooseAction(stateFor(), 'ai', weights, countedRng, { difficultyKey: cfg.difficulty, settings, live });
+      trace.push(rivalAction(picked));
+      if (session) { try { v101RecapNoteDecision(session, picked, previewFor(rejects), rival); } catch { /* the recap never changes a decision */ } }
+      return picked;
+    };
+    // The turn loop's own bookkeeping (runSoloAiTurnLoop calls the same functions), without its waits.
+    for (let step = 0; step < 120; step += 1) {
+      if (soloAiStopReason(rt)) break;
+      const decision = decide(a => soloAiIsRejected(rt, a));
+      if (!decision || decision.type === 'end_turn') break;
+      soloAiRecordDecision(rt, decision, step);
+      if (soloAiIsRejected(rt, decision)) { soloAiRecordFailure(rt, decision, 'rejected_this_turn', step); continue; }
+      const res = run('ai', decision);
+      guard.note(decision, res.ok);
+      if (!res.ok) { soloAiRecordFailure(rt, decision, 'not_committed', step); continue; }
+      lastFree = res.free;
+      if (res.free) free += 1; else paid += 1;
+      if (session) v101RecapNoteCommit(session, decision, rival);
+      soloAiRecordCommit(rt, decision, soloAiProgressFingerprint(rival, gs), step, v101 && lastFree);
+    }
+    if (session) { const done = v101RecapFinish(session, Number(rival.money) || 0, Number(player.money) || 0); recapState = v101RecapAppend(recapState, done.turn); }
+    // --- the day ends: income from investments, prices drift, the season's list resets for both
+    [player, rival] = [player, rival].map(a => mutate(a, { money: (Number(a.money) || 0) + ((a.investments as string[]) || []).reduce((sum, code) => sum + (Number(REGIONAL_INVESTMENTS[code]?.dailyIncome) || 20), 0), actionsUsedThisTurn: 0, usedFreeChallengeThisTurn: false }));
+    const next: Record<string, number> = {};
+    resources.forEach(r => { const drift = 0.9 + world.next() * 0.2; next[r] = Math.max(basePrice[r] * 0.6, Math.min(basePrice[r] * 1.6, ((gs.resourcePrices as Record<string, number>)[r] || basePrice[r]) * drift)); });
+    gs.resourcePrices = next;
+  }
+  return {
+    rivalMoney: Number(rival.money) || 0, rivalNetWorth: (Number(rival.money) || 0) + stockWorth(rival), playerMoney: Number(player.money) || 0, playerNetWorth: (Number(player.money) || 0) + stockWorth(player),
+    rivalTrace: trace, rivalDraws, rivalPaidActions: paid, rivalFreeActions: free, recap: recapState
+  };
+}
+
+// ---- Self-tests (v101rv) -----------------------------------------------------------------------------------------------------
 export function runV101RivalSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  type Candidate = AIAction & { score: number };
+  const difficulties: V100RivalDifficulty[] = ['easy', 'medium', 'hard', 'expert'];
+  const weights = createSeedGenome().weights;
+  const dataOf = (c: { data?: unknown } | null | undefined): Record<string, unknown> => (c && v99IsRecord(c.data) ? c.data : {});
+  const memoryStorage = () => createV99MemoryStorage();
+
+  interface BundleOptions { rules?: number | null; money?: number; region?: string; day?: number; totalDays?: number; winCondition?: WinMetric; difficulty?: V100RivalDifficulty; weather?: string; season?: string; inventory?: string[]; mode?: string; settings?: Partial<GameSettingsState>; character?: number }
+  /** A live match as the rival's decision reads it. `rules` null = a match from before V10.0 (no stamp); the match always carries a seed (the V9.9 rival's rules). */
+  const bundle = (o: BundleOptions = {}) => {
+    const settings: GameSettingsState = { ...createDefaultGameSettings(), winCondition: o.winCondition || 'money', totalDays: o.totalDays ?? 30, ...(o.settings || {}) };
+    const player: Record<string, unknown> = { ...createActorSnapshot({ id: 'player', name: 'You', teamId: TEAM_PLAYER_ID, kind: 'human', role: 'leader', character: CHARACTERS[0] }), money: 1000 };
+    const rival: Record<string, unknown> = { ...createActorSnapshot({ id: 'ai', name: 'Rival', teamId: TEAM_OPPONENT_ID, kind: 'ai', role: 'leader', character: CHARACTERS[o.character ?? 1], currentRegion: o.region || 'QLD' }), money: o.money ?? 3000, inventory: [...(o.inventory || [])], completedThisSeason: [] };
+    const gameState: Record<string, unknown> = {
+      ...(JSON.parse(JSON.stringify(initialGameState)) as Record<string, unknown>),
+      gameMode: 'game', selectedMode: o.mode || 'ai', currentTurn: 'ai', currentActorId: 'ai', turnOrder: ['player', 'ai'], turnCounter: 3, day: o.day ?? 2, aiDifficulty: o.difficulty || 'expert', regionDeposits: {},
+      weather: o.weather || 'Sunny', season: o.season || 'Autumn', matchSeed: 48213,
+      ...(o.rules === null ? {} : { rulesVersion: o.rules ?? V101_RULES_VERSION })
+    };
+    return { settings, player, rival, gameState, difficulty: o.difficulty || ('expert' as V100RivalDifficulty) };
+  };
+  type Bundle = ReturnType<typeof bundle>;
+  const preview = (b: Bundle, ranked = true): Candidate[] => previewRivalCandidates({ gameState: b.gameState, player: b.player, aiPlayer: b.rival, settings: b.settings, weights, specialAbilityActive: false }, ranked);
+  const canonical = (b: Bundle) => canonicalStateFromLiveRuntime({ gameState: b.gameState, player: b.player, aiPlayer: b.rival, gameSettings: b.settings, actorsById: { player: b.player, ai: b.rival } });
+  const hooksFor = (b: Bundle, options?: RivalDecisionOptions) => rivalLiveHooksFor({ options, aiState: b.rival, gameState: b.gameState, playerState: b.player, settings: b.settings, difficultyKey: b.difficulty });
+  const countingRng = (seed: number) => { const inner = createSeededRng(seed); const box = { draws: 0, rng: { next: () => { box.draws += 1; return inner.next(); } } as SeededRng }; return box; };
+  const choose = (b: Bundle, seed: number, live?: ClassicAiLiveHooks | undefined) => { const c = countingRng(seed); const pick = chooseAction(canonical(b), 'ai', weights, c.rng, { difficultyKey: b.difficulty, settings: b.settings, live: live === undefined ? hooksFor(b) : live }); return { pick, draws: c.draws }; };
+  const rivalActor = { id: 'ai', character: { name: 'Tourist' }, masteryUnlocks: [] as string[], equipment: [] as string[], debuffs: [] as unknown[] };
+
+  check('v101rv_01_rules_gate', 'The V10.1 rival rules apply to a match stamped 1010 or more and never to a V10.0 match, an unstamped one, or one started with the classic rules switch', () => {
+    const table: Array<[unknown, { classicRulesV100?: unknown } | null | undefined, boolean]> = [
+      [{ rulesVersion: 1010 }, {}, true], [{ rulesVersion: 1200 }, undefined, true], [{ rulesVersion: 1010 }, { classicRulesV100: true }, false], [{ rulesVersion: 1000 }, {}, false],
+      [{}, {}, false], [null, {}, false], [{ rulesVersion: '1010' }, {}, false], [{ rulesVersion: 1009 }, {}, false]
+    ];
+    const wrong = table.filter(([gs, settings, want]) => v101RivalRulesActive(gs, settings) !== want).length;
+    return wrong === 0 || `${wrong} rows wrong`;
+  });
+
+  check('v101rv_02_fare_is_the_players_fare', "In a V10.1 match a journey costs the rival what computeTravelCostCore charges the player: QLD to TAS in a stormy winter is $1,248 (the V10.0 rival paid $350), a calm adjacent hop $200, and mastery, character, events and gear count", () => {
+    const calm = { weather: 'Sunny', season: 'Autumn', activeEvents: [] as unknown[] };
+    const storm = { weather: 'Stormy', season: 'Winter', activeEvents: [] as unknown[] };
+    const stormTas = v101RivalTravelCost('QLD', 'TAS', rivalActor, storm, {});
+    const calmWa = v101RivalTravelCost('QLD', 'WA', rivalActor, calm, {});
+    const adjacent = v101RivalTravelCost('QLD', 'NSW', rivalActor, calm, {});
+    const direct = computeTravelCostCore({ from: 'QLD', to: 'TAS', characterName: 'Tourist', mastery: [], weatherMod: 1.3, seasonMod: 1.2, eventMod: 1, standingMult: null, equipmentDiscount: 0, underdog: false, leaderTax: false });
+    const negotiator = v101RivalTravelCost('QLD', 'WA', { ...rivalActor, masteryUnlocks: ['Negotiator'] }, calm, {});
+    const explorer = v101RivalTravelCost('QLD', 'WA', { ...rivalActor, character: { name: 'Explorer' } }, calm, {});
+    const event = v101RivalTravelCost('QLD', 'WA', rivalActor, { ...calm, activeEvents: [{ region: 'WA', effect: { travelCost: 1.5 } }, { region: 'VIC', effect: { travelCost: 3 } }] }, {});
+    const gearOn = v101RivalTravelCost('QLD', 'WA', { ...rivalActor, equipment: ['travel_pass'] }, calm, { equipmentShopEnabled: true });
+    const gearOff = v101RivalTravelCost('QLD', 'WA', { ...rivalActor, equipment: ['travel_pass'] }, calm, { equipmentShopEnabled: false });
+    const unknownWorld = v101RivalTravelCost('QLD', 'WA', rivalActor, null, null);
+    return (stormTas === 1248 && stormTas === direct && calmWa === 500 && adjacent === 200 && negotiator === 400 && explorer === 375 && event === 750 && gearOff === 500 && gearOn <= 500 && unknownWorld === 500)
+      || json({ stormTas, direct, calmWa, adjacent, negotiator, explorer, event, gearOn, gearOff, unknownWorld });
+  });
+
+  check('v101rv_03_chooser_prices_journeys_by_the_fare', "The V10.1 rival's journeys are listed at the player's fare (stormy winter: a neighbour $312, a calm-day long haul $500); a V10.0-stamped match, an unstamped one and a classic-rules one still list the flat $200 / $350 (regression guard)", () => {
+    const costs = (b: Bundle) => { const m: Record<string, number> = {}; preview(b).filter(c => c.type === 'travel').forEach(c => { m[String(dataOf(c).region)] = Number(dataOf(c).cost); }); return m; };
+    const stormy = { weather: 'Stormy', season: 'Winter', money: 5000 };
+    const calm = { weather: 'Sunny', season: 'Autumn', money: 5000 };
+    const v101 = costs(bundle(stormy)), v100 = costs(bundle({ rules: V100_RULES_VERSION, ...stormy })), none = costs(bundle({ rules: null, ...stormy })), classic = costs(bundle({ settings: { classicRulesV100: true }, ...stormy }));
+    const calm101 = costs(bundle(calm));
+    const flat = (m: Record<string, number>) => Object.keys(m).length >= 4 && Object.keys(m).every(code => m[code] === 200 || m[code] === 350);
+    const probe = bundle(stormy);
+    const priced = Object.keys(v101).every(code => v101[code] === v101RivalTravelCost('QLD', code, probe.rival, probe.gameState, probe.settings));
+    const longHaul = Object.keys(calm101).filter(code => !ADJACENT_REGIONS.QLD.includes(code));
+    return (v101.NSW === 312 && priced && longHaul.length > 0 && longHaul.every(code => calm101[code] === (code === 'TAS' ? 800 : 500)) && flat(v100) && flat(none) && flat(classic) && json(v100) === json(none)) || json({ v101, calm101, v100, none, classic });
+  });
+
+  check('v101rv_04_a_fare_the_rival_cannot_pay_is_not_offered', 'With $900 in a stormy winter the V10.1 rival is offered no journey to Tasmania ($1,248), while the V10.0 rival is (at $350)', () => {
+    const tas = (b: Bundle) => preview(b).some(c => c.type === 'travel' && dataOf(c).region === 'TAS');
+    return (!tas(bundle({ weather: 'Stormy', season: 'Winter', money: 900 })) && tas(bundle({ rules: V100_RULES_VERSION, weather: 'Stormy', season: 'Winter', money: 900 }))) || 'wrong';
+  });
+
+  check('v101rv_05_every_journey_the_rules_add_uses_the_fare', "On a regions goal (where the rules favour and add journeys) every journey in the V10.1 rival's list, added ones included, is priced exactly as the player would be", () => {
+    const b = bundle({ weather: 'Rainy', season: 'Summer', money: 6000, winCondition: 'regions' });
+    const journeys = preview(b).filter(c => c.type === 'travel');
+    const bad = journeys.filter(c => Number(dataOf(c).cost) !== v101RivalTravelCost('QLD', String(dataOf(c).region), b.rival, b.gameState, b.settings));
+    return (journeys.length >= 2 && bad.length === 0) || json({ n: journeys.length, bad: bad.map(c => [dataOf(c).region, dataOf(c).cost]) });
+  });
+
+  check('v101rv_06_best_move_rate_is_the_figure_on_the_screen', 'In a V10.1 match "Decision 40 / 70 / 90 / 95%" is how often the rival plays its best move (not 28 / 59.5 / 85.5 / 93%); the V10.0 pick still plays the stacked rates', () => {
+    const printed: Record<V100RivalDifficulty, number> = { easy: 0.4, medium: 0.7, hard: 0.9, expert: 0.95 };
+    const trials = 30000;
+    const bad: string[] = [];
+    difficulties.forEach(d => {
+      const mistakeChance = Number(AI_DIFFICULTY_PROFILES[d].mistakeChance) || 0;
+      const rate = v101RivalBestMoveRate(d, mistakeChance);
+      if (Math.abs(rate * (1 - mistakeChance) - printed[d]) > 1e-9 || v101RivalBestMoveRate(d, 0) !== printed[d] || rate > 1) bad.push(`${d}: rate ${rate}`);
+      const play = (v101: boolean): number => {
+        const rng = createSeededRng(17 + difficulties.indexOf(d)); const mistakes = createSeededRng(99);
+        let best = 0;
+        for (let i = 0; i < trials; i += 1) { const slip = mistakes.next() < mistakeChance; if (pickV100RivalDecision(['best', 'second', 'third', 'fourth'], rng, d, slip, v101 ? { mistakeChance } : undefined) === 'best') best += 1; }
+        return best / trials;
+      };
+      const was = play(false), now = play(true);
+      if (Math.abs(now - printed[d]) > 0.012) bad.push(`${d}: V10.1 plays its best ${now.toFixed(3)}, screen says ${printed[d]}`);
+      if (Math.abs(was - printed[d] * (1 - mistakeChance)) > 0.012) bad.push(`${d}: V10.0 pick changed (${was.toFixed(3)})`);
+    });
+    return bad.length === 0 || bad.join('; ');
+  });
+
+  check('v101rv_07_the_pick_draws_the_same_number_every_path', 'A V10.1 pick draws exactly two values whatever the outcome (Easy used to draw one for its best move and two for a lesser one); the V10.0 pick still draws one or two', () => {
+    const draws = (rolls: number[], d: V100RivalDifficulty, mistake: boolean, v101: boolean): number => {
+      let n = 0;
+      pickV100RivalDecision(['a', 'b', 'c', 'd'], { next: () => rolls[Math.min(n++, rolls.length - 1)] }, d, mistake, v101 ? { mistakeChance: 0.1 } : undefined);
+      return n;
+    };
+    const now = new Set<number>(), was = new Set<number>();
+    difficulties.forEach(d => [[0.01, 0.9], [0.99, 0.01], [0.5, 0.5]].forEach(rolls => [false, true].forEach(mistake => { now.add(draws(rolls, d, mistake, true)); was.add(draws(rolls, d, mistake, false)); })));
+    const lone = (() => { let n = 0; pickV100RivalDecision(['only'], { next: () => { n += 1; return 0.5; } }, 'easy', true, { mistakeChance: 0 }); return n; })();
+    const none = (() => { let n = 0; const out = pickV100RivalDecision([], { next: () => { n += 1; return 0.5; } }, 'easy', false, { mistakeChance: 0 }); return out === null && n === 0; })();
+    return (json([...now]) === json([2]) && was.has(1) && was.has(2) && lone === 2 && none) || json({ now: [...now], was: [...was], lone, none });
+  });
+
+  check('v101rv_08_a_sale_costs_no_action', "A sale costs the V10.1 rival what it costs the player (no action), a Resource Market purchase at least one, every other move one; a separate AI cost table is respected", () => {
+    const settings = createDefaultGameSettings();
+    const custom: GameSettingsState = { ...settings, actionPointConsumptionSettings: { ...settings.actionPointConsumptionSettings, costScope: 'separate', actionCosts: { sell_resources: 0 }, aiActionCosts: { sell_resources: 1 } } as GameSettingsState['actionPointConsumptionSettings'] };
+    const off: GameSettingsState = { ...settings, actionLimitsEnabled: false };
+    const costs = [v101RivalApCost('sell', rivalActor, settings), v101RivalApCost('buy_market', rivalActor, settings), v101RivalApCost('travel', rivalActor, settings), v101RivalApCost('challenge', rivalActor, settings), v101RivalApCost('craft', rivalActor, settings)];
+    return (json(costs) === json([0, 1, 1, 1, 1]) && v101RivalApCost('sell', rivalActor, custom) === 1 && v101RivalApCost('sell', rivalActor, off) === 0) || json({ costs, custom: v101RivalApCost('sell', rivalActor, custom), off: v101RivalApCost('sell', rivalActor, off) });
+  });
+
+  /** The turn loop's own bookkeeping with the real runtime functions: `free` says which commits cost no action. */
+  const playBudget = (budget: number, script: Array<{ type: string; free: boolean }>, passFree: boolean) => {
+    const rt = createSoloAiTurnRuntime('rv', budget, 0);
+    let at = 0, reason: string | null = null;
+    for (let i = 0; i < 80 && at < script.length; i += 1) {
+      reason = soloAiStopReason(rt);
+      if (reason) break;
+      const step = script[at++];
+      const action = { type: step.type, description: step.type, data: { n: at } };
+      soloAiRecordDecision(rt, action, i);
+      if (passFree) soloAiRecordCommit(rt, action, `fp${at}`, i, step.free); else soloAiRecordCommit(rt, action, `fp${at}`, i);
+    }
+    if (!reason) reason = soloAiStopReason(rt);
+    return { rt, reason };
+  };
+  check('v101rv_09_free_sales_do_not_use_up_the_day', "Five free sales and three paid actions fit a 3-action day in a V10.1 match: the day ends only when the third PAID action is done", () => {
+    const script = [...Array.from({ length: 5 }, () => ({ type: 'sell', free: true })), { type: 'challenge', free: false }, { type: 'travel', free: false }, { type: 'challenge', free: false }, { type: 'challenge', free: false }];
+    const { rt, reason } = playBudget(3, script, true);
+    return (rt.successfulActions === 8 && rt.freeCommits === 5 && reason === 'budget_exhausted') || json({ done: rt.successfulActions, free: rt.freeCommits, reason });
+  });
+
+  check('v101rv_10_the_old_budget_counts_every_commit', 'Without the free flag (every match before V10.1) the day still ends after the third commit of any kind, and the runtime carries no extra field', () => {
+    const script = [...Array.from({ length: 5 }, () => ({ type: 'sell', free: true })), { type: 'challenge', free: false }];
+    const { rt, reason } = playBudget(3, script, false);
+    const fresh = createSoloAiTurnRuntime('rv', 3, 0);
+    return (rt.successfulActions === 3 && reason === 'budget_exhausted' && !('freeCommits' in rt) && !('freeCommits' in fresh)) || json({ done: rt.successfulActions, reason, keys: Object.keys(rt).filter(k => k === 'freeCommits') });
+  });
+
+  check('v101rv_11_final_day_sells_everything_in_a_money_match', "On the final day of a Most Money match the V10.1 rival is offered a sale of every item it holds (cheap stock too), first and best price first, and no journey, craft, purchase or investment; challenges stay; the day before nothing changes", () => {
+    const stock = ['Wool', 'Wool', 'Opal'];
+    const last = preview(bundle({ day: 29, inventory: stock }));
+    const types = new Set(last.map(c => String(c.type)));
+    const sells = last.filter(c => c.type === 'sell');
+    const dropped = ['travel', 'craft', 'invest', 'buy_equipment', 'buy_market', 'region_deposit', 'sabotage'].filter(t => types.has(t));
+    const sellsLead = sells.length === 2 && last.slice(0, 2).every(c => c.type === 'sell');
+    const eve = preview(bundle({ day: 28, inventory: stock }));
+    const old = preview(bundle({ rules: V100_RULES_VERSION, day: 29, inventory: stock }));
+    return (dropped.length === 0 && sellsLead && types.has('challenge') && eve.some(c => c.type === 'travel') && old.some(c => c.type === 'travel') && !old.slice(0, 2).every(c => c.type === 'sell'))
+      || json({ dropped, sells: sells.length, lead: last.slice(0, 3).map(c => c.type), types: [...types], eveTravel: eve.some(c => c.type === 'travel'), oldTravel: old.some(c => c.type === 'travel') });
+  });
+
+  check('v101rv_12_final_day_other_goals_and_old_matches', 'Net worth: only the journey goes on the final day (stock counts, no sale is forced); Most Regions, Most Challenges and Grand Tour are untouched; a V10.0 match keeps its journeys; with nothing to do the list can be empty (the rival ends its turn)', () => {
+    const stock = ['Wool', 'Opal'];
+    const nw = preview(bundle({ day: 29, inventory: stock, winCondition: 'netWorth' }));
+    const regions = preview(bundle({ day: 29, inventory: stock, winCondition: 'regions' }));
+    const challenges = preview(bundle({ day: 29, inventory: stock, winCondition: 'challenges' }));
+    const regionsEve = preview(bundle({ day: 28, inventory: stock, winCondition: 'regions' }));
+    const tour = preview(bundle({ day: 29, inventory: stock, mode: 'grand_tour' }));
+    const broke = preview(bundle({ day: 29, inventory: [], money: 20 }));
+    return (!nw.some(c => c.type === 'travel') && nw.some(c => c.type === 'craft' || c.type === 'invest' || c.type === 'challenge') && regions.some(c => c.type === 'travel') && challenges.some(c => c.type === 'travel')
+      && json([...new Set(regions.map(c => c.type))].sort()) === json([...new Set(preview(bundle({ day: 29, inventory: stock, winCondition: 'regions', rules: V100_RULES_VERSION })).map(c => c.type))].sort()) && regionsEve.length > 0 && tour.some(c => c.type === 'travel') && !broke.some(c => c.type === 'travel' || c.type === 'challenge'))
+      || json({ nwTravel: nw.some(c => c.type === 'travel'), regions: regions.some(c => c.type === 'travel'), challenges: challenges.some(c => c.type === 'travel'), tour: tour.some(c => c.type === 'travel'), broke: broke.map(c => c.type) });
+  });
+
+  check('v101rv_13_final_day_through_the_chooser', 'Over 40 seeds and every difficulty the V10.1 rival on the final day of a Most Money match with stock sells or attempts a challenge and never buys a journey, a craft or an item', () => {
+    const bad: string[] = [];
+    difficulties.forEach(difficulty => {
+      for (let seed = 1; seed <= 10; seed += 1) {
+        const b = bundle({ day: 29, inventory: ['Wool', 'Opal', 'Gold'], difficulty });
+        const { pick } = choose(b, seed);
+        if (pick && !['sell', 'challenge', 'cashout_region', 'special_ability'].includes(String(pick.type))) bad.push(`${difficulty}/${seed}: ${pick.type}`);
+      }
+    });
+    return bad.length === 0 || json(bad.slice(0, 5));
+  });
+
+  check('v101rv_14_rival_takes_the_challenge_board', "With More challenges on, the V10.1 rival chooses from the board the human sees (including challenges the base list does not have); a V10.0 match still chooses from the four base challenges", () => {
+    const on: Partial<GameSettingsState> = { expandedChallengeContentEnabled: true };
+    const base = new Set((REGIONS.NSW.challenges as Array<{ name: string }>).map(c => c.name));
+    let day = 0, extra: string[] = [];
+    for (let d = 1; d <= 30 && day === 0; d += 1) {
+      const probe = bundle({ region: 'NSW', day: d, settings: on });
+      const board = (v101RivalBoardChallenges({ actor: probe.rival, gameState: probe.gameState, settings: probe.settings }) || []).map(c => c.name);
+      const fresh = board.filter(n => !base.has(n));
+      if (fresh.length) { day = d; extra = fresh; }
+    }
+    const names = (b: Bundle) => preview(b).filter(c => c.type === 'challenge').map(c => String(v99IsRecord(dataOf(c).challenge) ? (dataOf(c).challenge as Record<string, unknown>).name : ''));
+    const v101 = names(bundle({ region: 'NSW', day, settings: on, money: 4000 }));
+    const board = (() => { const p = bundle({ region: 'NSW', day, settings: on }); return (v101RivalBoardChallenges({ actor: p.rival, gameState: p.gameState, settings: p.settings }) || []).map(c => c.name); })();
+    const v100 = names(bundle({ rules: V100_RULES_VERSION, region: 'NSW', day, settings: on, money: 4000 }));
+    const off = (() => { const p = bundle({ region: 'NSW', day }); return v101RivalBoardChallenges({ actor: p.rival, gameState: p.gameState, settings: p.settings }); })();
+    return (day > 0 && v101.length > 0 && v101.every(n => board.includes(n)) && v101.some(n => extra.includes(n)) && v100.length > 0 && v100.every(n => base.has(n)) && off === null)
+      || json({ day, extra, v101, board, v100, off });
+  });
+
+  check('v101rv_15_cosmetic_draws_leave_the_rivals_stream', "In a V10.1 match a Co-Pilot session token, a takeover id, a rival taunt and a human automation roll are not drawn from the rival's AIReasoning stream; an older match still draws them there", () => {
+    const draws = (domain: RngStreamName) => getRngStreamState(domain).drawCount;
+    const probe = (state: unknown, action: () => void) => { const before = [draws('AIReasoning'), draws('HumanAutomation')]; action(); return [draws('AIReasoning') - before[0], draws('HumanAutomation') - before[1]]; };
+    const tokenNew = probe({ rulesVersion: V101_RULES_VERSION }, () => { mintCoPilotSessionToken({ rulesVersion: V101_RULES_VERSION }); });
+    const tokenOld = probe({}, () => { mintCoPilotSessionToken({}); });
+    const tokenV100 = probe({}, () => { mintCoPilotSessionToken({ rulesVersion: V100_RULES_VERSION }); });
+    const nested = v101SessionRandomDomain({ gameState: { rulesVersion: V101_RULES_VERSION } }) === 'HumanAutomation' && v101SessionRandomDomain({ gameState: {} }) === 'AIReasoning' && v101SessionRandomDomain(undefined) === 'AIReasoning';
+    const humanNew = probe(null, () => { v101ActorRandom({ kind: 'human' }, { rulesVersion: V101_RULES_VERSION }, () => { throw new Error('the rival stream was used'); }); });
+    let fallbackCalls = 0;
+    v101ActorRandom({ kind: 'ai' }, { rulesVersion: V101_RULES_VERSION }, () => { fallbackCalls += 1; return 0.5; });
+    v101ActorRandom({ kind: 'human' }, { rulesVersion: V100_RULES_VERSION }, () => { fallbackCalls += 1; return 0.5; });
+    v101ActorRandom({ kind: 'human' }, {}, () => { fallbackCalls += 1; return 0.5; });
+    return (json(tokenNew) === json([0, 1]) && json(tokenOld) === json([1, 0]) && json(tokenV100) === json([1, 0]) && nested && json(humanNew) === json([0, 1]) && fallbackCalls === 3)
+      || json({ tokenNew, tokenOld, tokenV100, nested, humanNew, fallbackCalls });
+  });
+
+  check('v101rv_16_team_only_settings_say_so', "Every setting only the team AI reads carries a \"Team modes only\" chip in AI Opponent, Scenario and Grand Tour and none in a team mode; live settings never carry it; every listed key is a real setting", () => {
+    const solo = ['ai', 'scenario', 'grand_tour', 'single', null, undefined];
+    const team = ['team_human_ai_vs_ai_ai', 'team_ai_vs_ai'];
+    const real = V101_RIVAL_TEAM_ONLY_SETTINGS.filter(k => !(k in DEFAULT_GAME_SETTINGS));
+    const wrongSolo = V101_RIVAL_TEAM_ONLY_SETTINGS.filter(k => solo.some(m => isSettingLiveForRival(k, m)));
+    const wrongTeam = V101_RIVAL_TEAM_ONLY_SETTINGS.filter(k => team.some(m => !isSettingLiveForRival(k, m)));
+    const live = ['aiDifficulty', 'aiUsesMarketModifiers', 'aiSpecialAbilitiesEnabled', 'totalDays', 'aiFairnessLevel', 'sabotageEnabled', '', null].every(k => solo.every(m => isSettingLiveForRival(k, m)));
+    const chipOn = v99ElementText(v101RivalLiveChipView('aiWinConditionSpendingStrength', 'ai'));
+    const chipTeam = v101RivalLiveChipView('aiWinConditionSpendingStrength', 'team_ai_vs_ai');
+    const chipLive = v101RivalLiveChipView('aiDifficulty', 'ai');
+    const summary = v101TeamOnlySummary('aiSpecialAbilityPriority', 'ai');
+    return (real.length === 0 && wrongSolo.length === 0 && wrongTeam.length === 0 && live && chipOn === V101_RIVAL_TEAM_ONLY_LABEL && chipTeam === null && chipLive === null && summary === V101_RIVAL_TEAM_ONLY_NOTE && v101TeamOnlySummary('aiSpecialAbilityPriority', 'team_ai_vs_ai') === null && V101_RIVAL_TEAM_ONLY_SETTINGS.length >= 17)
+      || json({ real, wrongSolo, wrongTeam, live, chipOn, chipTeam: chipTeam === null, chipLive: chipLive === null, summary });
+  });
+
+  check('v101rv_17_settings_copy_says_what_the_rival_does', "The Fog of War, AI Fairness and AI Affects Economy texts describe the live rival: it still reads your wealth under fog, fairness only rescales its move scores, and the economy switch also pays team-mode AIs start cash", () => {
+    const meta = (key: string) => SETTINGS_INTELLIGENCE_METADATA.find(m => m.key === key);
+    const fog = meta('fogOfWarEnabled'), fair = meta('aiFairnessLevel');
+    const fogText = `${fog?.playerMeaning} ${fog?.on?.meaning}`;
+    const fairText = `${fair?.playerMeaning} ${(fair?.bands || []).map(b => b.meaning).join(' ')}`;
+    const economy = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(d => d.key === 'aiAffectsEconomy');
+    return (!!fog && !!fair && !/for you and for AI|players and AI alike/.test(fogText) && /still reads/.test(fogText) && !/economics/i.test(fairText) && /rates|rescales|move/i.test(fairText)
+      && !!economy && /team modes/i.test(economy.description) && /\$250/.test(economy.description) && /\$500/.test(economy.description))
+      || json({ fogText, fairText, economy: economy?.description });
+  });
+
+  const stampedSave = (gameVersion: string, extra: Record<string, unknown>): SaveGameData => {
+    const f: SaveGameData = JSON.parse(JSON.stringify(createV95SaveFixture()));
+    f.metadata = { ...f.metadata, gameVersion };
+    f.gameState = { ...(f.gameState as unknown as Record<string, unknown>), ...extra } as unknown as SaveGameData['gameState'];
+    return f;
+  };
+  const turnOf = (n: number, moves: V101RivalRecapMove[] = [{ kind: 'challenge', text: 'Won Tour the Reef', cash: 660, why: 'its best-rated move' }]): V101RivalRecapTurn => ({ id: `rr${n}`, day: n, moves, cashBefore: 1500, cashAfter: 2160, leadBefore: -500, leadAfter: -1160 });
+  check('v101rv_18_recap_state_is_sanitised_and_saved', "Saved Rival Recap turns are capped (5 turns, 8 moves, 140 characters, whole dollars, ids rr<number>), junk gives nothing, the key is registered, an old save drops a stray one and a V10.1 save keeps it", () => {
+    const junk = [null, 5, 'x', {}, { turns: 'no' }, { turns: [{ id: 'bad', moves: [] }, { id: 'rr1' }] }].map(v => sanitizeRivalRecapState(v));
+    const big = { counter: 2, turns: Array.from({ length: 9 }, (_, i) => turnOf(i + 1, Array.from({ length: 12 }, (_, k) => ({ kind: 'sell', text: 'x'.repeat(400) + k, cash: 1e12, why: 'y'.repeat(500) })))) };
+    const s = sanitizeRivalRecapState(big);
+    const once = json(s), twice = json(sanitizeRivalRecapState(s));
+    const longest = s ? Math.max(...s.turns.flatMap(t => t.moves.flatMap(m => [m.text.length, m.why.length]))) : 0;
+    const save = validateSaveDataCore(stampedSave(GAME_VERSION, { rulesVersion: V101_RULES_VERSION, rivalRecap: { counter: 3, turns: [turnOf(3)] } }));
+    const kept = (save.gameState as unknown as { rivalRecap?: V101RivalRecapState }).rivalRecap;
+    const dirty = validateSaveDataCore(stampedSave(GAME_VERSION, { rivalRecap: { turns: [{ id: 'oops', moves: 'no' }] } }));
+    const old = migrateSaveTo1010(stampedSave('9.9.0', { rivalRecap: { counter: 3, turns: [turnOf(3)] } }));
+    const oldKeys = Object.keys(old.data.gameState as unknown as Record<string, unknown>);
+    const counterOnly = sanitizeRivalRecapState({ counter: 0, turns: [turnOf(7)] });
+    return (junk.every(v => v === null) && !!s && s.turns.length === 5 && s.turns.every(t => t.moves.length === V101_RECAP_MAX_MOVES) && longest <= V101_RECAP_TEXT_MAX && s.turns[0].moves[0].cash === 1e9 && once === twice
+      && V101_ADDED_STATE_KEYS.includes('rivalRecap') && !!kept && kept.turns[0].id === 'rr3' && kept.counter === 3 && !(dirty.gameState as unknown as Record<string, unknown>).rivalRecap && old.changed && !oldKeys.includes('rivalRecap') && counterOnly?.counter === 7)
+      || json({ junk, turns: s?.turns.length, longest, once: once === twice, kept: !!kept, dirty: (dirty.gameState as unknown as Record<string, unknown>).rivalRecap, oldChanged: old.changed, oldKeys: oldKeys.includes('rivalRecap') });
+  });
+
+  check('v101rv_19_recap_off_computes_nothing', "With Rival Recap off no session is started, no card is chosen even when turns are saved, and a headless match records nothing; the setting is off by default", () => {
+    const gs = { gameMode: 'game', currentTurn: 'player', selectedMode: 'ai', matchSeed: 5, rivalRecap: { counter: 1, turns: [turnOf(1)] } };
+    const sim = runV101RivalParityMatch({ seed: 3, rules: 'v101', difficulty: 'medium', days: 6 });
+    return (DEFAULT_GAME_SETTINGS.rivalRecapEnabled === false && startV101RecapSession(false, 4, 100, 100) === null && startV101RecapSession(undefined as unknown as boolean, 4, 100, 100) === null && startV101RecapSession(true, 4, 100, 100) !== null
+      && v101RecapTurnToShow({ enabled: false, gameState: gs, dismissedKey: null }) === null && v101RecapTurnToShow({ enabled: true, gameState: gs, dismissedKey: null })?.id === 'rr1' && sim.recap === null) || 'wrong';
+  });
+
+  check('v101rv_20_recap_changes_no_decision', "Rival Recap on or off: the rival makes byte-identical decisions and draws the same number of values from its stream, on V10.1 rules and on V10.0 rules, at every difficulty (20 matches)", () => {
+    const bad: string[] = [];
+    (['v100', 'v101'] as const).forEach(rules => difficulties.forEach(difficulty => [11, 12, 13].forEach(seed => {
+      const off = runV101RivalParityMatch({ seed, rules, difficulty, days: 10 });
+      const on = runV101RivalParityMatch({ seed, rules, difficulty, days: 10, recap: true });
+      if (json(off.rivalTrace) !== json(on.rivalTrace) || off.rivalDraws !== on.rivalDraws || off.rivalMoney !== on.rivalMoney || off.playerMoney !== on.playerMoney) bad.push(`${rules}/${difficulty}/${seed}`);
+      if (!on.recap || on.recap.turns.length !== V101_RECAP_MAX_TURNS || off.recap !== null) bad.push(`${rules}/${difficulty}/${seed}: recap ${on.recap ? on.recap.turns.length : 'none'}`);
+    })));
+    return bad.length === 0 || json(bad.slice(0, 5));
+  });
+
+  check('v101rv_21_why_comes_from_the_real_ranked_list', "The why of a move is read from the chooser's own ranked list: its best-rated move, its second-best, a sale that outranked the best journey, the odds and stake of a challenge; a move off the list says so", () => {
+    const b = bundle({ money: 3000, inventory: ['Wool'] });
+    const ranked = preview(b);
+    const first = ranked[0], second = ranked[1];
+    const challenge = ranked.find(c => c.type === 'challenge');
+    const sellAbove: Candidate[] = [{ type: 'sell', description: 'Sell Wool', data: { resource: 'Wool', price: 120 }, score: 900 }, { type: 'travel', description: 'Travel', data: { region: 'VIC', cost: 200 }, score: 400 }] as Candidate[];
+    const w1 = v101RivalWhy(first, ranked, b.rival), w2 = v101RivalWhy(second, ranked, b.rival), wc = v101RivalWhy(challenge, ranked, b.rival);
+    const ws = v101RivalWhy(sellAbove[0], sellAbove, b.rival), wt = v101RivalWhy(sellAbove[1], sellAbove, b.rival);
+    const off = v101RivalWhy({ type: 'special_ability', data: { ability: { name: 'x' } } }, ranked, b.rival);
+    return (w1.rank === 1 && /best-rated/.test(w1.why) && w2.rank === 2 && /second-best/.test(w2.why) && !!challenge && /% odds/.test(wc.why) && /stake/.test(wc.why) && /best journey/.test(ws.why) && wt.rank === 2 && off.rank === 0 && /outside/.test(off.why))
+      || json({ w1, w2, wc, ws, wt, off });
+  });
+
+  check('v101rv_22_recap_turn_reads_in_plain_words', "A recorded turn reads \"Won Tour the Reef (+$660): its best-rated move\", \"Sold 3 items\", \"Travelled to Victoria (-$350)\", with the cash before and after and the cash gap", () => {
+    const session = startV101RecapSession(true, 4, 1500, 1000)!;
+    const snap = (money: number, completed = 0, region = 'QLD') => ({ id: 'ai', money, challengesCompleted: Array.from({ length: completed }, (_, i) => `c${i}`), currentRegion: region, visitedRegions: ['QLD'], completedThisSeason: [] as string[] });
+    const win: Candidate = { type: 'challenge', description: 'Attempt Tour the Reef', data: { challenge: { name: 'Tour the Reef' }, wager: 300, successChance: 0.72 }, score: 500 } as Candidate;
+    v101RecapNoteDecision(session, win, [win], snap(1500, 0));
+    v101RecapNoteCommit(session, win, snap(2160, 1));
+    const sellOf = (r: string, before: number, after: number) => { const s: Candidate = { type: 'sell', description: `Sell ${r}`, data: { resource: r, price: 100 }, score: 300 } as Candidate; v101RecapNoteDecision(session, s, [s], snap(before)); v101RecapNoteCommit(session, s, snap(after)); };
+    sellOf('Wool', 2160, 2260); sellOf('Opal', 2260, 2400); sellOf('Gold', 2400, 2700);
+    const trip: Candidate = { type: 'travel', description: 'Travel to Victoria', data: { region: 'VIC', cost: 350 }, score: 200 } as Candidate;
+    v101RecapNoteDecision(session, trip, [win, trip], snap(2700));
+    v101RecapNoteCommit(session, trip, snap(2350, 1, 'VIC'));
+    const done = v101RecapFinish(session, 2350, 1000);
+    const lines = done.turn.moves.map(m => `${m.text} ${v101SignedMoney(m.cash)}`.trim());
+    const turn = { ...done.turn, id: 'rr1' };
+    return (json(lines) === json(['Won Tour the Reef +$660', 'Sold 3 items +$540', 'Travelled to Victoria -$350']) && /best-rated|second-best/.test(done.turn.moves[0].why) && done.turn.cashBefore === 1500 && done.turn.cashAfter === 2350 && done.turn.leadBefore === -500 && done.turn.leadAfter === -1350
+      && /Rival Recap, day 4/.test(done.historyLine) && /Won Tour the Reef \(\+\$660\)/.test(done.historyLine) && /\$1,500 → \$2,350/.test(done.historyLine) && /rival leads by \$1,350/.test(v99ElementText(V101RivalRecapCardView({ turn, rivalName: 'Rival', theme: { card: '', border: '', shadow: '', buttonSecondary: '' }, onDismiss: () => {} }))))
+      || json({ lines, done: done.turn, history: done.historyLine });
+  });
+
+  check('v101rv_23_recap_card_is_a_labelled_dismissible_region', "The recap card is a region named by its heading, has a polite status line for screen readers, a labelled Dismiss button, dismisses with Escape, traps no focus (no tab stops added), and shows the moves, cash and why", () => {
+    let dismissed = 0;
+    const theme = { card: 'c', border: 'b', shadow: 's', buttonSecondary: 'x' };
+    const turn = { ...turnOf(2, [{ kind: 'challenge', text: 'Won Tour the Reef', cash: 660, why: 'its best-rated move (72% odds, $300 stake)' }, { kind: 'travel', text: 'Travelled to Victoria', cash: -350, why: 'its second-best move' }]), id: 'rr2' };
+    const view = V101RivalRecapCardView({ turn, rivalName: 'Rival', theme, onDismiss: () => { dismissed += 1; } });
+    const all = v99FindElements(view, () => true);
+    const section = all.find(e => e.type === 'section');
+    const heading = all.find(e => e.type === 'h2');
+    const button = all.find(e => e.type === 'button');
+    const status = all.find(e => e.props.role === 'status');
+    const stop = { stopped: 0 };
+    const onKeyDown = section?.props.onKeyDown as ((e: { key: string; stopPropagation: () => void }) => void) | undefined;
+    onKeyDown?.({ key: 'Enter', stopPropagation: () => { stop.stopped += 1; } });
+    const afterEnter = dismissed;
+    onKeyDown?.({ key: 'Escape', stopPropagation: () => { stop.stopped += 1; } });
+    (button?.props.onClick as (() => void) | undefined)?.();
+    const text = v99ElementText(view);
+    const tabStops = all.filter(e => e.props.tabIndex !== undefined);
+    const empty = v99ElementText(V101RivalRecapCardView({ turn: { ...turn, moves: [] }, rivalName: 'Rival', theme, onDismiss: () => {} }));
+    return (!!section && section.props.role === 'region' && !!heading && section.props['aria-labelledby'] === heading.props.id && !!button && button.props['aria-label'] === 'Dismiss the rival recap' && !!status && String(v99ElementText(status)).includes('2 moves')
+      && afterEnter === 0 && dismissed === 2 && stop.stopped === 1 && tabStops.length === 0 && /\(\+\$660\)/.test(text) && /\(-\$350\)/.test(text) && /72% odds/.test(text) && /Rival cash \$1,500 → \$2,160/.test(text) && /made no move/.test(empty))
+      || json({ section: !!section, role: section?.props.role, labelled: section?.props['aria-labelledby'] === heading?.props.id, button: button?.props['aria-label'], status: status ? v99ElementText(status) : null, dismissed, afterEnter, tabStops: tabStops.length, text });
+  });
+
+  check('v101rv_24_dismissing_is_remembered_safely', "A dismissed recap stays dismissed on this device (per match and turn), a new match shows its first turn again, a blocked or broken storage never throws, and the card shows only on the player's turn in a solo rival mode", () => {
+    const storage = memoryStorage();
+    const gs = { gameMode: 'game', currentTurn: 'player', selectedMode: 'ai', matchSeed: 5, rivalRecap: { counter: 2, turns: [turnOf(1), turnOf(2)] } };
+    const shown = v101RecapTurnToShow({ enabled: true, gameState: gs, dismissedKey: null });
+    const key = v101RecapTurnKey(gs, shown!);
+    const wrote = v101WriteRecapDismissed(storage, key);
+    const read = v101ReadRecapDismissed(storage);
+    const hidden = v101RecapTurnToShow({ enabled: true, gameState: gs, dismissedKey: read });
+    const nextTurn = v101RecapTurnToShow({ enabled: true, gameState: { ...gs, rivalRecap: { counter: 3, turns: [turnOf(1), turnOf(2), turnOf(3)] } }, dismissedKey: read });
+    const newMatch = v101RecapTurnToShow({ enabled: true, gameState: { ...gs, matchSeed: 6 }, dismissedKey: read });
+    const throwing: V99StorageLike = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); }, removeItem: () => { throw new Error('blocked'); } };
+    const safe = v101ReadRecapDismissed(throwing) === null && v101WriteRecapDismissed(throwing, 'x') === false && v101ReadRecapDismissed(null) === null && v101WriteRecapDismissed(null, 'x') === false;
+    const wrongTurn = v101RecapTurnToShow({ enabled: true, gameState: { ...gs, currentTurn: 'ai' }, dismissedKey: null });
+    const team = v101RecapTurnToShow({ enabled: true, gameState: { ...gs, selectedMode: 'team_ai_vs_ai' }, dismissedKey: null });
+    const scenario = v101RecapTurnToShow({ enabled: true, gameState: { ...gs, selectedMode: 'scenario' }, dismissedKey: null });
+    const junkStore = v101ReadRecapDismissed(createV99MemoryStorage({ [V101_RECAP_DISMISSED_KEY]: 'not json' }));
+    return (shown?.id === 'rr2' && wrote && read === key && key.startsWith('5:') && hidden === null && nextTurn?.id === 'rr3' && newMatch?.id === 'rr2' && safe && wrongTurn === null && team === null && scenario?.id === 'rr2' && junkStore === null && V101_RECAP_DISMISSED_KEY.startsWith('aussie.v101.'))
+      || json({ shown: shown?.id, wrote, read, hidden, nextTurn: nextTurn?.id, newMatch: newMatch?.id, safe, wrongTurn, team, scenario: scenario?.id, junkStore });
+  });
+
+  check('v101rv_25_old_matches_play_exactly_as_before', "A V10.0-stamped, an unstamped and a classic-rules match get no V10.1 hook at all and choose exactly what the V10.0 rival chose (160 decisions, same stream); a V10.1 match gets them", () => {
+    const bad: string[] = [];
+    const old = (b: Bundle): ClassicAiLiveHooks | undefined => {
+      // V10.0's rivalLiveHooksFor, rebuilt from the pieces it was made of.
+      const hooks = buildRivalLiveHooks(() => false, { sabotageEnabled: b.settings.sabotageEnabled === true, opponentDebuffs: b.player.debuffs, discipline: { actor: b.rival, gameState: b.gameState, settings: b.settings, difficultyKey: b.difficulty, ownerKey: RIVAL_OWNER_KEY } });
+      if (v100RivalPolicyActive(b.gameState, b.settings)) hooks.v100Policy = true;
+      return hooks;
+    };
+    [V100_RULES_VERSION, null].forEach(rules => difficulties.forEach(difficulty => {
+      const probe = bundle({ rules, difficulty });
+      const h = hooksFor(probe);
+      const extra = h ? ['v101Rules', 'travelCost', 'challengesFor'].filter(k => k in h) : ['no hooks'];
+      if (extra.length) bad.push(`${String(rules)}/${difficulty}: hook ${extra.join(',')}`);
+      for (let seed = 1; seed <= 10; seed += 1) {
+        const b = bundle({ rules, difficulty, weather: 'Stormy', season: 'Winter', inventory: seed % 2 ? ['Wool', 'Opal'] : [], day: seed % 3 === 0 ? 29 : 5 });
+        const a = choose(b, seed), c = choose(b, seed, old(b));
+        if (json(a.pick) !== json(c.pick) || a.draws !== c.draws) bad.push(`${String(rules)}/${difficulty}/${seed}`);
+      }
+    }));
+    const classicSwitch = bundle({ settings: { classicRulesV100: true } });
+    const stripped = hooksFor(classicSwitch);
+    if (stripped && 'travelCost' in stripped) bad.push('classic switch still hooks fares');
+    const fresh = hooksFor(bundle());
+    if (!fresh || fresh.v101Rules !== true || typeof fresh.travelCost !== 'function' || 'challengesFor' in fresh) bad.push('a V10.1 match is missing its hooks');
+    return bad.length === 0 || json(bad.slice(0, 6));
+  });
+
+  check('v101rv_26_lab_and_team_ai_keep_the_flat_fares', "The AI Tuning Lab, the reference bots and team AI (the chooser without live hooks) still price journeys at the flat $200 / $350 and list the base challenges, even inside a V10.1 match", () => {
+    const b = bundle({ weather: 'Stormy', season: 'Winter', money: 5000, settings: { expandedChallengeContentEnabled: true } });
+    const list = enumerateLegalActions(canonical(b), 'ai', { settings: b.settings, weights, rng: { next: () => 0 }, difficultyKey: 'expert', specialAbilityActive: false });
+    const costs = list.filter(c => c.type === 'travel').map(c => Number(dataOf(c).cost));
+    const names = list.filter(c => c.type === 'challenge').map(c => String((dataOf(c).challenge as Record<string, unknown>).name));
+    const base = (REGIONS.QLD.challenges as Array<{ name: string }>).map(c => c.name);
+    return (costs.length >= 6 && costs.every(c => c === 200 || c === 350) && names.length > 0 && names.every(n => base.includes(n))) || json({ costs, names });
+  });
+
+  check('v101rv_27_parity_changes_how_the_day_is_spent', "Over a whole match the V10.1 rival gets sales for free (it sells without using actions) and never spends more than three paid actions a day; the V10.0 rival pays an action for every commit", () => {
+    const v101 = runV101RivalParityMatch({ seed: 21, rules: 'v101', difficulty: 'hard', days: 15 });
+    const v100 = runV101RivalParityMatch({ seed: 21, rules: 'v100', difficulty: 'hard', days: 15 });
+    return (v101.rivalFreeActions > 0 && v100.rivalFreeActions === 0 && v101.rivalPaidActions <= 3 * 15 && v100.rivalPaidActions <= 3 * 15 && v101.rivalNetWorth > 0 && v100.rivalNetWorth > 0)
+      || json({ v101: [v101.rivalPaidActions, v101.rivalFreeActions], v100: [v100.rivalPaidActions, v100.rivalFreeActions] });
+  });
+
+  check('v101rv_28_the_match_stays_deterministic', "The headless match is a pure function of its seed and rules (two runs agree to the dollar and to the last decision); a different seed plays differently", () => {
+    const a = runV101RivalParityMatch({ seed: 5, rules: 'v101', difficulty: 'expert', days: 12 });
+    const b = runV101RivalParityMatch({ seed: 5, rules: 'v101', difficulty: 'expert', days: 12 });
+    const c = runV101RivalParityMatch({ seed: 6, rules: 'v101', difficulty: 'expert', days: 12 });
+    return (json(a) === json(b) && json(a.rivalTrace) !== json(c.rivalTrace)) || 'not deterministic';
+  });
+
   return results;
 }
 // <<V101-SLOT RIVAL end>>
