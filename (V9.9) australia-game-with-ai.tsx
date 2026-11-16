@@ -21491,6 +21491,9 @@ export interface SettingsExperienceShellProps {
   settingsIntelligence?: SettingsIntelligenceBinding | null;
   /** V9.6 (SECTION 20AN): change handler for the Simple view (routes confirmations and the first-run record). */
   onSimpleSettingChange?: (key: string, value: boolean | string | number) => void;
+  /** V10.1 (SECTION 20BG): the selected game mode (so the Simple view can say which switches need a rival) and whether a running match plays by V10.1 rules (null = no match running). */
+  matchMode?: string | null;
+  matchIsV101?: boolean | null;
 }
 
 export function scheduleAutoModeEvaluationBoundary(
@@ -60426,6 +60429,8 @@ export interface SettingsHubContextValue {
   changedFieldKeys: (keyof GameSettingsState)[];
   collapsedSections: Record<string, boolean>;
   onToggleCollapse: (id: string) => void;
+  /** V10.1 (SECTION 20BG): false when "Allow Category Collapse" is off; sections then stay open and show no fold arrow. Absent = allowed. */
+  allowCollapse?: boolean;
   border: string;
   buttonSecondary: string;
   settingsSearchViewMode?: 'results' | 'focused';
@@ -64168,6 +64173,9 @@ export interface CoPilotModalProps {
   onInterruptTakeover?: () => void;
   onAcceptRecommendation?: (rec: CoPilotRecommendation) => void;
   isPlayerTurn?: boolean;
+  /** V10.1 (SECTION 20BG): the match's actions per day, and whether the match plays by V10.1 rules, so the cap slider can say how the two numbers relate. */
+  matchActionsPerDay?: number;
+  matchIsV101?: boolean;
 }
 
 /**
@@ -64184,7 +64192,9 @@ export const CoPilotModal: React.FC<CoPilotModalProps> = ({
   takeoverSession,
   onInterruptTakeover,
   onAcceptRecommendation,
-  isPlayerTurn = true
+  isPlayerTurn = true,
+  matchActionsPerDay,
+  matchIsV101 = false
 }) => {
   const [activeTab, setActiveTab] = React.useState<'overview' | 'advisory' | 'governance' | 'takeover'>('overview');
   const [customSpendLimit, setCustomSpendLimit] = React.useState<number>(coPilotSettings?.spendingCaps?.maximumSpendPerTurn || 1000);
@@ -64487,11 +64497,16 @@ export const CoPilotModal: React.FC<CoPilotModalProps> = ({
                     onChange={(e) => {
                       const val = Number(e.target.value);
                       setCustomMaxActions(val);
+                      v101CoPilotCapMarkTouched(v99BrowserStorage(), true); // V10.1 (SECTION 20BG): moving the slider is a deliberate choice, so the cap is honoured
                       onUpdateSettings({ maxActionsPerTurn: val });
                     }}
                     className="w-full"
                   />
                   <span className="text-[11px] text-gray-400">Max actions Co-Pilot can execute in a single turn</span>
+                  <span className="text-[11px] text-sky-300 block" data-testid="v101-copilot-cap-note">{v101CoPilotCapNote({ copilotCap: customMaxActions, capTouched: v101CoPilotCapTouched(v99BrowserStorage()), actionsPerDay: matchActionsPerDay, overridesGranted: player?.overrideActionsGranted, actionLimitsEnabled: true, v101: matchIsV101 })}{/* V10.1 (SECTION 20BG): the cap and the match's actions per day, said in one line */}</span>
+                  {matchIsV101 && v101CoPilotCapTouched(v99BrowserStorage()) && (
+                    <button type="button" className="text-[11px] underline text-sky-300" onClick={() => { v101CoPilotCapMarkTouched(v99BrowserStorage(), false); setCustomMaxActions(V101_COPILOT_CAP_DEFAULT); onUpdateSettings({ maxActionsPerTurn: V101_COPILOT_CAP_DEFAULT }); }}>Use all of my actions per day</button>
+                  )}
                 </div>
               </div>
             </div>
@@ -65451,7 +65466,7 @@ export function evalSettingsSearchFilter(
         case 'restart_required':
           return Boolean(entry.tab === 'quickSetup' || keyStr === 'totalDays' || keyStr === 'winCondition');
         case 'preset_controlled':
-          return Boolean(gameSettings?.uxAssistPackEnabled && gameSettings?.settingsPresetsEnabled);
+          return Boolean(gameSettings?.settingsPresetsEnabled); // V10.1 (SECTION 20BG): presets show whenever "Settings Presets" is on
         case 'unsaved':
           if (!draftSettings) return false;
           const appliedVal = gameSettings ? (gameSettings as any)[keyStr] : undefined;
@@ -73561,7 +73576,9 @@ export function runCoPilotAutonomousStep(input: CoPilotRuntimeStepInput): CoPilo
   const gameSettings = input.gameSettings || gameState?.gameSettings || {};
   const ap = getRemainingActionPoints(player, gameSettings);
   const actionsThisTurn = session.actionsThisHumanTurn || 0;
-  const maxPerTurn = Math.max(1, settings.maxActionsPerTurn || 3);
+  // V10.1 (SECTION 20BG): in a V10.1 match the Co-Pilot's cap means "up to your actions per day" unless the player lowered it on purpose;
+  // before, the default 3 ended the turn with actions left (a player at 5 lost 2 every turn). Older and Classic matches keep the old cap.
+  const maxPerTurn = v101CoPilotEffectiveCap({ copilotCap: settings.maxActionsPerTurn, capTouched: v101CoPilotCapTouched(v99BrowserStorage()), actionsPerDay: gameSettings?.playerActionsPerDay, overridesGranted: player?.overrideActionsGranted, actionLimitsEnabled: gameSettings?.actionLimitsEnabled, v101: isV101Match(gameState) });
 
   recordDiag2Event('COPILOT_LOOP_BEGIN', {
     currentActorId: gameState?.currentActorId,
@@ -73937,7 +73954,8 @@ export function initiateCoPilotTakeover(
   let maxActionsAllowed = 1;
   let maxSpendAllowed = activeSettings.spendingCaps?.maximumSpendPerAction || 2500;
 
-  const perTurnActionLimit = Math.max(1, activeSettings.maxActionsPerTurn || 3);
+  // V10.1 (SECTION 20BG): the same cap rule as runCoPilotAutonomousStep (a V10.1 match: up to the match's actions per day unless lowered on purpose).
+  const perTurnActionLimit = v101CoPilotEffectiveCap({ copilotCap: activeSettings.maxActionsPerTurn, capTouched: v101CoPilotCapTouched(v99BrowserStorage()), actionsPerDay: gameSettings?.playerActionsPerDay, overridesGranted: playerObj?.overrideActionsGranted, actionLimitsEnabled: gameSettings?.actionLimitsEnabled, v101: isV101Match(state) });
   const perTurnSpendLimit = activeSettings.spendingCaps?.maximumSpendPerTurn || 10000;
 
   switch (scope) {
@@ -95700,10 +95718,11 @@ const SettingsSection: React.FC<{
   if (searching && !isMatchedBySearch) return null;
   const hasChangedField = fieldKeys.length === 0 || fieldKeys.some(k => ctx.changedFieldKeys.includes(k));
   if (ctx.changedOnly && fieldKeys.length > 0 && !hasChangedField) return null;
-  const collapsed = searching ? false : (ctx.collapsedSections[id] ?? false);
+  const v101CanCollapse = ctx.allowCollapse !== false; // V10.1 (SECTION 20BG): "Allow Category Collapse" is read here
+  const collapsed = searching || !v101CanCollapse ? false : (ctx.collapsedSections[id] ?? false);
   return (
     <div id={id} data-setting-key={id} className={`${ctx.border} border rounded-lg p-4 ${className || ''}`}>
-      <div className="flex items-center justify-between gap-2 flex-wrap cursor-pointer" onClick={() => ctx.onToggleCollapse(id)}>
+      <div className={`flex items-center justify-between gap-2 flex-wrap ${v101CanCollapse ? 'cursor-pointer' : ''}`} onClick={() => { if (v101CanCollapse) ctx.onToggleCollapse(id); }}>
         <div className="flex items-center gap-2 flex-wrap">
           <h4 className="text-lg font-bold">{title}</h4>
           {searching && (
@@ -95723,7 +95742,7 @@ const SettingsSection: React.FC<{
               {resetLabel || 'Reset section'}
             </button>
           )}
-          <span className="text-sm opacity-70">{collapsed ? '▸' : '▾'}</span>
+          {v101CanCollapse && <span className="text-sm opacity-70">{collapsed ? '▸' : '▾'}</span>}
         </div>
       </div>
       {description && <div className="text-xs opacity-75 mt-1">{description}</div>}
@@ -99606,7 +99625,9 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
   children,
   renderAdvanced,
   settingsIntelligence = null,
-  onSimpleSettingChange
+  onSimpleSettingChange,
+  matchMode = null,
+  matchIsV101 = null
 }) => {
   // V9.6 (SECTION 20AN): Settings opens on the Simple view; Game Experience and Advanced are one click away.
   const [viewMode, setViewMode] = React.useState<'simple' | 'experience' | 'advanced'>(
@@ -99835,6 +99856,8 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
             onShowAll={() => setViewMode('advanced')}
             isDark={isDark}
             isRetro={isRetro}
+            matchMode={matchMode}
+            matchIsV101={matchIsV101}
           />
         ) : viewMode === 'experience' ? (
           <InlineRenderErrorBoundary fallbackTitle="Game Experience crashed after applying settings">
@@ -100083,6 +100106,7 @@ export const SettingsSearchResultCard: React.FC<SettingsSearchResultCardProps> =
           <div className="font-bold text-slate-100 flex items-center gap-1.5 text-xs truncate">
             <span className="truncate">{label}</span>
             <span className="text-[10px] font-mono opacity-50 font-normal shrink-0">({String(keyStr)})</span>
+            <V99NoEffectChip settingKey={String(keyStr)} />{/* V10.1 (SECTION 20BG): a search result for a setting nothing reads says so, like its section does */}
           </div>
           {description && (
             <p className="text-[11px] opacity-75 line-clamp-1 mt-0.5">{description}</p>
@@ -100177,14 +100201,14 @@ export const BUILT_IN_CUSTOM_SETTINGS_PRESETS: CustomSettingsPreset[] = [
   {
     id: 'builtin_default',
     name: 'Default / Balanced',
-    description: 'Factory default balance parameters across all gameplay, economy, and AI systems.',
+    description: 'Puts every game setting back to its factory default. Your look, sound and accessibility choices are kept unless you tick the box below.', // V10.1 (SECTION 20BG): says what it does
     category: 'builtin',
     settings: { ...DEFAULT_GAME_SETTINGS }
   },
   {
     id: 'builtin_fast_ai_performance',
     name: 'Performance & Fast AI',
-    description: 'Optimized for high-speed turns: shortened game length, simplified action bar, auto-assist.',
+    description: 'A 14-day game with the UX Assist Pack and the simplified action bar switched on.', // V10.1 (SECTION 20BG): says what it sets
     category: 'builtin',
     settings: {
       totalDays: 14,
@@ -100195,7 +100219,7 @@ export const BUILT_IN_CUSTOM_SETTINGS_PRESETS: CustomSettingsPreset[] = [
   {
     id: 'builtin_deep_simulation',
     name: 'High Realism & Deep AI',
-    description: 'Maximum tactical complexity: expert AI profiles, advanced credit/loans, governance enabled.',
+    description: 'Advanced loans, credit scores and decision transparency on, daily action limits on, and the Team Brain set to Expert.', // V10.1 (SECTION 20BG): says what it sets (it sets no governance or AI-difficulty switch)
     category: 'builtin',
     settings: {
       advancedLoansEnabled: true,
@@ -100208,7 +100232,7 @@ export const BUILT_IN_CUSTOM_SETTINGS_PRESETS: CustomSettingsPreset[] = [
   {
     id: 'builtin_competitive_mp',
     name: 'Competitive Multiplayer',
-    description: 'Strict tournament rules: strictly equal AI fairness, strict daily turn action limits, full audit ledger.',
+    description: 'Win by most money, daily action limits on and the full game activity ledger on. It does not change AI fairness or difficulty.', // V10.1 (SECTION 20BG): says what it sets
     category: 'builtin',
     settings: {
       winCondition: 'money',
@@ -100219,7 +100243,7 @@ export const BUILT_IN_CUSTOM_SETTINGS_PRESETS: CustomSettingsPreset[] = [
   {
     id: 'builtin_casual_solo',
     name: 'Casual Solo / Relaxed',
-    description: 'Forgiving single-player experience: relaxed AI difficulty, high guidance, win condition coach.',
+    description: 'The win-condition coach and UX Assist Pack on and daily action limits off. It does not change AI difficulty.', // V10.1 (SECTION 20BG): says what it sets
     category: 'builtin',
     settings: {
       winConditionCoachEnabled: true,
@@ -100233,15 +100257,16 @@ const CUSTOM_SETTINGS_PRESETS_STORAGE_KEY = 'antigravity_custom_settings_presets
 let memoryPresetCache: CustomSettingsPreset[] = [];
 let presetSeqCounter = 0;
 
-export function getCustomSettingsPresets(): CustomSettingsPreset[] {
+export function getCustomSettingsPresets(storageOverride?: V99StorageLike | null): CustomSettingsPreset[] { // V10.1 (SECTION 20BG): optional storage so tests (and a refused write) can be exercised
   try {
-    const storage = typeof localStorage !== 'undefined' ? localStorage : (typeof window !== 'undefined' ? window.localStorage : null);
+    const storage = storageOverride !== undefined ? storageOverride : (typeof localStorage !== 'undefined' ? localStorage : (typeof window !== 'undefined' ? window.localStorage : null));
     if (storage) {
       const raw = storage.getItem(CUSTOM_SETTINGS_PRESETS_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         // V9.9 (SECTION 20AT): only entries that really are presets (a hand-edited or foreign list no longer breaks the manager).
-        if (Array.isArray(parsed)) return v99UsableCustomPresets(parsed as CustomSettingsPreset[]);
+        // V10.1 (SECTION 20BG): a preset this browser refused to store still shows for this session (merged by id), instead of vanishing after the "Saved" message.
+        if (Array.isArray(parsed)) return v101MergeSessionPresets(v99UsableCustomPresets(parsed as CustomSettingsPreset[]), memoryPresetCache);
       }
     }
   } catch (err) {
@@ -100251,26 +100276,25 @@ export function getCustomSettingsPresets(): CustomSettingsPreset[] {
 }
 
 export function saveCustomSettingsPreset(name: string, description: string, settings: GameSettingsState): CustomSettingsPreset {
-  const customPresets = getCustomSettingsPresets();
+  return saveCustomSettingsPresetChecked(name, description, settings).preset; // V10.1 (SECTION 20BG): same result as before; the checked version also says whether the browser really stored it
+}
+/** V10.1 (SECTION 20BG): the save that tells the truth. `stored` is false when the browser refused the write (blocked or full storage): the preset then lives for this session only. Only the settings that differ from the defaults are kept (a whole copy was about 38 KB per preset). */
+export function saveCustomSettingsPresetChecked(name: string, description: string, settings: GameSettingsState, storageOverride?: V99StorageLike | null): { preset: CustomSettingsPreset; stored: boolean } {
+  const storage = storageOverride !== undefined ? storageOverride : v99BrowserStorage();
+  const customPresets = getCustomSettingsPresets(storage);
   const newPreset: CustomSettingsPreset = {
     id: `custom_preset_${Date.now()}_${++presetSeqCounter}`,
     name: name.trim() || 'Custom Preset',
     description: description.trim() || 'User-created custom settings preset',
     category: 'custom',
     createdAt: Date.now(),
-    settings: { ...settings }
+    settings: v101PresetDeltaFromDefaults(settings)
   };
   const updated = [newPreset, ...customPresets];
   memoryPresetCache = updated;
-  try {
-    const storage = typeof localStorage !== 'undefined' ? localStorage : (typeof window !== 'undefined' ? window.localStorage : null);
-    if (storage) {
-      storage.setItem(CUSTOM_SETTINGS_PRESETS_STORAGE_KEY, JSON.stringify(updated));
-    }
-  } catch (err) {
-    console.error('Failed to save custom settings preset:', err);
-  }
-  return newPreset;
+  const stored = v99WriteJson(storage, CUSTOM_SETTINGS_PRESETS_STORAGE_KEY, updated);
+  if (!stored) console.error('Failed to save custom settings preset: this browser would not store it (kept for this session only).');
+  return { preset: newPreset, stored };
 }
 
 export function clearCustomSettingsPresetsCache(): void {
@@ -100352,7 +100376,7 @@ export interface SettingsPresetManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentSettings: GameSettingsState;
-  onApplyPresetSettings: (presetSettings: Partial<GameSettingsState>, presetName: string) => void;
+  onApplyPresetSettings: (presetSettings: Partial<GameSettingsState>, presetName: string, options?: { includeProfile?: boolean }) => void; // V10.1 (SECTION 20BG): the caller confirms and applies; includeProfile is the opt-in for look, sound and accessibility settings
   themeStyles: any;
 }
 
@@ -100369,6 +100393,8 @@ export const SettingsPresetManagerModal: React.FC<SettingsPresetManagerModalProp
   const [newPresetDesc, setNewPresetDesc] = React.useState<string>('');
   const [showSaveForm, setShowSaveForm] = React.useState<boolean>(false);
   const [toastMessage, setToastMessage] = React.useState<string | null>(null);
+  const [toastIsWarning, setToastIsWarning] = React.useState<boolean>(false); // V10.1 (SECTION 20BG): a refused save is shown as a warning, not as "Saved"
+  const [includeProfile, setIncludeProfile] = React.useState<boolean>(false); // V10.1 (SECTION 20BG): off = a preset leaves look, sound and accessibility alone
 
   if (!isOpen) return null;
 
@@ -100376,22 +100402,23 @@ export const SettingsPresetManagerModal: React.FC<SettingsPresetManagerModalProp
   const activePreset = allPresets.find(p => p.id === selectedPresetId) || allPresets[0];
 
   const handleApply = (preset: CustomSettingsPreset) => {
-    onApplyPresetSettings(preset.settings, preset.name);
-    setToastMessage(`Applied preset: "${preset.name}"`);
-    setTimeout(() => setToastMessage(null), 3000);
+    // V10.1 (SECTION 20BG): the preset is not applied here any more. The caller shows what would change (a count, a warning in a running match) and applies it once the player confirms.
+    onApplyPresetSettings(preset.settings, preset.name, { includeProfile });
   };
 
   const handleSaveCustom = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPresetName.trim()) return;
-    const created = saveCustomSettingsPreset(newPresetName, newPresetDesc, currentSettings);
+    const saved = saveCustomSettingsPresetChecked(newPresetName, newPresetDesc, currentSettings); // V10.1 (SECTION 20BG): says whether the browser really stored it
+    const created = saved.preset;
     setCustomPresets(getCustomSettingsPresets());
     setSelectedPresetId(created.id);
     setNewPresetName('');
     setNewPresetDesc('');
     setShowSaveForm(false);
-    setToastMessage(`Saved custom preset: "${created.name}"`);
-    setTimeout(() => setToastMessage(null), 3000);
+    setToastIsWarning(!saved.stored);
+    setToastMessage(v101PresetSaveMessage(created.name, saved.stored));
+    setTimeout(() => setToastMessage(null), saved.stored ? 3000 : 8000);
   };
 
   const handleDelete = (id: string, name: string) => {
@@ -100416,12 +100443,16 @@ export const SettingsPresetManagerModal: React.FC<SettingsPresetManagerModalProp
         </div>
 
         {toastMessage && (
-          <div className="mx-4 mt-3 p-2.5 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 rounded text-xs font-semibold flex items-center gap-2">
-            <span>✅ {toastMessage}</span>
+          <div className={`mx-4 mt-3 p-2.5 rounded text-xs font-semibold flex items-center gap-2 ${toastIsWarning ? 'bg-amber-500/20 border border-amber-500/40 text-amber-200' : 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'}`} role="status" data-testid="v101-preset-toast">
+            <span>{toastIsWarning ? '⚠️' : '✅'} {toastMessage}</span>
           </div>
         )}
 
         <div className="p-4 flex-1 overflow-y-auto space-y-4">
+          <label className="flex items-start gap-2 text-xs text-slate-300" data-testid="v101-preset-include-profile">
+            <input type="checkbox" checked={includeProfile} onChange={e => setIncludeProfile(e.target.checked)} className="mt-0.5" />
+            <span>Also change my look, sound and accessibility settings. {V101_PRESET_PROFILE_NOTE}</span>
+          </label>{/* V10.1 (SECTION 20BG): the opt-in; off by default */}
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-400 uppercase">Select Preset</span>
             <button
@@ -100487,7 +100518,7 @@ export const SettingsPresetManagerModal: React.FC<SettingsPresetManagerModalProp
                     <p className="text-xs text-slate-400 mb-3 line-clamp-2">{preset.description}</p>
                   </div>
                   <div className="flex items-center justify-between border-t border-white/5 pt-2.5 mt-1">
-                    <span className="text-[11px] text-slate-500">{Object.keys(preset.settings).length} settings modified</span>
+                    <span className="text-[11px] text-slate-500">{v101PresetCountLine(preset.settings, currentSettings, includeProfile)}</span>{/* V10.1 (SECTION 20BG): the real number of changes from where you are now (it said how many settings the preset stores) */}
                     <div className="flex items-center gap-1.5">
                       {preset.category === 'custom' && (
                         <button
@@ -187186,7 +187217,7 @@ export const SIMPLE_SETTINGS: readonly SimpleSettingDescriptor[] = [
 ];
 export const SIMPLE_SETTINGS_KEYS: readonly string[] = SIMPLE_SETTINGS.map(d => d.key);
 const simpleValueText = (d: SimpleSettingDescriptor, v: number) => (d.unit === 'percent' ? `${Math.round(v * 100)}%` : d.unit === 'days' ? `${v} days` : d.unit === 'actions' ? `${v}` : String(v));
-export const SimpleSettingsPanel = React.memo(function SimpleSettingsPanel({ settings, onChange, onShowAll, isDark, isRetro = false }: { settings: GameSettingsState; onChange: (key: string, value: boolean | string | number) => void; onShowAll: () => void; isDark: boolean; isRetro?: boolean }) {
+export const SimpleSettingsPanel = React.memo(function SimpleSettingsPanel({ settings, onChange, onShowAll, isDark, isRetro = false, matchMode = null, matchIsV101 = null }: { settings: GameSettingsState; onChange: (key: string, value: boolean | string | number) => void; onShowAll: () => void; isDark: boolean; isRetro?: boolean; matchMode?: string | null; matchIsV101?: boolean | null }) {
   const groups = Array.from(new Set(SIMPLE_SETTINGS.map(d => d.group)));
   const values = settings as unknown as Record<string, unknown>;
   // V9.9 (SECTION 20AU): Retro (cream text) used the white Light boxes; it has its own surfaces now. Dark and Light are unchanged.
@@ -187208,7 +187239,7 @@ export const SimpleSettingsPanel = React.memo(function SimpleSettingsPanel({ set
             const v101Lock = v101LiveRuleLockReason(d.key); // V10.1 (SECTION 20BD): Game length and How to win are frozen while a V10.1 match runs
             return (
               <div key={d.key} className="flex flex-wrap items-center justify-between gap-2 text-sm" data-testid={id}>
-                <label htmlFor={id + '-input'} className="flex-1 min-w-[12rem]"><span className="font-medium">{d.label}</span><span className="block text-xs opacity-70">{d.help}</span>{v101Lock && <span className="block text-xs opacity-80" data-testid={`${id}-locked`}>🔒 {v101RuleLockHint(settings, d.key)}</span>}</label>
+                <label htmlFor={id + '-input'} className="flex-1 min-w-[12rem]"><span className="font-medium">{d.label}</span>{v101SimpleModeChip(d.key, matchMode)}<span className="block text-xs opacity-70">{d.help}</span>{d.key === 'playerActionsPerDay' && <span className="block text-xs opacity-70" data-testid="v101-copilot-cap-line">{v101CoPilotSimpleLine(settings, matchIsV101)}</span> /* V10.1 (SECTION 20BG): how the Co-Pilot's own cap relates to this number */}{v101Lock && <span className="block text-xs opacity-80" data-testid={`${id}-locked`}>🔒 {v101RuleLockHint(settings, d.key)}</span>}</label>
                 {d.kind === 'toggle' && <input id={id + '-input'} type="checkbox" checked={v === true} onChange={e => onChange(d.key, e.target.checked)} />}
                 {d.kind === 'select' && (
                   <select id={id + '-input'} value={typeof v === 'string' ? v : String(d.options?.[0]?.value || '')} onChange={e => onChange(d.key, e.target.value)} disabled={v101Lock !== null} className={`rounded px-2 py-1 text-sm ${v99Simple.select}`}>
@@ -201539,7 +201570,7 @@ export const V99_INERT_SETTINGS: readonly V99InertSetting[] = [
 ];
 /** Why a setting has no effect, or null for every setting that does something. */
 export function v99InertSettingReason(key: string | null | undefined): string | null {
-  const hit = V99_INERT_SETTINGS.find(s => s.key === key);
+  const hit = V99_INERT_SETTINGS.find(s => s.key === key) || V101_INERT_SETTINGS.find(s => s.key === key); // V10.1 (SECTION 20BG): + the settings V10.1 found that nothing reads
   return hit ? hit.reason : null;
 }
 /** The "No effect in this version" chip the hub shows next to a control whose setting nothing reads; nothing for any other key. */
@@ -216778,7 +216809,8 @@ function dispatchGameSettingsChange(
   // V10.1 (SECTION 20BD): the ONE guard at the settings write. While a V10.1 match is running, Victory Goal and Game Length
   // (every screen, a preset, an import, a reset) wait for the next match instead of changing the rules of the match being
   // played; loading a save, starting a scenario and replays still write them. Off in a V10.0, an unstamped or a Classic match.
-  const computeNextState = (prev: GameSettingsState): GameSettingsState => v101GuardSettingsWrite(prev, computeNextStateRaw(prev), source);
+  // V10.1 (SECTION 20BG): the same write also keeps the legacy twin of an actions-per-day setting in step (v101MirrorActionTwinKeys), from every screen.
+  const computeNextState = (prev: GameSettingsState): GameSettingsState => v101MirrorActionTwinKeys(prev, v101GuardSettingsWrite(prev, computeNextStateRaw(prev), source));
   // SH3: Unified state updater helper function to compute next state cleanly across all patch types
   const computeNextStateRaw = (prev: GameSettingsState): GameSettingsState => {
     if (typeof keyOrPatch === 'string') {
@@ -220446,8 +220478,10 @@ function dispatchGameSettingsChange(
   // validateActionPointRequest, so the same override cost different amounts depending on the button.
   const calculateActorOverrideCost = useCallback((actorId: string) => {
     const state = getActorState(actorId);
-    return calculateActionPointOverrideCost({ ...(state || {}), netWorth: computeNetWorth(state) }, gameSettings, state?.overridesUsedToday || 0);
-  }, [computeNetWorth, gameSettings, getActorState]);
+    // V10.1 (SECTION 20BG): Team Brain "Escalating Cost" was a checkbox nothing read. In a V10.1 Team match with it OFF, an AI actor pays the base override price every time (not +50% for each one already bought today).
+    const v101FlatCost = v101TeamOverrideRules(gameSettings, gameState, state?.kind === 'ai').flatCost;
+    return calculateActionPointOverrideCost({ ...(state || {}), ...(v101FlatCost ? { overridesUsedToday: 0 } : {}), netWorth: computeNetWorth(state) }, gameSettings, v101FlatCost ? 0 : (state?.overridesUsedToday || 0));
+  }, [computeNetWorth, gameSettings, getActorState, gameState.rulesVersion, gameState.selectedMode]);
 
   const calculateOverrideCost = useCallback((target: 'player' | 'ai' = 'player') => {
     return calculateActorOverrideCost(target);
@@ -220496,11 +220530,11 @@ function dispatchGameSettingsChange(
       ...prev,
       money: deductMoney(prev.money, overrideCost),
       overridesUsedToday: (prev.overridesUsedToday || 0) + 1,
-      overrideFatigue: (prev.overrideFatigue || 0) + getOverrideFatigueIncrement(prev.overridesUsedToday || 0)
+      overrideFatigue: (prev.overrideFatigue || 0) + (v101TeamOverrideRules(gameSettings, gameState, true).noFatigue ? 0 : getOverrideFatigueIncrement(prev.overridesUsedToday || 0)) // V10.1 (SECTION 20BG): Team Brain "Override Fatigue" OFF in a V10.1 Team match = overrides do not tire the AI
     }));
     addNotification(`🤖 ${getActorDisplayName(actorId)} paid ${fmtMoney(overrideCost)} for extra actions`, 'ai', true);
     return true;
-  }, [addNotification, calculateActorOverrideCost, deductMoney, gameSettings.allowActionOverride, getActorDisplayName, getActorOverridesRemaining, getActorState, updateActorState]);
+  }, [addNotification, calculateActorOverrideCost, deductMoney, gameSettings.allowActionOverride, gameSettings.teamAiOverrideFatigueEnabled, gameState.rulesVersion, gameState.selectedMode, getActorDisplayName, getActorOverridesRemaining, getActorState, updateActorState]);
 
   const getAiLoanDecisionCandidates = useCallback((actor: ActorState): Array<AIAction & { score: number }> => {
     if (actor.kind !== 'ai' || !isAdvancedLoansEnabledForActor(actor)) return [];
@@ -244203,7 +244237,7 @@ function dispatchGameSettingsChange(
       case 'teammate_sync':
         return `Sync strength ${(gameSettings.teammatePerformanceSyncStrength * 100).toFixed(0)}% for AI-controlled teammates in team modes, with visible source/affected scope.`;
       case 'advanced_loans':
-        return `${getAdvancedLoansAccessSummary().scope}. Max ${gameSettings.maxSimultaneousLoans} simultaneous loans, ${(gameSettings.interestAccrualRate * 100).toFixed(0)}% accrual rate.`;
+        return `${getAdvancedLoansAccessSummary().scope}. Max ${gameSettings.maxSimultaneousLoans} simultaneous loans, ${v101InterestMultiplierPhrase(gameSettings.interestAccrualRate)}.`;
       case 'adaptive_ai':
         return `Comeback ${(gameSettings.adaptiveAiTeamComebackStrength * 100).toFixed(0)}%, support ${(gameSettings.adaptiveAiSupportFocus * 100).toFixed(0)}%, disruption ${(gameSettings.adaptiveAiDisruptionBias * 100).toFixed(0)}%.`;
       case 'priority_system':
@@ -244607,7 +244641,7 @@ function dispatchGameSettingsChange(
                 overridesRemaining > 0 ? 'actionOverride' : 'actionLimitNotice',   // V9.9 (SECTION 20AU): was 'endDay'
                 'Action Limit Reached',
                 overridesRemaining > 0
-                  ? `You have reached your action limit (${gameSettings.maxActionsPerTurn}). Pay ${fmtMoney(overrideCost)} to continue? (${overridesRemaining} override${overridesRemaining === 1 ? '' : 's'} left today)`
+                  ? `You have reached your action limit (${gameSettings.playerActionsPerDay}). Pay ${fmtMoney(overrideCost)} to continue? (${overridesRemaining} override${overridesRemaining === 1 ? '' : 's'} left today)`
                   : `Override cap reached for today (${OVERRIDE_DAILY_CAP}). End your turn or wait for tomorrow.`,
                 overridesRemaining > 0 ? 'Pay & Continue' : 'Close',
                 () => {
@@ -245342,6 +245376,27 @@ function dispatchGameSettingsChange(
       }
     }
   }, [uiState.settingsActiveTab, uiState.showSettings]);
+
+  // V10.1 (SECTION 20BG): "Start Collapsed" and "Remember Category Navigation State" were switches nothing read. When the hub opens it now
+  // starts folded (Start Collapsed, needs Allow Category Collapse) or, with Remember on, comes back on the tab and folds the player last left
+  // (kept in this browser under aussie.v101.settingsNav; a blocked browser store just means nothing is remembered).
+  const v101NavSeededRef = useRef(false);
+  const v101NavSkipWriteRef = useRef(false);
+  useEffect(() => {
+    if (!uiState.showSettings) { v101NavSeededRef.current = false; return; }
+    if (v101NavSeededRef.current) return;
+    v101NavSeededRef.current = true;
+    const plan = v101SettingsOpenPlan(gameSettings, v101ReadSettingsNav(v99BrowserStorage()), SETTINGS_HUB_SECTION_INDEX.map(sec => sec.id), uiState.settingsActiveTab, uiState.pendingSettingsNavigation?.sectionId ?? null, typeof window !== 'undefined' && window.innerWidth > 0 && window.innerWidth < 640);
+    if (!plan) return;
+    v101NavSkipWriteRef.current = true;
+    setUiState(prev => ({ ...prev, ...(plan.tab ? { settingsActiveTab: plan.tab } : {}), settingsCollapsedSections: plan.collapsed }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uiState.showSettings]);
+  useEffect(() => {
+    if (!uiState.showSettings || !v101NavSeededRef.current || gameSettings.rememberCategoryNavigationState !== true) return;
+    if (v101NavSkipWriteRef.current) { v101NavSkipWriteRef.current = false; return; }
+    v101WriteSettingsNav(v99BrowserStorage(), { tab: uiState.settingsActiveTab, collapsed: Object.keys(uiState.settingsCollapsedSections || {}).filter(id => uiState.settingsCollapsedSections[id]) });
+  }, [uiState.showSettings, uiState.settingsActiveTab, uiState.settingsCollapsedSections, gameSettings.rememberCategoryNavigationState]);
 
   const settingsSearchMatchedIds = useMemo(() => {
     if (!uiState.showSettings) return null;
@@ -251259,6 +251314,8 @@ function dispatchGameSettingsChange(
           trackedSetGameSettings("direct_player_change", "Smart Settings", prev => updater(prev));
         }}
         onSimpleSettingChange={wp8SimpleSettingChange}
+        matchMode={gameState.selectedMode}
+        matchIsV101={gameState.gameStarted && !gameState.gameOver ? isV101Match(gameState) : null} /* V10.1 (SECTION 20BG): lets Settings say which switches need a rival and how the Co-Pilot cap applies */
         uiState={uiState}
         updateUiState={updateUiState}
         isLiveMatch={Boolean(gameState.gameStarted && !gameState.gameOver)}
@@ -251411,8 +251468,9 @@ function dispatchGameSettingsChange(
               <button
                 type="button"
                 onClick={collapseAllSettingsSections}
+                disabled={!v101SectionCanCollapse(gameSettings)} /* V10.1 (SECTION 20BG): "Allow Category Collapse" is off */
                 aria-label="Collapse all settings sections"
-                className={`px-2.5 py-1 rounded text-xs ${themeStyles.buttonSecondary} hover:bg-slate-700 transition-colors font-medium flex items-center gap-1`}
+                className={`px-2.5 py-1 rounded text-xs ${themeStyles.buttonSecondary} hover:bg-slate-700 transition-colors font-medium flex items-center gap-1 disabled:opacity-40`}
               >
                 <span>📁 Collapse All Sections</span>
               </button>
@@ -251441,7 +251499,7 @@ function dispatchGameSettingsChange(
                     });
                   }}
                 />
-                <span>Start Collapsed</span>
+                <span title={V101_START_COLLAPSED_HINT}>Start Collapsed</span>{/* V10.1 (SECTION 20BG): wired — the next time Settings opens, every section starts folded (needs "Allow Category Collapse") */}
               </label>
             </div>
           </div>
@@ -251889,7 +251947,8 @@ function dispatchGameSettingsChange(
                                 gameSettings={gameSettings}
                                 draftSettings={draftGameSettings}
                                 onUpdateSetting={(key, val) => {
-                                  setDraftGameSettings(prev => ({ ...(prev || {}), [key]: val }));
+                                  // V10.1 (SECTION 20BG): a search result edits LIVE like every other control (it used to write a hidden draft that a later Apply could use to overwrite newer choices). The value is checked the way an Apply checked it.
+                                  trackedSetGameSettings("direct_player_change", "Settings Search", prev => ({ ...prev, ...sanitizeSettingsPatch({ [key]: val }, { keepUnknownKeys: true }).settings }));
                                 }}
                                 onOpenSection={(tab, secId, fieldKey) => {
                                   navigateToSettings(tab, secId, { highlight: true, fieldKey, resultIndex: idx });
@@ -252138,6 +252197,7 @@ function dispatchGameSettingsChange(
               changedFieldKeys: settingsChangedFieldKeys,
               collapsedSections: uiState.settingsCollapsedSections,
               onToggleCollapse: toggleSettingsSection,
+              allowCollapse: v101SectionCanCollapse(gameSettings), // V10.1 (SECTION 20BG): the "Allow Category Collapse" switch now decides
               border: themeStyles.border,
               buttonSecondary: themeStyles.buttonSecondary
             }}>
@@ -252552,9 +252612,21 @@ function dispatchGameSettingsChange(
                   </select>
                 </div>
               </SettingsSection>
-              {gameSettings.uxAssistPackEnabled && gameSettings.settingsPresetsEnabled && (
-                <SettingsSection id="quickSetup.presets" tab="quickSetup" title="Settings Presets" onReset={() => applySettingsPreset('classic')} resetLabel="Reset to Classic">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* V10.1 (SECTION 20BG): the presets section is always rendered, so Search and Jump never land on nothing. With "Settings Presets" off it shows one note and a "Show presets" button; the switch no longer depends on the UX Assist master switch (which would also turn on other helpers). */}
+              <SettingsSection id="quickSetup.presets" tab="quickSetup" title="Settings Presets" onReset={() => applySettingsPreset('classic')} resetLabel="Reset to Classic">
+                  {!v101PresetsSectionOpen(gameSettings) && (
+                    <div id="settings-presets-gate-note" className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                      <div className="opacity-80">{V101_PRESETS_GATE_NOTE}</div>
+                      <button
+                        type="button"
+                        onClick={() => updateGameSetting('settingsPresetsEnabled', true, { settingLabel: 'Settings Presets', section: 'Quick Setup → Settings Presets', source: 'direct_player_change' })}
+                        className={`px-4 py-2 rounded font-semibold ${themeStyles.success} text-white`}
+                      >
+                        Show presets
+                      </button>
+                    </div>
+                  )}
+                  {v101PresetsSectionOpen(gameSettings) && (<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {(Object.entries(SETTINGS_PRESETS) as Array<[SettingsPresetId, SettingsPresetConfig]>).map(([presetId, preset]) => (
                       <button
                         key={presetId}
@@ -252565,9 +252637,8 @@ function dispatchGameSettingsChange(
                         <div className="text-xs opacity-75 mt-1">{preset.description}</div>
                       </button>
                     ))}
-                  </div>
+                  </div>)}
                 </SettingsSection>
-              )}
 
               <SettingsSection id="interface.appearance" tab="interfaceAcc" title="Appearance" chips={['UX only']}>
                 <div className="space-y-4">
@@ -252727,9 +252798,10 @@ function dispatchGameSettingsChange(
                     { key: 'groupedInventoryCardsEnabled', label: 'Grouped Inventory Cards', description: 'Adds richer sell/craft cards in the market.' },
                     { key: 'teamModeAiSystemsEnabled', label: 'Team Mode AI Systems', description: 'Enables Team Mode-only system profiles.' }
                   ] as Array<{ key: keyof GameSettingsState; label: string; description: string }>).map(row => {
-                    const isUxSubFeature = row.key !== 'uxAssistPackEnabled' && row.key !== 'teamModeAiSystemsEnabled';
+                    const isUxSubFeature = row.key !== 'uxAssistPackEnabled' && row.key !== 'teamModeAiSystemsEnabled' && row.key !== 'settingsPresetsEnabled'; // V10.1 (SECTION 20BG): the presets section no longer waits for the master switch
                     const active = Boolean(gameSettings[row.key]);
-                    const gatedInactive = isUxSubFeature && !gameSettings.uxAssistPackEnabled;
+                    const v101UxRow = v101UxAssistRowState(gameSettings, String(row.key)); // V10.1 (SECTION 20BG): the row says what the game really does at this interface level
+                    const gatedInactive = isUxSubFeature && !gameSettings.uxAssistPackEnabled && !v101UxRow.guidedSupplied;
                     return (
                       <div key={row.key} id={`settings-field-${row.key}`} data-setting-key={row.key} className="flex items-center justify-between gap-3">
                         <div>
@@ -252740,9 +252812,10 @@ function dispatchGameSettingsChange(
                         </div>
                         <button
                           onClick={() => updateGameSetting(row.key, !active, { settingLabel: row.label, section: 'Interface → UX Assist Features', source: 'direct_player_change' })}
-                          className={`px-4 py-2 rounded font-semibold ${active ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                          className={`px-4 py-2 rounded font-semibold ${active || v101UxRow.guidedSupplied ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                          title={v101UxRow.guidedSupplied ? V101_UX_GUIDED_NOTE : undefined}
                         >
-                          {active ? 'ON' : 'OFF'}
+                          {v101UxRow.label}
                         </button>
                       </div>
                     );
@@ -253755,7 +253828,7 @@ function dispatchGameSettingsChange(
                   <div id="settings-field-allowSettingsCategoryCollapse" data-setting-key="allowSettingsCategoryCollapse" className="flex items-center justify-between gap-3 pt-3 border-t border-slate-800">
                     <div>
                       <div className="font-semibold">Allow Category Collapse</div>
-                      <div className="text-slate-400">Allow accordion folding and collapsing of settings categories & sections.</div>
+                      <div className="text-slate-400">Allow accordion folding and collapsing of settings categories & sections. Off keeps every section open and hides the fold arrows. {/* V10.1 (SECTION 20BG): this switch is now read by every section */}</div>
                     </div>
                     <button
                       type="button"
@@ -253775,7 +253848,7 @@ function dispatchGameSettingsChange(
                   <div id="settings-field-startSettingsCategoryCollapsed" data-setting-key="startSettingsCategoryCollapsed" className="flex items-center justify-between gap-3">
                     <div>
                       <div className="font-semibold">Start Settings Category Collapsed</div>
-                      <div className="text-slate-400">Initialize all category sections in collapsed state when opening Settings Hub.</div>
+                      <div className="text-slate-400">Initialize all category sections in collapsed state when opening Settings Hub (the next time you open it; needs Allow Category Collapse). {/* V10.1 (SECTION 20BG): wired */}</div>
                     </div>
                     <button
                       type="button"
@@ -253795,7 +253868,7 @@ function dispatchGameSettingsChange(
                   <div id="settings-field-rememberCategoryNavigationState" data-setting-key="rememberCategoryNavigationState" className="flex items-center justify-between gap-3">
                     <div>
                       <div className="font-semibold">Remember Category Navigation State</div>
-                      <div className="text-slate-400">Persist collapsed section state and active category tab across game sessions.</div>
+                      <div className="text-slate-400">Persist collapsed section state and active category tab across game sessions (kept in this browser). {/* V10.1 (SECTION 20BG): wired */}</div>
                     </div>
                     <button
                       type="button"
@@ -255986,8 +256059,8 @@ function dispatchGameSettingsChange(
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
                               {([
-                                { key: 'teamAiOverrideEscalatingCostEnabled', label: 'Escalating Cost' },
-                                { key: 'teamAiOverrideFatigueEnabled', label: 'Override Fatigue' },
+                                { key: 'teamAiOverrideEscalatingCostEnabled', label: 'Escalating Cost' }, // V10.1 (SECTION 20BG): wired, see v101TeamOverrideRules
+                                { key: 'teamAiOverrideFatigueEnabled', label: 'Override Fatigue' }, // V10.1 (SECTION 20BG): wired, see v101TeamOverrideRules
                                 { key: 'teamAiOverrideTransparencyEnabled', label: 'Show in Transparency' }
                               ] as Array<{ key: keyof GameSettingsState; label: string }>).map(toggle => (
                                 <label key={String(toggle.key)} className="flex items-center gap-2 cursor-pointer">
@@ -256000,6 +256073,7 @@ function dispatchGameSettingsChange(
                                 </label>
                               ))}
                             </div>
+                            <div className="text-xs opacity-75" data-testid="v101-team-override-note">{V101_TEAM_OVERRIDE_NOTE}</div>{/* V10.1 (SECTION 20BG): says what the two cost and fatigue boxes do now */}
                           </>
                         )}
                       </>
@@ -259067,7 +259141,7 @@ function dispatchGameSettingsChange(
                         <SettingsSlider label={(v) => <>Max Simultaneous Loans: {v}</>} id="setting-slider-85-max-simultaneous-loans-maxsimultaneouslo" min="1" max="5" value={gameSettings.maxSimultaneousLoans} onChange={(val) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, maxSimultaneousLoans: val }))} className="w-full" />
                       </div>
                       <div>
-                        <SettingsSlider label={(v) => <>Interest Rate: {v.toFixed(0)}%</>} id="setting-slider-86-interest-rate-0" min="0.5" max="2.0" step="0.1" value={gameSettings.interestAccrualRate || 1.0} onChange={(val) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, interestAccrualRate: val }))} className="w-full" />
+                        <SettingsSlider label={(v) => <>{v101InterestMultiplierLabel(v)}</>} id="setting-slider-86-interest-rate-0" min="0.5" max="2.0" step="0.1" value={gameSettings.interestAccrualRate || 1.0} onChange={(val) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, interestAccrualRate: val }))} className="w-full" />
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
@@ -259344,7 +259418,7 @@ function dispatchGameSettingsChange(
                         {policy.lastError ? <div className="text-red-300">Error: {policy.lastError}</div> : null}
                         <div className="opacity-80">Enabling this does not enable autosave or full-match restore. {describeMatchSavesNote(gameSettings.matchRecoveryEnabled === true) /* V9.9 (SECTION 20AV) */} Successful verification does not guarantee the browser will keep data forever.</div>
                         <div className="opacity-80 space-y-1">
-                          <div>Storage available: {typeof window !== 'undefined' && window.localStorage ? 'yes' : 'no'}</div>
+                          <div>Storage available: {v101StorageAvailable() ? 'yes' : 'no'}</div>{/* V10.1 (SECTION 20BG): was a bare window.localStorage read in render, which throws when the browser blocks site data and took the whole game down */}
                           <div>Write/read verified: {policy.storageVerifiedAt ? 'yes (current browser storage check, not a reload guarantee)' : 'no'}</div>
                           <div>Profile save verified: {policy.profileSaveVerifiedAt ? formatTs(policy.profileSaveVerifiedAt) : 'no'}</div>
                           <div>Profile load verified: {policy.profileLoadVerifiedAt ? formatTs(policy.profileLoadVerifiedAt) : 'no'}</div>
@@ -261926,14 +262000,21 @@ function dispatchGameSettingsChange(
             isOpen={showPresetManagerModal}
             onClose={() => setShowPresetManagerModal(false)}
             currentSettings={gameSettings}
-            onApplyPresetSettings={(presetSettings, presetName) => {
-              // V9.9 (SECTION 20AT): a stored preset is checked like an import (wrong-kind values are left out, core numbers kept in range).
-              trackedSetGameSettings("direct_player_change", `Applied Preset: ${presetName}`, prev => ({
-                ...prev,
-                ...sanitizeSettingsPatch(presetSettings, { keepUnknownKeys: true }).settings
-              }));
-              if (v101RulesLocked && v101EditsTouchLockedRules(gameSettings, presetSettings)) addNotification(`Game Length and Victory Goal from the preset wait for your next match. ${V101_RULE_LOCK_REASON}`, 'info', true, 'system'); // V10.1 (SECTION 20BD): say so instead of dropping them silently
-              setShowPresetManagerModal(false);
+            onApplyPresetSettings={(presetSettings, presetName, presetOptions) => {
+              // V10.1 (SECTION 20BG): a preset is no longer applied the moment its button is pressed. It is checked like an import (V9.9: wrong-kind values are left out, core numbers kept in range),
+              // compared with your settings now, and the player is told how many settings change (and, in a running match, which rules) before anything is written.
+              // Look, sound and accessibility settings stay as they are unless the player ticked the box; a running match keeps its Experience mode (it has its own question).
+              const v101Plan = v101PresetApplyPlan(gameSettings, sanitizeSettingsPatch(presetSettings, { keepUnknownKeys: true }).settings, { includeProfile: presetOptions?.includeProfile === true, liveMatch: gameState.gameMode === 'game', rulesLocked: v101RulesLocked });
+              setShowPresetManagerModal(false); // the confirmation window sits below this manager, so the manager closes first
+              if (v101Plan.changedCount === 0) { addNotification(`"${presetName}" already matches your settings, so nothing changed.`, 'info', true, 'system'); return; }
+              showConfirmation('settingsPreset', `Apply ${presetName}?`, v101Plan.message, 'Apply preset', () => {
+                trackedSetGameSettings("direct_player_change", `Applied Preset: ${presetName}`, prev => ({
+                  ...prev,
+                  ...v101Plan.patch
+                }));
+                addNotification(`Applied preset: ${presetName} (${v101Plan.changedCount} ${v101Plan.changedCount === 1 ? 'setting' : 'settings'}).`, 'success', true, 'system');
+                if (v101RulesLocked && v101EditsTouchLockedRules(gameSettings, v101Plan.patch)) addNotification(`Game Length and Victory Goal from the preset wait for your next match. ${V101_RULE_LOCK_REASON}`, 'info', true, 'system'); // V10.1 (SECTION 20BD): say so instead of dropping them silently
+              });
             }}
             themeStyles={themeStyles}
           />
@@ -265331,7 +265412,7 @@ function dispatchGameSettingsChange(
       gameSettings.uxAssistPackEnabled && Boolean(gameSettings[key])
     );
     const guidedIntentChrome = usesGuidedIntentChrome(gameSettings);
-    const simplifiedActionBarActive = isUxAssistFeatureActive('simplifiedActionBarEnabled') || (guidedIntentChrome && !gameSettings.uxAssistPackEnabled);
+    const simplifiedActionBarActive = isUxAssistFeatureActive('simplifiedActionBarEnabled') || guidedIntentChrome; // V10.1 (SECTION 20BG): switching the UX Assist master ON no longer drops the simplified action bar a guided player already had (it now follows the same rule as the other two guided helpers)
     const disabledFeedbackActive = isUxAssistFeatureActive('disabledActionFeedbackEnabled') || guidedIntentChrome;
     const interactiveMapActive = isUxAssistFeatureActive('interactiveMapEnabled') || guidedIntentChrome;
     const winConditionCoachActive = isUxAssistFeatureActive('winConditionCoachEnabled');
@@ -278544,6 +278625,8 @@ function dispatchGameSettingsChange(
         gameState={coPilotViewState}
         player={player}
         coPilotSettings={gameSettings?.coPilotSettings || createDefaultCoPilotSettings()}
+        matchActionsPerDay={gameSettings?.playerActionsPerDay}
+        matchIsV101={isV101Match(gameState)}
         onUpdateSettings={(newSettings) => {
           const currentCp = gameSettings?.coPilotSettings || createDefaultCoPilotSettings();
           const updated = { ...currentCp, ...newSettings };
