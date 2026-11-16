@@ -48321,7 +48321,7 @@ export function enumerateLegalActions(
   const currentRegion = REGIONS[actor.currentRegion];
   // V10.1 (SECTION 20BC): with the challenge board on, the live rival chooses from the same board as the human (ctx.challengesFor); no hook = the region's base list, as before.
   const boardChallenges = ctx.challengesFor ? ctx.challengesFor(actor) : null;
-  const availableChallenges = ((boardChallenges as any[] | null) || currentRegion?.challenges || []).filter((c: any) => !(actor.completedThisSeason || []).includes(c.name));
+  const availableChallenges = ((boardChallenges as Array<{ name: string }> | null) || currentRegion?.challenges || []).filter((c: any) => !(actor.completedThisSeason || []).includes(c.name));
   availableChallenges.forEach((challenge: any) => {
     if ((actor.money || 0) < MINIMUM_WAGER) return;
     const successChance = classicSuccessChance(challenge, actor);
@@ -73720,7 +73720,7 @@ export function initiateCoPilotTakeover(
   const currentTurn = typeof state?.turn === 'number' ? state.turn : (typeof state?.turnCounter === 'number' ? state.turnCounter : (state?.day ?? 1));
   const targetActorId = playerObj?.id || recommendation?.targetActorId || objective?.actorId || state?.humanPlayerId || 'player_1';
   const timestamp = Date.now();
-  const rand = typeof drawGameRandom === 'function' ? drawGameRandom(state, v101SessionRandomDomain(state), 'deterministic') : 0.5; // V10.1 (SECTION 20BC): not the rival's stream in a V10.1 match
+  const rand = typeof drawGameRandom === 'function' ? drawGameRandom(state, v101SessionRandomDomain(state, gameSettings), 'deterministic') : 0.5; // V10.1 (SECTION 20BC): not the rival's stream in a V10.1 match
   const randSuffix = Math.floor(rand * 1000000).toString(36);
   const sessionId = `takeover_session_${timestamp}_${randSuffix}`;
 
@@ -137356,7 +137356,7 @@ export interface SoloAiLoopDeps {
   onPhase?: (phase: SoloAiTurnPhase, label: string | null) => void;
   now?: () => number;
   /** V10.1 (SECTION 20BC): true when the commit that just happened cost no action (the executor knows; missing = every commit costs one). */
-  commitWasFree?: (action: any) => boolean;
+  commitWasFree?: (action: unknown) => boolean;
 }
 
 /**
@@ -209189,13 +209189,17 @@ export function v101RivalBoardChallenges(input: { actor: unknown; gameState: unk
 
 // ---- RV1: cosmetic draws are not the rival's ----------------------------------------------------------------------------------
 /** The stream a Co-Pilot session token / takeover id is drawn from: the rival's AIReasoning stream before V10.1, HumanAutomation in a V10.1 match (the state may be the match or hold it as `gameState`). */
-export function v101SessionRandomDomain(state: unknown): 'AIReasoning' | 'HumanAutomation' {
+export function v101SessionRandomDomain(state: unknown, settings?: { classicRulesV100?: unknown } | null): 'AIReasoning' | 'HumanAutomation' {
   const inner = v99IsRecord(state) ? state.gameState : null;
-  return isV101Match(state) || isV101Match(inner) ? 'HumanAutomation' : 'AIReasoning';
+  // V10.1 (SECTION 20BC): review fix — the classic rules switch (when the caller or the state carries the settings) keeps V10.0 streams, like the parity rules.
+  const own = v99IsRecord(state) && v99IsRecord(state.gameSettings) ? state.gameSettings : null;
+  const innerOwn = v99IsRecord(inner) && v99IsRecord(inner.gameSettings) ? inner.gameSettings : null;
+  const classic = settings?.classicRulesV100 === true || own?.classicRulesV100 === true || innerOwn?.classicRulesV100 === true;
+  return !classic && (isV101Match(state) || isV101Match(inner)) ? 'HumanAutomation' : 'AIReasoning';
 }
 /** One roll for `actor`'s action in the team executor: the human's roll comes from the HumanAutomation stream in a V10.1 match, everyone else's (and every earlier match) from `fallback` (the rival's stream). */
-export function v101ActorRandom(actor: { kind?: unknown } | null | undefined, gameState: unknown, fallback: () => number): number {
-  return actor && actor.kind === 'human' && isV101Match(gameState) ? drawGameplayRandom('HumanAutomation') : fallback();
+export function v101ActorRandom(actor: { kind?: unknown } | null | undefined, gameState: unknown, fallback: () => number, settings?: { classicRulesV100?: unknown } | null): number {
+  return actor && actor.kind === 'human' && v101RivalRulesActive(gameState, settings) ? drawGameplayRandom('HumanAutomation') : fallback(); // V10.1 (SECTION 20BC): review fix — honours the classic rules switch
 }
 
 // ---- RV2: settings the solo rival does not read ---------------------------------------------------------------------------
@@ -209891,8 +209895,13 @@ export function runV101RivalSelfTests(): V9SelfTestResult[] {
     v101ActorRandom({ kind: 'ai' }, { rulesVersion: V101_RULES_VERSION }, () => { fallbackCalls += 1; return 0.5; });
     v101ActorRandom({ kind: 'human' }, { rulesVersion: V100_RULES_VERSION }, () => { fallbackCalls += 1; return 0.5; });
     v101ActorRandom({ kind: 'human' }, {}, () => { fallbackCalls += 1; return 0.5; });
-    return (json(tokenNew) === json([0, 1]) && json(tokenOld) === json([1, 0]) && json(tokenV100) === json([1, 0]) && nested && json(humanNew) === json([0, 1]) && fallbackCalls === 3)
-      || json({ tokenNew, tokenOld, tokenV100, nested, humanNew, fallbackCalls });
+    // review fix: the classic rules switch (turned on mid-match) keeps the V10.0 streams
+    const classicState = { rulesVersion: V101_RULES_VERSION };
+    const classicDomain = v101SessionRandomDomain(classicState, { classicRulesV100: true }) === 'AIReasoning' && v101SessionRandomDomain({ ...classicState, gameSettings: { classicRulesV100: true } }) === 'AIReasoning' && v101SessionRandomDomain(classicState, { classicRulesV100: false }) === 'HumanAutomation';
+    let classicFallback = 0;
+    v101ActorRandom({ kind: 'human' }, classicState, () => { classicFallback += 1; return 0.5; }, { classicRulesV100: true });
+    return (json(tokenNew) === json([0, 1]) && json(tokenOld) === json([1, 0]) && json(tokenV100) === json([1, 0]) && nested && json(humanNew) === json([0, 1]) && fallbackCalls === 3 && classicDomain && classicFallback === 1)
+      || json({ tokenNew, tokenOld, tokenV100, nested, humanNew, fallbackCalls, classicDomain, classicFallback });
   });
 
   check('v101rv_16_team_only_settings_say_so', "Every setting only the team AI reads carries a \"Team modes only\" chip in AI Opponent, Scenario and Grand Tour and none in a team mode; live settings never carry it; every listed key is a real setting", () => {
@@ -231505,7 +231514,7 @@ function dispatchGameSettingsChange(
     if (tauntsEnabled) {
       const moodState = AI_MOOD_STATES[newMood];
       // V10.1 (SECTION 20BC): a taunt is flavour text — in a V10.1 match its draws come from the Opponent stream, never the rival's AIReasoning stream (so turning taunts on cannot change how the rival plays).
-      const tauntRandom = isV101Match(gameStateLiveRef.current) ? () => drawGameplayRandom('Opponent') : aiRandom;
+      const tauntRandom = v101RivalRulesActive(gameStateLiveRef.current, gameSettings) ? () => drawGameplayRandom('Opponent') : aiRandom;
       if (tauntRandom() < moodState.tauntChance) {
         // V9.6 (SECTION 20AK): the memory-driven line when the opponent personality is on; the canned mood line otherwise.
         const wp5Taunt = wp5SpeakRef.current?.('taunt', String(projectedAi?.id || 'ai'), { mood: newMood }) || null;
@@ -231914,7 +231923,7 @@ function dispatchGameSettingsChange(
           const bestPrice = gameState.resourcePrices[best] || 100;
           const nextPrice = gameState.resourcePrices[candidate] || 100;
           return nextPrice > bestPrice ? candidate : best;
-        }, actor.activeSpecialAbility === 'Scout Ahead' ? regionResources[0] : regionResources[Math.floor(v101ActorRandom(actor, gameStateLiveRef.current, aiRandom) * regionResources.length)])
+        }, actor.activeSpecialAbility === 'Scout Ahead' ? regionResources[0] : regionResources[Math.floor(v101ActorRandom(actor, gameStateLiveRef.current, aiRandom, gameSettings) * regionResources.length)])
       : null;
 
     const collectedList: string[] = collectedResource ? [collectedResource] : [];
@@ -231981,7 +231990,7 @@ function dispatchGameSettingsChange(
       }
     });
     const successChance = 0.9 + (actor.character.craftingBonus?.effect?.successBonus || 0);
-    const craftedSuccessfully = v101ActorRandom(actor, gameStateLiveRef.current, aiRandom) < successChance; // V10.1 (SECTION 20BC): a human automation roll is not drawn from the rival's stream
+    const craftedSuccessfully = v101ActorRandom(actor, gameStateLiveRef.current, aiRandom, gameSettings) < successChance; // V10.1 (SECTION 20BC): a human automation roll is not drawn from the rival's stream
     if (craftedSuccessfully) {
       nextInventory.push(recipe.output);
     }
@@ -232020,7 +232029,7 @@ function dispatchGameSettingsChange(
     // challenge-assist spend). No-op (0) when Sync 2.0 or its expertise sub-toggle is off.
     const successChance = calculateActorChallengeSuccessChance(challenge, actor, bonusSuccessChance + getChallengeCategoryExpertiseBonus(actor, challenge.type, gameSettings));
     // V9.6 (SECTION 20AL): a trailing side may reroll one failed challenge per turn (the extra draw happens only then).
-    const wp6Random = () => v101ActorRandom(actor, gameStateLiveRef.current, aiRandom); // V10.1 (SECTION 20BC): a human automation roll is not drawn from the rival's AIReasoning stream
+    const wp6Random = () => v101ActorRandom(actor, gameStateLiveRef.current, aiRandom, gameSettings); // V10.1 (SECTION 20BC): a human automation roll is not drawn from the rival's AIReasoning stream
     const wp6FirstRoll = wp6Random() < successChance;
     const wp6Rerolled = !wp6FirstRoll && wp6RerollRef.current?.(actorId) === true;
     const success = wp6FirstRoll || (wp6Rerolled && wp6Random() < successChance);
@@ -239522,10 +239531,16 @@ function dispatchGameSettingsChange(
   }, [selectedDecisionTrace]);
 
   const buildSettingEffectSummary = useCallback((settingId: string) => {
-    // V10.1 (SECTION 20BC): a setting only the team AI reads says so in a one-on-one match, instead of describing an AI that is not playing.
+    // V10.1 (SECTION 20BC): a setting only the team AI reads says so in a one-on-one match, instead of describing an AI that is not playing (review fix: the toggles keep their own description).
     const v101SummaryKey: Record<string, string> = { ai_market_modifiers: 'aiMarketModifierAwareness', ai_special_abilities: 'aiSpecialAbilityPriority', ai_economy: 'aiEconomyInteractionWeight', ai_win_condition: 'aiWinConditionSpendingStrength', ai_region_rush: 'aiRegionRushIntensity' };
     const v101TeamOnly = v101TeamOnlySummary(v101SummaryKey[settingId], gameState.selectedMode);
-    if (v101TeamOnly) return v101TeamOnly;
+    if (v101TeamOnly) {
+      // The three cards named after toggles (the one-on-one rival still reads the toggle) only say that their weight is team-only; the two weight-only cards say the whole summary is.
+      if (settingId === 'ai_market_modifiers') return 'Toggle: the rival applies weather, season, event, and pricing modifiers when it is on. The decision weight below is used by team modes only.';
+      if (settingId === 'ai_special_abilities') return 'Toggle: the rival may use special abilities when it is on. The ability priority weight below is used by team modes only.';
+      if (settingId === 'ai_economy') return 'Toggle: the rival\'s sales move supply and demand when it is on. The interaction weight below is used by team modes only.';
+      return v101TeamOnly;
+    }
     switch (settingId) {
       case 'ai_market_modifiers':
         return `Decision weight ${(gameSettings.aiMarketModifierAwareness * 100).toFixed(0)}% for weather, season, events, and pricing modifiers.`;
