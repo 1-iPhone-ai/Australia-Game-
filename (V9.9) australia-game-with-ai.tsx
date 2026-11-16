@@ -40937,7 +40937,7 @@ export function askGameToolSimulateAction(state: any, actorId: string, action: a
     }
   }
 
-  const foundActor = clonedState.players?.find((p: any) => p.id === actorId) || clonedState.humanPlayer || clonedState.player || clonedState.actor;
+  const foundActor = clonedState.players?.find((p: { id?: string }) => p.id === actorId) || clonedState.humanPlayer || clonedState.player || clonedState.actor;
 
   if (!foundActor) {
     return {
@@ -40952,7 +40952,7 @@ export function askGameToolSimulateAction(state: any, actorId: string, action: a
   }
   // V10.1 (SECTION 20BH): the preview changes a copy of the actor. With skipDeepClone the actor is the caller's live object
   // (the planner passes its working state), and the old code wrote the invented gather income into it.
-  const actor: any = { ...foundActor };
+  const actor = { ...foundActor };
   // V10.1 (SECTION 20BH): the live fields (currentRegion, actions used today) instead of fields the player does not have, and
   // no made-up "NSW" / "3 AP" / "700 credit" when a value is missing.
   const simRegion = (): string => String(actor.currentRegion || actor.currentLocation || actor.region || '');
@@ -209636,9 +209636,13 @@ export function v101GuardianStateKey(context: { gameState?: unknown; actorId: st
   const actor = v101AskRec(byId ?? fromPlayers ?? (live.id === context.actorId ? live : undefined));
   const count = (v: unknown): number => (Array.isArray(v) ? v.length : v && typeof v === 'object' ? Object.keys(v as object).length : 0);
   const held = v101AskRec(v101AskRec(gs.regionControlStats).totalControlled)[context.actorId];
+  // The play screen's inline warnings hand over a live state with no player in it, so the actor's own fields can be missing there. What is always in it: the
+  // contracts this actor holds, the expeditions under way, and the activity ledger, which gets an entry for every committed action (so a sale at the same cash level changes it).
+  const ledger = Array.isArray(v101AskRec(gs.gameActivityLedger).events) ? v101AskRec(gs.gameActivityLedger).events as unknown[] : [];
   const parts = [
     String(actor.currentRegion || ''), count(actor.inventory), count(actor.loans) + count(actor.advancedLoans), Number(actor.actionsUsedThisTurn) || 0, Math.floor(Number(actor.money) || 0),
-    count(context.activeContracts), count(context.activeExpeditions), count(context.activePlans), Number(held) || 0, Number(context.currentCash) || 0, Number(context.currentActionTokens) || 0
+    count(context.activeContracts), count(context.activeExpeditions), count(context.activePlans), Number(held) || 0, Number(context.currentCash) || 0, Number(context.currentActionTokens) || 0,
+    count(v101AskRec(gs.activeContractsByActor)[context.actorId]), count(gs.activeExpeditions), ledger.length, String(v101AskRec(ledger[0]).id ?? ''), String(v101AskRec(ledger[ledger.length - 1]).id ?? '')
   ];
   return computeDeterministicHash(parts.join('|'));
 }
@@ -209945,6 +209949,9 @@ export function runV101AdviceSelfTests(): V9SelfTestResult[] {
     const ctx = (a: Obj, extra?: Obj) => ({ gameState: { actorsById: { player: a }, regionControlStats: { totalControlled: { player: 1 } } }, actorId: 'player', currentCash: 900, currentActionTokens: 3, activeContracts: [], activeExpeditions: [], activePlans: [], ...(extra || {}) });
     const key = (a: Obj, extra?: Obj) => v101GuardianStateKey(ctx(a, extra));
     const same = key(actor()) === key(actor());
+    const withLedger = (events: unknown[], extra?: Obj) => v101GuardianStateKey({ ...ctx(actor()), gameState: { actorsById: { player: actor() }, gameActivityLedger: { events }, ...(extra || {}) } });
+    // a live state with no player in it (what the play screen's inline warnings hand over): a committed action still changes the key
+    if (withLedger([{ id: 'e1' }]) === withLedger([{ id: 'e2' }, { id: 'e1' }]) || withLedger([]) === withLedger([{ id: 'e1' }]) || withLedger([]) === withLedger([], { activeContractsByActor: { player: ['c1'] } }) || withLedger([{ id: 'e1' }]) !== withLedger([{ id: 'e1' }])) return 'ledger or contract changes did not move the key';
     const changed = [key(actor({ currentRegion: 'VIC' })), key(actor({ inventory: [] })), key(actor({ loans: [{}] })), key(actor({ actionsUsedThisTurn: 1 })), key(actor(), { activeContracts: ['c1'] }), key(actor(), { currentCash: 400 }), key(actor(), { currentActionTokens: 2 })];
     if (!same || new Set([key(actor()), ...changed]).size !== 8) return json({ same, distinct: new Set([key(actor()), ...changed]).size });
     // through the real pipeline: the same situation hits the cache, a changed region does not
@@ -260933,8 +260940,8 @@ function dispatchGameSettingsChange(
 
           // V10.1 (SECTION 20BH): the condition and risk come from the memo above; the top move is the Play card's own Recommended action
           // (v9ActionSetView.recommended, with its background, world and region notes), not a third ranking built here from raw utility.
-          const humanCondition: any = v101CoPilotPanelAnalysis?.humanCondition ?? null;
-          const primaryProblem: any = v101CoPilotPanelAnalysis?.primaryProblem ?? null;
+          const humanCondition = v101CoPilotPanelAnalysis?.humanCondition ?? null;
+          const primaryProblem = v101CoPilotPanelAnalysis?.primaryProblem ?? null;
           if (!humanCondition) return null;
           const topMove = v101CoPilotPanelTopMove(v9ActionSetView);
 
