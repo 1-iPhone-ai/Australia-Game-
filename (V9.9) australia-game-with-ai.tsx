@@ -19014,7 +19014,7 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     key: 'aiFairnessLevel',
     category: 'fairness',
     label: 'AI Fairness Level Multiplier',
-    description: 'Multiplier for AI decision efficiency vs raw numerical handicaps (1.0 = equal).',
+    description: 'Multiplier for AI decision efficiency vs raw numerical handicaps (1.0 = equal). V10.1 (SECTION 20BC): in a one-on-one match it only rescales how the rival rates its own moves; it does not change the rival\'s income, costs or odds.',
     valueType: 'number',
     minValue: 0.5,
     maxValue: 2.0,
@@ -19228,7 +19228,7 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     key: 'aiAffectsEconomy',
     category: 'economy',
     label: 'AI Market & Economy Impact',
-    description: 'Allows AI transactions to affect global supply/demand market prices.',
+    description: 'Allows AI transactions to affect global supply/demand market prices. V10.1 (SECTION 20BC): in team modes it also gives Hard AI actors $250 and Expert AI actors $500 extra starting cash, small yield and cost bonuses by difficulty, and any extra actions you configured; the one-on-one rival only moves prices.',
     valueType: 'boolean',
     defaultValue: false,
     validate: (v: any) => typeof v === 'boolean',
@@ -19354,7 +19354,7 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     key: 'fogOfWarEnabled',
     category: 'difficulty',
     label: 'Fog of War',
-    description: 'Hides unvisited region details, opponent inventories, and hidden actions.',
+    description: 'Hides unvisited region details, opponent inventories, and hidden actions from you. V10.1 (SECTION 20BC): the one-on-one rival still reads your cash and net worth when it chooses its moves.',
     valueType: 'boolean',
     defaultValue: false,
     validate: (v: any) => typeof v === 'boolean',
@@ -47918,6 +47918,13 @@ export interface ClassicAiRuntimeContext {
   rng: SeededRng;
   difficultyKey: string;
   specialAbilityActive: boolean;
+  /**
+   * V10.1 (SECTION 20BC): the live rival's own pricing and challenge list, read only when the hook is present (a match
+   * started on V10.1). Without them enumerateLegalActions is exactly V10.0's: the flat classicTravelCost fares and the
+   * region's four base challenges — the AI Tuning Lab, the reference bots and team AI never pass them.
+   */
+  travelCost?: (fromRegion: string, toRegion: string, actor: unknown) => number;
+  challengesFor?: (actor: unknown) => unknown[] | null;
 }
 
 let tuningGenomeIdCounter = 0;
@@ -48312,7 +48319,9 @@ export function enumerateLegalActions(
   }
 
   const currentRegion = REGIONS[actor.currentRegion];
-  const availableChallenges = (currentRegion?.challenges || []).filter((c: any) => !(actor.completedThisSeason || []).includes(c.name));
+  // V10.1 (SECTION 20BC): with the challenge board on, the live rival chooses from the same board as the human (ctx.challengesFor); no hook = the region's base list, as before.
+  const boardChallenges = ctx.challengesFor ? ctx.challengesFor(actor) : null;
+  const availableChallenges = ((boardChallenges as any[] | null) || currentRegion?.challenges || []).filter((c: any) => !(actor.completedThisSeason || []).includes(c.name));
   availableChallenges.forEach((challenge: any) => {
     if ((actor.money || 0) < MINIMUM_WAGER) return;
     const successChance = classicSuccessChance(challenge, actor);
@@ -48337,7 +48346,8 @@ export function enumerateLegalActions(
   Object.keys(REGIONS).forEach(region => {
     if (region === actor.currentRegion) return;
     if (settings.sabotageEnabled && isTravelBlocked(actor.debuffs)) return;
-    const cost = classicTravelCost(actor.currentRegion, region, actor);
+    // V10.1 (SECTION 20BC): the live rival's journeys are priced by the function the player pays (ctx.travelCost); no hook = the flat fares, as before.
+    const cost = ctx.travelCost ? ctx.travelCost(actor.currentRegion, region, actor) : classicTravelCost(actor.currentRegion, region, actor);
     if ((actor.money || 0) < cost) return;
     let score = (actor.visitedRegions || []).includes(region) ? 10 : 100;
     const regionResources = REGIONAL_RESOURCES[region] || [];
@@ -48494,7 +48504,10 @@ export function chooseAction(
     weights,
     rng,
     difficultyKey: options?.difficultyKey || 'expert',
-    specialAbilityActive: Boolean(options?.specialAbilityActive)
+    specialAbilityActive: Boolean(options?.specialAbilityActive),
+    // V10.1 (SECTION 20BC): the live rival's V10.1 pricing and board (undefined for everything else).
+    travelCost: options?.live?.travelCost,
+    challengesFor: options?.live?.challengesFor
   };
   const profile = AI_DIFFICULTY_PROFILES[ctx.difficultyKey] || AI_DIFFICULTY_PROFILES.expert;
   // V9.9 (SECTION 20AS): the roll is always drawn; only the live rival's paid-for action (live.suppressMistake) ignores it.
@@ -48552,7 +48565,8 @@ export function chooseAction(
   if (!finalList.length) return null;
   const ranked = [...finalList].sort((a, b) => (b.score || 0) - (a.score || 0));
   // V10.0 (SECTION 20AY, F1): the V10.0 rival plays its best move at its difficulty's rate; without the flag, V9.9's pick.
-  if (v100Policy) return pickV100RivalDecision(ranked, rng, ctx.difficultyKey, mistakeRolled);
+  // V10.1 (SECTION 20BC): in a V10.1 match the best-move rate IS the screen's "Decision" figure (the mistake share is taken out of it, not multiplied into it) and the pick always draws two values.
+  if (v100Policy) return pickV100RivalDecision(ranked, rng, ctx.difficultyKey, mistakeRolled, options?.live?.v101Rules === true ? { mistakeChance: options?.live?.suppressMistake === true ? 0 : (Number(profile.mistakeChance) || 0) } : undefined);
   return pickClassicDecision(ranked, rng, ctx.difficultyKey);
 }
 
@@ -73024,7 +73038,8 @@ export function applyClaimedTurnActionReset(state: any, session: CoPilotTakeover
 
 export function mintCoPilotSessionToken(state?: any): string {
   const timestamp = Date.now();
-  const rand = typeof drawGameRandom === 'function' ? drawGameRandom(state, 'AIReasoning', 'deterministic') : 0.5;
+  // V10.1 (SECTION 20BC): in a V10.1 match the token's draw is not taken from the rival's AIReasoning stream.
+  const rand = typeof drawGameRandom === 'function' ? drawGameRandom(state, v101SessionRandomDomain(state), 'deterministic') : 0.5;
   const randSuffix = Math.floor(rand * 1000000).toString(36);
   return `cptoken_${timestamp}_${randSuffix}`;
 }
@@ -73704,7 +73719,7 @@ export function initiateCoPilotTakeover(
   const currentTurn = typeof state?.turn === 'number' ? state.turn : (typeof state?.turnCounter === 'number' ? state.turnCounter : (state?.day ?? 1));
   const targetActorId = playerObj?.id || recommendation?.targetActorId || objective?.actorId || state?.humanPlayerId || 'player_1';
   const timestamp = Date.now();
-  const rand = typeof drawGameRandom === 'function' ? drawGameRandom(state, 'AIReasoning', 'deterministic') : 0.5;
+  const rand = typeof drawGameRandom === 'function' ? drawGameRandom(state, v101SessionRandomDomain(state), 'deterministic') : 0.5; // V10.1 (SECTION 20BC): not the rival's stream in a V10.1 match
   const randSuffix = Math.floor(rand * 1000000).toString(36);
   const sessionId = `takeover_session_${timestamp}_${randSuffix}`;
 
@@ -117869,13 +117884,13 @@ export const SETTINGS_INTELLIGENCE_METADATA: SettingsIntelligenceMetadata[] = [
     effects: { fairness: -2, ai_intelligence: 0 }
   },
   {
-    key: 'aiFairnessLevel', domain: 'fairness', axis: 'AI economic multiplier', playerMeaning: 'Multiplier applied to AI economics (1 = equal terms).',
-    bands: [{ upTo: 0.9, label: 'AI handicapped', meaning: 'AI economics are reduced below yours.' }, { upTo: 1.05, label: 'Equal', meaning: 'Equal terms.' }, { upTo: 2, label: 'AI advantaged', meaning: 'AI economics are boosted above yours.' }],
+    key: 'aiFairnessLevel', domain: 'fairness', axis: 'AI move-score scaling', playerMeaning: 'Scales how highly the AI rates its own moves (1 = equal terms). In a one-on-one match it does not change the rival\'s income, costs or odds.', // V10.1 (SECTION 20BC): what the live rival really does with it
+    bands: [{ upTo: 0.9, label: 'AI handicapped', meaning: 'The AI rates its moves a little lower. Its income, costs and odds do not change.' }, { upTo: 1.05, label: 'Equal', meaning: 'Equal terms.' }, { upTo: 2, label: 'AI advantaged', meaning: 'The AI rates its moves a little higher. Its income, costs and odds do not change.' }],
     zone: { base: [0.95, 1.05] }, effects: { fairness: -1, ai_intelligence: 0 }
   },
   {
-    key: 'fogOfWarEnabled', domain: 'fairness', axis: 'Fog of war', playerMeaning: 'Hides rival details for everyone (players and AI alike).',
-    on: { meaning: 'Rival cash and locations are hidden — for you and for AI.', why: 'Uncertainty and bluffing.', hurts: 'Harder to plan precisely.' },
+    key: 'fogOfWarEnabled', domain: 'fairness', axis: 'Fog of war', playerMeaning: 'Hides rival details from you. In a one-on-one match the rival still reads your cash and net worth when it chooses its moves.', // V10.1 (SECTION 20BC): the live rival ignores fog
+    on: { meaning: 'Rival cash and locations are hidden from you. The one-on-one rival is not blinded: it still reads your cash and net worth.', why: 'Uncertainty and bluffing.', hurts: 'Harder to plan precisely.' },
     off: { meaning: 'All details are visible.', why: 'Clear, strategic play.', hurts: 'Less uncertainty.' },
     effects: { randomness: 1, complexity: 1 }
   },
@@ -134339,7 +134354,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         // <<V101-STATE ECON>>
         //
         // <<V101-STATE RIVAL>>
-        //
+        ...(stateData.rivalRecap !== undefined ? { rivalRecap: sanitizeRivalRecapState(stateData.rivalRecap) ?? undefined } : {}), // V10.1 (SECTION 20BC): Rival Recap turns (optional; capped and sanitised)
         // <<V101-STATE CONTENT>>
         //
         // <<V101-STATE ENGINE>>
@@ -137173,6 +137188,11 @@ export interface SoloAiTurnRuntime {
   committedTypes: string[];
   timeline: SoloAiTimelineEntry[];
   seq: number;
+  /**
+   * V10.1 (SECTION 20BC): commits that cost the rival no action (a sale, a waived challenge). The daily budget counts
+   * successfulActions - freeCommits; missing (every match before V10.1) = 0, so the budget counts every commit as before.
+   */
+  freeCommits?: number;
 }
 
 export function createSoloAiTurnRuntime(turnKey: string, baseBudget: number, now: number): SoloAiTurnRuntime {
@@ -137223,7 +137243,7 @@ export function soloAiStopReason(rt: SoloAiTurnRuntime, ctx: { stale?: boolean; 
   if (ctx.gameOver) return 'game_over';
   if (rt.successfulActions >= V96_SOLO_AI_LIMITS.MAX_ACTION_COMMITS_PER_TURN) return 'safety_ceiling';
   if (rt.totalDecisionAttempts >= V96_SOLO_AI_LIMITS.MAX_DECISION_ATTEMPTS_PER_TURN) return 'safety_ceiling';
-  if (rt.successfulActions >= rt.effectiveBudget) return 'budget_exhausted';
+  if (rt.successfulActions - (rt.freeCommits || 0) >= rt.effectiveBudget) return 'budget_exhausted'; // V10.1 (SECTION 20BC): a free commit (a sale) does not use one of the day's actions
   if (rt.consecutiveFailures >= V96_SOLO_AI_LIMITS.MAX_CONSECUTIVE_FAILURES) return 'consecutive_failures';
   if (rt.noProgressCommits >= V96_SOLO_AI_LIMITS.MAX_NO_PROGRESS_COMMITS) return 'no_progress';
   if (rt.totalDecisionAttempts >= soloAiMaxAttempts(rt)) return 'attempt_limit';
@@ -137250,8 +137270,9 @@ export function soloAiRecordFailure(rt: SoloAiTurnRuntime, action: any, reason: 
 }
 
 /** Counts a success only after the canonical executor committed it; tracks real progress via the fingerprint. */
-export function soloAiRecordCommit(rt: SoloAiTurnRuntime, action: any, fingerprint: string, now: number): void {
+export function soloAiRecordCommit(rt: SoloAiTurnRuntime, action: any, fingerprint: string, now: number, free?: boolean): void {
   rt.successfulActions += 1;
+  if (free === true) rt.freeCommits = (rt.freeCommits || 0) + 1; // V10.1 (SECTION 20BC): said by the executor, only in a V10.1 match
   rt.consecutiveFailures = 0;
   rt.lastCommitAt = now;
   rt.committedTypes.push(String(action?.type || '?'));
@@ -137333,6 +137354,8 @@ export interface SoloAiLoopDeps {
   settle?: () => Promise<void>;
   onPhase?: (phase: SoloAiTurnPhase, label: string | null) => void;
   now?: () => number;
+  /** V10.1 (SECTION 20BC): true when the commit that just happened cost no action (the executor knows; missing = every commit costs one). */
+  commitWasFree?: (action: any) => boolean;
 }
 
 /**
@@ -137381,7 +137404,7 @@ export async function runSoloAiTurnLoop(deps: SoloAiLoopDeps): Promise<SoloAiEnd
     catch (err) { ok = false; soloAiLog(rt, 'AI_EXECUTION_ERROR', err instanceof Error ? err.message : String(err), now()); }
     if (deps.isStale()) return 'stale_session';
     if (!ok) { soloAiRecordFailure(rt, decision, 'not_committed', now()); phase('replanning', null); continue; }
-    soloAiRecordCommit(rt, decision, deps.fingerprint(), now());
+    soloAiRecordCommit(rt, decision, deps.fingerprint(), now(), deps.commitWasFree ? deps.commitWasFree(decision) === true : undefined);
     if (deps.settle) await deps.settle();
   }
 }
@@ -195871,6 +195894,14 @@ export interface ClassicAiLiveHooks {
    * it adds is still checked against isRejected. No hook = the ranking is exactly V9.9's.
    */
   rescore?: (candidates: Array<AIAction & { score: number }>) => Array<AIAction & { score: number }>;
+  /**
+   * V10.1 (SECTION 20BC): a match started on V10.1 (classic rules off). The pick corrects the best-move rate for the
+   * mistake share and always draws the same number of values; travelCost / challengesFor give the chooser the player's
+   * own fare function and the challenge board. No hook = V10.0's chooser exactly.
+   */
+  v101Rules?: boolean;
+  travelCost?: (fromRegion: string, toRegion: string, actor: unknown) => number;
+  challengesFor?: (actor: unknown) => unknown[] | null;
 }
 /** The candidates the chooser may still propose. No hook = the list itself (same array, same order). */
 export function classicAiProposable<T extends AIAction & { score: number }>(candidates: T[], live: ClassicAiLiveHooks | null | undefined): T[] {
@@ -196073,10 +196104,13 @@ export interface RivalDisciplineInput {
   actor: unknown;
   /** The live game state (selectedMode, regionDeposits, grandTourState). */
   gameState: unknown;
-  settings: { winCondition?: unknown; negotiationMode?: unknown; sabotageEnabled?: unknown };
+  settings: { winCondition?: unknown; negotiationMode?: unknown; sabotageEnabled?: unknown; totalDays?: unknown };
   difficultyKey: string;
   /** The rival's key in regionDeposits and in the Grand Tour progress (RIVAL_OWNER_KEY for the live rival). */
   ownerKey: string;
+  /** V10.1 (SECTION 20BC): a match started on V10.1 (classic rules off): journeys are priced by `travelCost` and the final day has its own rule. Missing = V10.0. */
+  v101?: boolean;
+  travelCost?: (fromRegion: string, toRegion: string, actor: unknown) => number;
 }
 /** The solo rival's key in regionDeposits and in the Grand Tour progress — the one executeAiAction validates and books with. */
 export const RIVAL_OWNER_KEY = 'ai';
@@ -196124,7 +196158,8 @@ export function refineRivalCandidates(candidates: RivalCandidate[], input: Rival
   const dataOf = (candidate: RivalCandidate): Record<string, unknown> => (v99IsRecord(candidate.data) ? candidate.data : {});
   const top = (list: RivalCandidate[]): number => list.reduce((best, candidate) => Math.max(best, Number(candidate.score) || 0), 0);
   const travelBlocked = input.settings.sabotageEnabled === true && Array.isArray(actor.debuffs) && isTravelBlocked(actor.debuffs as Array<{ type: string; remainingDays: number }>);
-  const travelCostTo = (code: string): number | null => (code === region || !rivalRegionInfo(code) || travelBlocked ? null : classicTravelCost(region, code, actor));
+  // V10.1 (SECTION 20BC): the same fare function the chooser used (input.travelCost), so a journey added here costs what the player would pay.
+  const travelCostTo = (code: string): number | null => (code === region || !rivalRegionInfo(code) || travelBlocked ? null : (input.travelCost ? input.travelCost(region, code, actor) : classicTravelCost(region, code, actor)));
   /** Adds `bonus` to journeys to `targets` (never below `floor`); a journey the chooser did not list is added when the rival can pay for it. */
   const favourTravel = (list: RivalCandidate[], targets: string[], bonus: number, floor: number): RivalCandidate[] => {
     const next = list.map(candidate => (candidate.type === 'travel' && targets.includes(String(dataOf(candidate).region || ''))
@@ -196222,6 +196257,8 @@ export function refineRivalCandidates(candidates: RivalCandidate[], input: Rival
   if (out.some(candidate => candidate.type === 'challenge' || candidate.type === 'sell')) {
     out = out.filter(candidate => candidate.type !== 'travel' || money - (Number(dataOf(candidate).cost) || 0) >= RIVAL_TRAVEL_RESERVE);
   }
+  // 5. V10.1 (SECTION 20BC): the final day of a match started on V10.1 — nothing bought on the last day can pay back.
+  if (input.v101 === true) out = v101RivalFinalDayCandidates(out, input);
   return out;
 }
 
@@ -196236,9 +196273,12 @@ export interface RivalDecisionOptions {
  * turn loop's "already failed" filter and the R2 rules. Undefined for a match without a seed (W4A, F4-01): then the
  * chooser is exactly V9.8's, also after a refused move.
  */
-export function rivalLiveHooksFor(input: { options: RivalDecisionOptions | null | undefined; aiState: unknown; gameState: unknown; playerState: unknown; settings: GameSettingsState; difficultyKey: string; onRuleError?: (error: unknown) => void }): ClassicAiLiveHooks | undefined {
+export function rivalLiveHooksFor(input: { options: RivalDecisionOptions | null | undefined; aiState: unknown; gameState: unknown; playerState: unknown; settings: GameSettingsState; difficultyKey: string; onRuleError?: (error: unknown) => void; themes?: readonly ContentTheme[] | null }): ClassicAiLiveHooks | undefined {
+  // V10.1 (SECTION 20BC): a match started on V10.1 (classic rules off) — the rival pays the player's fares and sees the player's challenge board.
+  const v101 = v101RivalRulesActive(input.gameState, input.settings);
+  const v101TravelCost = v101 ? (from: string, to: string, actor: unknown): number => v101RivalTravelCost(from, to, actor, input.gameState, input.settings) : undefined;
   const discipline: RivalDisciplineInput | null = rivalDisciplineActive(input.gameState)
-    ? { actor: input.aiState, gameState: input.gameState, settings: input.settings, difficultyKey: input.difficultyKey, ownerKey: RIVAL_OWNER_KEY } : null;
+    ? { actor: input.aiState, gameState: input.gameState, settings: input.settings, difficultyKey: input.difficultyKey, ownerKey: RIVAL_OWNER_KEY, ...(v101 ? { v101: true, travelCost: v101TravelCost } : {}) } : null;
   const isRejected = input.options?.isRejected;
   if (!discipline) return undefined; // W4A (F4-01): no match seed = V9.8's chooser, also after a refused move (it re-proposed it once, then re-decided)
   const hooks = buildRivalLiveHooks(isRejected || (() => false), {
@@ -196248,6 +196288,11 @@ export function rivalLiveHooksFor(input: { options: RivalDecisionOptions | null 
   // V10.0 (SECTION 20AY, F1): a match started on V10.0 gets the V10.0 pick unless the classic (V9.9) rival was chosen.
   // (Its stakes stay the R2 rules' Kelly-sized ones: a smaller early stake was tried and slowed the rival's opening.)
   if (v100RivalPolicyActive(input.gameState, input.settings)) hooks.v100Policy = true;
+  if (v101) {
+    hooks.v101Rules = true;
+    hooks.travelCost = v101TravelCost;
+    if (isChallengeBoardActive(input.settings)) hooks.challengesFor = actor => v101RivalBoardChallenges({ actor, gameState: input.gameState, settings: input.settings, themes: input.themes });
+  }
   // V10.0 (SECTION 20AZ): while a Rival Race is open the rival favours the moves that advance it — weighed against the
   // FINAL scores (after scoring, overlays and memory), which is where its preference can actually win.
   const raceContext = v100RivalRaceChooserContext(input.gameState, input.aiState, input.settings);
@@ -196267,6 +196312,8 @@ export function reportRivalRuleError(error: unknown): void {
 export interface RivalPreviewInput {
   gameState: unknown; player: unknown; aiPlayer: unknown; settings: GameSettingsState; weights: Record<string, number>;
   specialAbilityActive: boolean; isRejected?: (candidate: RivalCandidate) => boolean;
+  /** V10.1 (SECTION 20BC): the live content themes the challenge board is drawn with (the component's wp3LiveThemesRef). */
+  themes?: readonly ContentTheme[] | null;
 }
 /** The live rival's difficulty key as makeAiDecision reads it. */
 export function rivalDifficultyKey(gameState: unknown): string {
@@ -196282,8 +196329,8 @@ export function previewRivalCandidates(input: RivalPreviewInput, ranked: boolean
   const aiId = String(ai.id || 'ai');
   const difficultyKey = rivalDifficultyKey(input.gameState);
   const state = canonicalStateFromLiveRuntime({ gameState: input.gameState, player: input.player, aiPlayer: input.aiPlayer, gameSettings: input.settings, actorsById: { player: input.player, [aiId]: input.aiPlayer } });
-  const ctx: ClassicAiRuntimeContext = { settings: weightsToGameSettings(input.settings, input.weights), weights: input.weights, rng: { next: () => 0 }, difficultyKey, specialAbilityActive: input.specialAbilityActive };
-  const live = rivalLiveHooksFor({ options: { isRejected: input.isRejected }, aiState: input.aiPlayer, gameState: input.gameState, playerState: input.player, settings: input.settings, difficultyKey });
+  const live = rivalLiveHooksFor({ options: { isRejected: input.isRejected }, aiState: input.aiPlayer, gameState: input.gameState, playerState: input.player, settings: input.settings, difficultyKey, themes: input.themes });
+  const ctx: ClassicAiRuntimeContext = { settings: weightsToGameSettings(input.settings, input.weights), weights: input.weights, rng: { next: () => 0 }, difficultyKey, specialAbilityActive: input.specialAbilityActive, travelCost: live?.travelCost, challengesFor: live?.challengesFor }; // V10.1 (SECTION 20BC): the preview prices and lists exactly as the chooser does
   const list = classicAiProposable(enumerateLegalActions(state, aiId, ctx), live);
   if (!ranked) return list;
   return list.map(candidate => scoreCandidate(state, candidate, input.weights, ctx).candidate).sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -207343,18 +207390,22 @@ export function v100RivalPolicyActive(gameState: unknown, settings: { classicRiv
  * among its next three); a mistake that hit means a lesser move — the runner-up, or for Easy one of the next three —
  * never an action spent on "thinking". Always draws the same number of values for a given list and difficulty.
  */
-export function pickV100RivalDecision<T>(ranked: readonly T[], rng: { next: () => number }, difficultyKey: unknown, mistake: boolean): T | null {
+export function pickV100RivalDecision<T>(ranked: readonly T[], rng: { next: () => number }, difficultyKey: unknown, mistake: boolean, v101?: { mistakeChance: number }): T | null {
   if (!ranked.length) return null;
   const difficulty = v100RivalDifficulty(difficultyKey);
   const roll = rng.next();
+  // V10.1 (SECTION 20BC): the second value is drawn on every path (Easy used to draw it only for a lesser move, which
+  // moved the rival's stream by the outcome of the pick), and the rate is corrected for the mistake share.
+  const second = v101 ? rng.next() : null;
   const lesser = (): T => {
     if (ranked.length === 1) return ranked[0];
     if (difficulty !== 'easy') return ranked[1];
     const pool = Math.min(3, ranked.length - 1);
-    return ranked[1 + Math.min(pool - 1, Math.floor(rng.next() * pool))];
+    return ranked[1 + Math.min(pool - 1, Math.floor((second !== null ? second : rng.next()) * pool))];
   };
   if (mistake) return lesser();
-  return roll < V100_RIVAL_BEST_MOVE_RATE[difficulty] ? ranked[0] : lesser();
+  const rate = v101 ? v101RivalBestMoveRate(difficulty, v101.mistakeChance) : V100_RIVAL_BEST_MOVE_RATE[difficulty];
+  return roll < rate ? ranked[0] : lesser();
 }
 
 /** The win-streak share STREAK_BONUSES pays on a win that brings the streak to consecutiveWinsBefore + 1 (0 = none). */
@@ -208768,7 +208819,7 @@ export const V101_ADDED_STATE_KEYS: readonly string[] = [
   // <<V101-KEYS ECON>>
   //
   // <<V101-KEYS RIVAL>>
-  //
+  'rivalRecap', // V10.1 (SECTION 20BC): the last few rival turns for Rival Recap (optional; absent when the feature never ran)
   // <<V101-KEYS CONTENT>>
   //
   // <<V101-KEYS ENGINE>>
@@ -208986,7 +209037,432 @@ export function runV101EconomySelfTests(): V9SelfTestResult[] {
 // SECTION 20BC: V10.1 RIVAL PARITY & RIVAL RECAP — THE SAME RULES FOR BOTH SIDES, AND A RIVAL YOU CAN READ (new feature, off by default)
 // ============================================================================
 // <<V101-SLOT RIVAL begin>>
-// (work package RIVAL: replace everything between the two markers; keep the markers and the exported suite function below.)
+// What this section fixes and adds (every rule change is tied to the MATCH's rules stamp, never to the build: isV101Match
+// plus not classicRulesV100; a match started on V10.0 or earlier plays move for move as it did).
+//
+// RV1 PARITY — the rival pays what the player pays (V10.1 matches only).
+//     • A sale costs the rival no action, as the player's Sell costs none (it used to spend one of its 3 daily actions on
+//       EVERY unit it sold). The Challenge Master / Efficiency Expert waivers now free the action in the day's budget too.
+//     • A journey costs what the player's journey costs: computeTravelCostCore with weather, season, regional events,
+//       equipment, standing, character and mastery (it paid a flat $200 / $350 whatever the weather or the destination).
+//       classicTravelCost itself is untouched (the Tuning Lab, the reference bots and team AI call it).
+//     • "Decision 70%" on the difficulty screen means the rival plays its best move 70 times in 100 (the V10.0 pick
+//       multiplied the "Mistakes" figure into it, so Easy/Medium/Hard/Expert really played 28 / 59.5 / 85.5 / 93%).
+//     • The final day: in a Most Money match the rival sells what it holds and buys nothing that cannot pay back.
+//     • With expanded or procedural challenges on, the rival chooses from the same board as the human.
+//     • Cosmetic draws (Co-Pilot tokens, rival taunts, human automation rolls) no longer come from the rival's AIReasoning
+//       stream, and the pick draws the same number of values on every path.
+// RV2 HONESTY — every match: settings that only the team AI reads say so (isSettingLiveForRival), and the copy about Fog
+//     of War, AI Fairness and AI Affects Economy says what the live rival does.
+// RV3 RIVAL RECAP (new feature, off by default: rivalRecapEnabled, profile setting): a compact, dismissible card after the
+//     rival's turn lists each action in plain words with the cash it made or lost and one line of WHY taken from the real
+//     ranked candidates the chooser used (previewRivalCandidates). It is derived from the executed actions and that list; it
+//     draws from no RNG stream, never changes a decision, and with the setting off nothing is computed, stored or shown. The
+//     last few turns are kept in the optional match-state field gameState.rivalRecap (sanitised, capped) so Resume shows
+//     them, and each turn leaves one line in the Notification History.
+// Suite v101rv (runV101RivalSelfTests).
+
+// ---- RV1: which matches ------------------------------------------------------------------------------------------------
+/** True for a match started on V10.1 (rules stamp 1010+) unless the classic rules switch is on: the rival pays the player's prices. */
+export function v101RivalRulesActive(gameState: unknown, settings: { classicRulesV100?: unknown } | null | undefined): boolean {
+  return isV101Match(gameState) && settings?.classicRulesV100 !== true;
+}
+
+// ---- RV1: the player's fare ----------------------------------------------------------------------------------------------
+/** What the fare function reads besides the two regions (the settings of the match). */
+export interface V101TravelSettings { equipmentShopEnabled?: unknown; sabotageEnabled?: unknown; regionalStandingEnabled?: unknown; challengeApproachesEnabled?: unknown }
+
+/**
+ * What a journey costs the rival in a V10.1 match: the very function the player pays (computeTravelCostCore) fed with the
+ * same terms — today's weather and season, an event in the destination, the rival's equipment (shop on, gear not jammed),
+ * its standing there, its character and its mastery. Left out: the opt-in underdog / leader terms and the comeback boost
+ * (they read live net worths and the match-shape state, and are off unless the player opted into handicaps).
+ * Pure; draws nothing.
+ */
+export function v101RivalTravelCost(fromRegion: string, toRegion: string, actor: unknown, gameState: unknown, settings: V101TravelSettings | null | undefined): number {
+  const a = v99IsRecord(actor) ? actor : {};
+  const gs = v99IsRecord(gameState) ? gameState : {};
+  const weatherMod = Number(WEATHER_EFFECTS[String(gs.weather)]?.travelCostModifier) || 1;
+  const seasonMod = Number(SEASON_EFFECTS[String(gs.season)]?.travelCostModifier) || 1;
+  let eventMod = 1;
+  (Array.isArray(gs.activeEvents) ? gs.activeEvents : []).forEach((event: unknown) => {
+    if (!v99IsRecord(event) || event.region !== toRegion || !v99IsRecord(event.effect) || typeof event.effect.travelCost !== 'number') return;
+    eventMod *= settings?.challengeApproachesEnabled === true ? scaleAdverseEventMultiplier(event.effect.travelCost, getActorRegionalReputation(a as { regionalReputation?: unknown }, toRegion)) : event.effect.travelCost;
+  });
+  const gear = settings?.equipmentShopEnabled && !(settings?.sabotageEnabled && Array.isArray(a.debuffs) && isEquipmentJammed(a.debuffs))
+    ? getEquipmentEffects(Array.isArray(a.equipment) ? (a.equipment as string[]) : []) : null;
+  const standingMult = settings?.regionalStandingEnabled ? getRegionalStandingMultipliers(getActorRegionalStanding(gs, String(a.id || 'ai'), toRegion)).travelCost : null;
+  const characterName = v99IsRecord(a.character) && typeof a.character.name === 'string' ? a.character.name : null;
+  return computeTravelCostCore({
+    from: fromRegion, to: toRegion, characterName, mastery: Array.isArray(a.masteryUnlocks) ? a.masteryUnlocks.filter((m: unknown): m is string => typeof m === 'string') : [],
+    weatherMod, seasonMod, eventMod, standingMult, equipmentDiscount: gear?.travelDiscount || 0, underdog: false, leaderTax: false
+  });
+}
+
+// ---- RV1: "Decision 70%" means 70 in 100 ---------------------------------------------------------------------------------
+/**
+ * The chance to play the best move when a mistake is rolled FIRST (chance `mistakeChance`, always the runner-up): the rate
+ * that makes the whole equal the difficulty screen's "Decision" figure — rate × (1 − mistakeChance) = Decision. With a
+ * paid-for action the mistake is not rolled (mistakeChance 0) and the rate is the figure itself. Never above 1.
+ */
+export function v101RivalBestMoveRate(difficultyKey: unknown, mistakeChance: number): number {
+  const target = V100_RIVAL_BEST_MOVE_RATE[v100RivalDifficulty(difficultyKey)];
+  const mistake = Math.min(0.95, Math.max(0, Number(mistakeChance) || 0));
+  return Math.min(1, target / (1 - mistake));
+}
+
+// ---- RV1: what an action costs the rival -----------------------------------------------------------------------------------
+/**
+ * How many of its daily actions the rival's action of this type uses in a V10.1 match. A sale: what the rules charge
+ * the player for it (none by default; the AI table when the settings keep a separate one). A Resource Market purchase:
+ * what the player's costs (at least one). Anything else: one, as before.
+ */
+export function v101RivalApCost(actionType: string, actor: unknown, settings: unknown): number {
+  const view: V99AdviceActorView = { ...(v99IsRecord(actor) ? (actor as V99AdviceActorView) : {}), isAi: true, kind: 'ai' };
+  if (actionType === 'sell') return v99CandidateRuleApCost('sell', view, settings);
+  if (actionType === 'buy_market') return v99MarketBuyActionCost(view, settings);
+  return 1;
+}
+
+// ---- RV1: the final day ----------------------------------------------------------------------------------------------------
+/** Moves that cannot pay back on the last day of a Most Money match: nothing bought or built then can be sold. */
+const V101_FINAL_DAY_DROPPED_TYPES: readonly string[] = ['travel', 'craft', 'invest', 'buy_equipment', 'buy_market', 'region_deposit', 'sabotage'];
+/** Added above the best score on the list so that a final-day sale leads it (the scorer's weights move a score by at most a factor of two). */
+const V101_FINAL_DAY_SELL_LEAD = 2000;
+
+/**
+ * The rival's candidates on the final day of a match started on V10.1, from refineRivalCandidates (pure; draws nothing).
+ * Most Money: stock is worth nothing once the match ends, so it is sold — a sale is offered for every distinct item held
+ * (the chooser hides stock priced under $100), best price first, ahead of everything — and no journey, craft, purchase,
+ * investment or sabotage is offered; challenges stay (they can still pay). Net worth: stock counts, so only the journey
+ * (which cannot pay back) goes. Regions, challenges, Grand Tour and every other day: the list as it was.
+ */
+export function v101RivalFinalDayCandidates(candidates: RivalCandidate[], input: RivalDisciplineInput): RivalCandidate[] {
+  const gs = v99IsRecord(input.gameState) ? input.gameState : {};
+  const actor = v99IsRecord(input.actor) ? input.actor : {};
+  if (gs.selectedMode === 'grand_tour') return candidates;
+  if (!isFinalPlayableDay(Number(gs.day), Number(input.settings.totalDays))) return candidates;
+  const goal = rivalGoalKind(input.settings.winCondition);
+  if (goal === 'net_worth') return candidates.filter(candidate => candidate.type !== 'travel');
+  if (goal !== 'money') return candidates;
+  const kept = candidates.filter(candidate => !V101_FINAL_DAY_DROPPED_TYPES.includes(String(candidate.type)));
+  const stock = Array.isArray(actor.inventory) ? actor.inventory.filter((item: unknown): item is string => typeof item === 'string') : [];
+  const prices = v99IsRecord(gs.resourcePrices) ? gs.resourcePrices : {};
+  const held = Array.from(new Set(stock));
+  const lead = kept.reduce((best, candidate) => Math.max(best, Number(candidate.score) || 0), 0) + V101_FINAL_DAY_SELL_LEAD;
+  const sells: RivalCandidate[] = held.map(resource => {
+    const listed = Number(prices[resource]);
+    const price = Number.isFinite(listed) && listed > 0 ? listed : v99ResourceBasePrice(resource, 100);
+    return { type: 'sell', description: `Sell ${resource}`, data: { resource, price }, score: lead + price, plan: AI_TUNING_LAB_DEFAULT_PLAN } as RivalCandidate;
+  });
+  return [...kept.filter(candidate => !(candidate.type === 'sell' && held.includes(String((v99IsRecord(candidate.data) ? candidate.data : {}).resource)))), ...sells];
+}
+
+// ---- RV1: the challenge board ------------------------------------------------------------------------------------------------
+/**
+ * The challenges on the board where the rival stands, in the shape the chooser reads — the same list function the human's
+ * board uses (day, seed, themes, what the rival has won and unlocked) — or null when the board is off or the region is not
+ * one the board knows (the chooser then reads the region's base list as before).
+ */
+export function v101RivalBoardChallenges(input: { actor: unknown; gameState: unknown; settings: ChallengeContentSettingsLike & { worldRngSeed?: unknown }; themes?: readonly ContentTheme[] | null }): LegacyChallengeShape[] | null {
+  if (!isChallengeBoardActive(input.settings)) return null;
+  const actor = v99IsRecord(input.actor) ? input.actor : {};
+  const gs = v99IsRecord(input.gameState) ? input.gameState : {};
+  const region = String(actor.currentRegion || '');
+  if (!isChallengeRegionCode(region)) return null;
+  const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((x: unknown): x is string => typeof x === 'string') : []);
+  return listRegionChallengeDefinitions(region, {
+    settings: input.settings, completedNames: strings(actor.challengesCompleted), unlockedIds: sanitizeUnlockedChallengeIds(actor.unlockedChallengeIds),
+    day: Number(gs.day) || 1, seed: resolveEffectiveMatchSeed(gs, Number(input.settings.worldRngSeed) || 1), seasonNames: strings(actor.completedThisSeason), themes: input.themes || undefined
+  }).map(toLegacyChallenge);
+}
+
+// ---- RV1: cosmetic draws are not the rival's ----------------------------------------------------------------------------------
+/** The stream a Co-Pilot session token / takeover id is drawn from: the rival's AIReasoning stream before V10.1, HumanAutomation in a V10.1 match (the state may be the match or hold it as `gameState`). */
+export function v101SessionRandomDomain(state: unknown): 'AIReasoning' | 'HumanAutomation' {
+  const inner = v99IsRecord(state) ? state.gameState : null;
+  return isV101Match(state) || isV101Match(inner) ? 'HumanAutomation' : 'AIReasoning';
+}
+/** One roll for `actor`'s action in the team executor: the human's roll comes from the HumanAutomation stream in a V10.1 match, everyone else's (and every earlier match) from `fallback` (the rival's stream). */
+export function v101ActorRandom(actor: { kind?: unknown } | null | undefined, gameState: unknown, fallback: () => number): number {
+  return actor && actor.kind === 'human' && isV101Match(gameState) ? drawGameplayRandom('HumanAutomation') : fallback();
+}
+
+// ---- RV2: settings the solo rival does not read ---------------------------------------------------------------------------
+export const V101_RIVAL_TEAM_ONLY_LABEL = 'Team modes only';
+export const V101_RIVAL_TEAM_ONLY_NOTE = 'Team modes only: the one-on-one rival does not use this setting (it is read by the team AI).';
+/**
+ * Settings whose only readers are the team AI or the code after `return tuningChoice` in makeAiDecision (unreachable): in
+ * AI Opponent, Scenario and Grand Tour they change nothing. Nothing is removed or re-wired — the controls keep working and
+ * saved values stay; they only say so. (Re-wiring them changes the rival's strength and needs its own tuning release.)
+ */
+export const V101_RIVAL_TEAM_ONLY_SETTINGS: readonly string[] = [
+  'aiWinConditionSpendingEnabled', 'aiWinConditionSpendingStrength', 'aiWinConditionAdaptationV2Enabled', 'aiRegionsMajorityRushEnabled', 'aiRegionRushIntensity',
+  'aiInvestmentPriority', 'aiEquipmentPurchasePriority', 'aiSabotagePriority', 'aiSpecialAbilityPriority', 'aiEconomyInteractionWeight', 'aiMarketModifierAwareness',
+  'aiGrandTourPriority', 'aiLoanRiskWeight', 'aiLoanRepaymentPriority', 'aiLoanRefinancingWeight', 'aiRegionalContractPriority', 'aiInfrastructurePriority',
+  'aiRelicEquipPriority', 'aiCrisisMitigationPriority'
+];
+/** False when `settingKey` is read only by the team AI and the match is not a team match (so the solo rival ignores it); true for every other setting and every team mode. */
+export function isSettingLiveForRival(settingKey: string | null | undefined, selectedMode: string | null | undefined): boolean {
+  if (!settingKey || !V101_RIVAL_TEAM_ONLY_SETTINGS.includes(settingKey)) return true;
+  return isTeamModeSelection(selectedMode);
+}
+/** The decision explainer's one-line effect summary for a setting the solo rival ignores, or null when it is live (the summary keeps its own text). */
+export function v101TeamOnlySummary(settingKey: string | null | undefined, selectedMode: string | null | undefined): string | null {
+  return isSettingLiveForRival(settingKey, selectedMode) ? null : V101_RIVAL_TEAM_ONLY_NOTE;
+}
+/** The "Team modes only" chip next to a control the solo rival does not read; nothing for any live setting. */
+export const V101RivalLiveChip: React.FC<{ settingKey: string; selectedMode?: string | null }> = ({ settingKey, selectedMode }) => {
+  if (isSettingLiveForRival(settingKey, selectedMode)) return null;
+  return <span className="ml-2 inline-block align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded border border-current opacity-70 whitespace-nowrap" title={V101_RIVAL_TEAM_ONLY_NOTE} data-testid={`v101-team-only-${settingKey}`}>{V101_RIVAL_TEAM_ONLY_LABEL}</span>;
+};
+
+// ---- RV3: the recap's saved shape ------------------------------------------------------------------------------------------
+/** Turns the recap keeps (the newest), moves it keeps per turn and the longest line of text it keeps. */
+export const V101_RECAP_MAX_TURNS = 5;
+export const V101_RECAP_MAX_MOVES = 8;
+export const V101_RECAP_TEXT_MAX = 140;
+/** One thing the rival did: what, the cash it made (+) or lost (−), and why it chose it. */
+export interface V101RivalRecapMove { kind: string; text: string; cash: number; why: string }
+export interface V101RivalRecapTurn {
+  /** `rr` + a counter that only grows (never a clock or a random value). */
+  id: string; day: number; moves: V101RivalRecapMove[];
+  cashBefore: number; cashAfter: number;
+  /** The player's cash minus the rival's, before and after the turn (positive = you lead). */
+  leadBefore: number; leadAfter: number;
+}
+export interface V101RivalRecapState { turns: V101RivalRecapTurn[]; counter: number }
+
+const v101Whole = (value: unknown, limit: number): number => { const n = Math.round(Number(value)); return Number.isFinite(n) ? Math.max(-limit, Math.min(limit, n)) : 0; };
+const v101Clip = (value: unknown, max: number = V101_RECAP_TEXT_MAX): string => (typeof value === 'string' ? value.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max) : '');
+
+/** A saved recap made safe: at most V101_RECAP_MAX_TURNS turns of at most V101_RECAP_MAX_MOVES moves, whole-dollar amounts, short text, ids of the form rr<number>; null when nothing usable is left. */
+export function sanitizeRivalRecapState(raw: unknown): V101RivalRecapState | null {
+  if (!v99IsRecord(raw) || !Array.isArray(raw.turns)) return null;
+  const turns: V101RivalRecapTurn[] = [];
+  raw.turns.forEach((entry: unknown) => {
+    if (!v99IsRecord(entry) || typeof entry.id !== 'string' || !/^rr\d{1,9}$/.test(entry.id) || !Array.isArray(entry.moves)) return;
+    const moves: V101RivalRecapMove[] = [];
+    entry.moves.forEach((move: unknown) => {
+      if (!v99IsRecord(move)) return;
+      const text = v101Clip(move.text);
+      if (!text || moves.length >= V101_RECAP_MAX_MOVES) return;
+      moves.push({ kind: v101Clip(move.kind, 24) || 'move', text, cash: v101Whole(move.cash, 1e9), why: v101Clip(move.why) });
+    });
+    turns.push({ id: entry.id, day: Math.max(0, v101Whole(entry.day, 9999)), moves, cashBefore: v101Whole(entry.cashBefore, 1e9), cashAfter: v101Whole(entry.cashAfter, 1e9), leadBefore: v101Whole(entry.leadBefore, 1e9), leadAfter: v101Whole(entry.leadAfter, 1e9) });
+  });
+  if (turns.length === 0) return null;
+  const kept = turns.slice(-V101_RECAP_MAX_TURNS);
+  const highest = kept.reduce((top, turn) => Math.max(top, Number(turn.id.slice(2))), 0);
+  const counter = Math.max(highest, Math.max(0, v101Whole(raw.counter, 999999999)));
+  return { turns: kept, counter };
+}
+
+/** The recap with one more finished turn (its id comes from the saved counter); older turns beyond the cap fall away. */
+export function v101RecapAppend(prev: unknown, turn: Omit<V101RivalRecapTurn, 'id'>): V101RivalRecapState {
+  const base = sanitizeRivalRecapState(prev) || { turns: [], counter: 0 };
+  const counter = base.counter + 1;
+  return { turns: [...base.turns, { ...turn, id: `rr${counter}` }].slice(-V101_RECAP_MAX_TURNS), counter };
+}
+
+// ---- RV3: what each move was, and why --------------------------------------------------------------------------------------
+/** The few fields of the rival the recap reads before and after a move. */
+export interface V101RecapSnapshot { money: number; completed: number; region: string; visited: string[]; seasonDone: string[] }
+export function v101RecapSnapshotOf(actor: unknown): V101RecapSnapshot {
+  const a = v99IsRecord(actor) ? actor : {};
+  const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((x: unknown): x is string => typeof x === 'string') : []);
+  return { money: Number(a.money) || 0, completed: Array.isArray(a.challengesCompleted) ? a.challengesCompleted.length : 0, region: String(a.currentRegion || ''), visited: strings(a.visitedRegions), seasonDone: strings(a.completedThisSeason) };
+}
+
+/** Where the chosen move stands on the chooser's own ranked list: 1 = its best-rated move, 0 = not on the list (a planner's move). */
+export function v101RivalRankOf(action: unknown, ranked: ReadonlyArray<unknown>): number {
+  const wanted = soloAiActionSignature(action);
+  const at = ranked.findIndex(candidate => soloAiActionSignature(candidate) === wanted);
+  return at < 0 ? 0 : at + 1;
+}
+
+/**
+ * The one-line WHY of a move: where it stands on the real ranked list and the facts the list holds (the odds and stake of a
+ * challenge, whether a region is new and what is open there, whether a sale outranked the best journey). Pure.
+ */
+export function v101RivalWhy(action: unknown, ranked: ReadonlyArray<unknown>, actor: unknown): { rank: number; why: string } {
+  const act = v99IsRecord(action) ? action : {};
+  const data = v99IsRecord(act.data) ? act.data : {};
+  const rank = v101RivalRankOf(action, ranked);
+  const lead = rank === 1 ? 'its best-rated move' : rank === 2 ? 'its second-best move' : rank > 2 ? `its number ${rank} move` : 'a move outside its usual ranking';
+  const facts: string[] = [];
+  if (act.type === 'challenge') {
+    const chance = Number(data.successChance);
+    if (Number.isFinite(chance) && chance > 0) facts.push(`${Math.round(chance * 100)}% odds`);
+    const wager = Number(data.wager);
+    if (Number.isFinite(wager) && wager > 0) facts.push(`${fmtMoney(wager)} stake`);
+  } else if (act.type === 'travel') {
+    const code = String(data.region || '');
+    const snap = v101RecapSnapshotOf(actor);
+    if (code && !snap.visited.includes(code)) facts.push('a region it had not visited');
+    const open = ((REGIONS as Record<string, { challenges?: Array<{ name: string }> } | undefined>)[code]?.challenges || []).filter(c => !snap.seasonDone.includes(c.name)).length;
+    if (open > 0) facts.push(`${open} open challenge${open === 1 ? '' : 's'} there`);
+  } else if (act.type === 'sell') {
+    const sellScore = rank > 0 && v99IsRecord(ranked[rank - 1]) ? Number((ranked[rank - 1] as Record<string, unknown>).score) || 0 : null;
+    const journeys = ranked.filter((c): c is Record<string, unknown> => v99IsRecord(c) && c.type === 'travel').map(c => Number(c.score) || 0);
+    if (sellScore !== null && journeys.length > 0 && sellScore > Math.max(...journeys)) return { rank, why: 'its stock was worth more than its best journey' };
+  }
+  return { rank, why: facts.length ? `${lead} (${facts.join(', ')})` : lead };
+}
+
+/** What the move was, in plain past tense. `after` is the rival once the move was done. */
+export function v101RecapMoveText(action: unknown, before: V101RecapSnapshot, after: V101RecapSnapshot): { kind: string; text: string } {
+  const act = v99IsRecord(action) ? action : {};
+  const data = v99IsRecord(act.data) ? act.data : {};
+  const type = String(act.type || 'move');
+  const regionName = (code: unknown): string => { const c = String(code || ''); return (REGIONS as Record<string, { name?: string } | undefined>)[c]?.name || c; };
+  const description = typeof act.description === 'string' ? act.description : type;
+  let text: string;
+  switch (type) {
+    case 'challenge': { const name = v99IsRecord(data.challenge) ? String(data.challenge.name || 'a challenge') : 'a challenge'; text = `${after.completed > before.completed ? 'Won' : 'Lost'} ${name}`; break; }
+    case 'travel': text = `Travelled to ${regionName(data.region)}`; break;
+    case 'sell': text = `Sold ${String(data.resource || 'an item')}`; break;
+    case 'craft': text = `Crafted ${String(v99IsRecord(data.recipe) ? data.recipe.output : data.output || 'an item')}`; break;
+    case 'invest': text = `Invested in ${regionName(data.region)}`; break;
+    case 'buy_equipment': text = `Bought ${description.replace(/^Buy /, '')}`; break;
+    case 'sabotage': text = `Used ${description.replace(/^Sabotage: /, '')} against you`; break;
+    case 'special_ability': text = `Used ${description.replace(/^Use /, '')}`; break;
+    case 'region_deposit': text = description.replace(/^Deposit /, 'Deposited '); break;
+    case 'cashout_region': text = description.replace(/^Cash out /, 'Cashed out '); break;
+    default: text = description;
+  }
+  return { kind: type, text: v101Clip(text) };
+}
+
+/** "+$660", "-$350", or '' for nothing. */
+export function v101SignedMoney(n: number): string {
+  const whole = Math.round(Number(n) || 0);
+  return whole === 0 ? '' : `${whole > 0 ? '+' : '-'}${fmtMoney(Math.abs(whole))}`;
+}
+
+// ---- RV3: collecting one turn --------------------------------------------------------------------------------------------------
+interface V101RecapPending { action: unknown; before: V101RecapSnapshot; why: string }
+/** A turn being recorded. Created only when the setting is on; every function below does nothing to the match. */
+export interface V101RivalRecapSession { day: number; cashBefore: number; playerCashBefore: number; pending: V101RecapPending | null; moves: V101RivalRecapMove[]; soldInLast: number }
+
+/** Starts recording a rival turn — or returns null (and so computes nothing) when Rival Recap is off. */
+export function startV101RecapSession(enabled: boolean, day: number, rivalCash: number, playerCash: number): V101RivalRecapSession | null {
+  if (enabled !== true) return null;
+  return { day: Math.max(0, Math.round(Number(day) || 0)), cashBefore: Math.round(Number(rivalCash) || 0), playerCashBefore: Math.round(Number(playerCash) || 0), pending: null, moves: [], soldInLast: 0 };
+}
+/** The rival has just decided: remember the move, where it stands on the ranked list `ranked` the chooser worked from, and the rival as it was. */
+export function v101RecapNoteDecision(session: V101RivalRecapSession, action: unknown, ranked: ReadonlyArray<unknown>, actorBefore: unknown): void {
+  session.pending = { action, before: v101RecapSnapshotOf(actorBefore), why: v101RivalWhy(action, ranked, actorBefore).why };
+}
+/** The move was carried out: add it with the cash it made or lost (consecutive sales are one line: "Sold 3 items"). */
+export function v101RecapNoteCommit(session: V101RivalRecapSession, action: unknown, actorAfter: unknown): void {
+  const pending = session.pending && session.pending.action === action ? session.pending : null;
+  session.pending = null;
+  const after = v101RecapSnapshotOf(actorAfter);
+  const before = pending ? pending.before : after;
+  const cash = Math.round(after.money - before.money);
+  const described = v101RecapMoveText(action, before, after);
+  const last = session.moves[session.moves.length - 1];
+  if (described.kind === 'sell' && last && last.kind === 'sell') {
+    session.soldInLast += 1;
+    last.text = `Sold ${session.soldInLast} items`;
+    last.cash += cash;
+    return;
+  }
+  session.soldInLast = described.kind === 'sell' ? 1 : 0;
+  if (session.moves.length >= V101_RECAP_MAX_MOVES) return;
+  session.moves.push({ kind: described.kind, text: described.text, cash, why: pending ? pending.why : 'a move outside its usual ranking' });
+}
+/** Ends the turn: the finished turn (without its id) and the one History line that carries every why. */
+export function v101RecapFinish(session: V101RivalRecapSession, cashAfter: number, playerCashAfter: number): { turn: Omit<V101RivalRecapTurn, 'id'>; historyLine: string } {
+  const after = Math.round(Number(cashAfter) || 0);
+  const playerAfter = Math.round(Number(playerCashAfter) || 0);
+  const turn: Omit<V101RivalRecapTurn, 'id'> = { day: session.day, moves: session.moves.slice(0, V101_RECAP_MAX_MOVES), cashBefore: session.cashBefore, cashAfter: after, leadBefore: session.playerCashBefore - session.cashBefore, leadAfter: playerAfter - after };
+  return { turn, historyLine: v101RecapHistoryLine(turn) };
+}
+/** One line for the Notification History: every move with its cash and its why. */
+export function v101RecapHistoryLine(turn: Omit<V101RivalRecapTurn, 'id'>): string {
+  const parts = turn.moves.map(m => `${m.text}${m.cash ? ` (${v101SignedMoney(m.cash)})` : ''}: ${m.why}`);
+  const body = parts.length ? parts.join(' · ') : 'it made no move';
+  return `🧭 Rival Recap, day ${turn.day} — ${body}. Rival cash ${fmtMoney(turn.cashBefore)} → ${fmtMoney(turn.cashAfter)}.`.slice(0, 900);
+}
+
+// ---- RV3: showing it ---------------------------------------------------------------------------------------------------------------
+export const V101_RECAP_DISMISSED_KEY = 'aussie.v101.rival-recap-dismissed';
+/** The key a dismissed turn is remembered under: the match's seed and the turn's id (ids restart with every match). */
+export function v101RecapTurnKey(gameState: unknown, turn: { id: string }): string {
+  return `${v99IsRecord(gameState) && Number.isFinite(Number(gameState.matchSeed)) ? Number(gameState.matchSeed) : 0}:${turn.id}`;
+}
+/** The turn the card shows now: Rival Recap on, a solo rival mode, the player's turn, a recorded turn the player has not dismissed — else null. */
+export function v101RecapTurnToShow(input: { enabled: boolean; gameState: unknown; dismissedKey: string | null }): V101RivalRecapTurn | null {
+  if (input.enabled !== true || !v99IsRecord(input.gameState)) return null;
+  const gs = input.gameState;
+  if (gs.gameMode !== 'game' || gs.currentTurn !== 'player' || !isSoloRivalModeSelection(gs.selectedMode)) return null;
+  const recap = sanitizeRivalRecapState(gs.rivalRecap);
+  const turn = recap ? recap.turns[recap.turns.length - 1] : null;
+  return turn && v101RecapTurnKey(gs, turn) !== input.dismissedKey ? turn : null;
+}
+/** The dismissed turn this browser remembers (null when none, or when storage is blocked or holds junk). */
+export function v101ReadRecapDismissed(storage: V99StorageLike | null): string | null {
+  try { const raw = v99ReadJson(storage, V101_RECAP_DISMISSED_KEY); return v99IsRecord(raw) && typeof raw.key === 'string' ? raw.key.slice(0, 40) : null; } catch { return null; }
+}
+export function v101WriteRecapDismissed(storage: V99StorageLike | null, key: string): boolean {
+  try { return v99WriteJson(storage, V101_RECAP_DISMISSED_KEY, { version: 1, key: String(key).slice(0, 40) }); } catch { return false; }
+}
+
+export interface V101RivalRecapCardProps {
+  turn: V101RivalRecapTurn;
+  rivalName: string;
+  theme: { card: string; border: string; shadow: string; buttonSecondary: string };
+  onDismiss: () => void;
+}
+/** The one-sentence summary a screen reader hears (and the card's first line). */
+export function v101RecapHeadline(turn: V101RivalRecapTurn, rivalName: string): string {
+  const change = turn.cashAfter - turn.cashBefore;
+  const moves = turn.moves.length;
+  return `${rivalName} made ${moves === 0 ? 'no move' : moves === 1 ? '1 move' : `${moves} moves`} on day ${turn.day} and ${change === 0 ? 'ended with the same cash' : change > 0 ? `gained ${fmtMoney(change)}` : `lost ${fmtMoney(-change)}`}.`;
+}
+/** "You lead by $300" / "The rival leads by $300" / "Level". */
+export function v101RecapLeadText(lead: number): string {
+  const whole = Math.round(Number(lead) || 0);
+  return whole === 0 ? 'cash level' : whole > 0 ? `you lead by ${fmtMoney(whole)}` : `the rival leads by ${fmtMoney(-whole)}`;
+}
+/**
+ * The recap card (no hooks): a region named by its heading, a polite one-line status for screen readers, the moves with their
+ * cash and why, the cash before and after, and a Dismiss button. Escape dismisses it while focus is inside; nothing traps focus.
+ */
+export function V101RivalRecapCardView({ turn, rivalName, theme, onDismiss }: V101RivalRecapCardProps) {
+  const headingId = `v101-rival-recap-h-${turn.id}`;
+  return (
+    <section role="region" aria-labelledby={headingId} className={`${theme.card} ${theme.border} border rounded-xl px-3 py-2 ${theme.shadow} text-xs max-w-full`} data-testid="v101-rival-recap"
+      onKeyDown={(event: React.KeyboardEvent<HTMLElement>) => { if (event.key === 'Escape') { event.stopPropagation(); onDismiss(); } }}>
+      <div className="flex items-start gap-2">
+        <h2 id={headingId} className="font-bold text-sm flex-1 min-w-0" data-testid="v101-rival-recap-heading">🧭 What {rivalName} did — day {turn.day}</h2>
+        <span className="sr-only" role="status" data-testid="v101-rival-recap-status">{v101RecapHeadline(turn, rivalName)}</span>
+        <button type="button" className={`${theme.buttonSecondary} px-2 py-0.5 rounded text-xs min-h-[32px] min-w-[32px] shrink-0`} onClick={onDismiss} aria-label="Dismiss the rival recap" title="Dismiss (Esc)" data-testid="v101-rival-recap-dismiss">✕</button>
+      </div>
+      {turn.moves.length === 0
+        ? <p className="mt-1 opacity-80" data-testid="v101-rival-recap-empty">{rivalName} made no move this turn.</p>
+        : (
+          <ul className="mt-1 space-y-1 leading-snug" data-testid="v101-rival-recap-moves">
+            {turn.moves.map((move, i) => (
+              <li key={`${turn.id}-${i}`} data-testid="v101-rival-recap-move">
+                <span className="font-semibold">{move.text}</span>
+                {move.cash !== 0 && <span className={move.cash > 0 ? 'font-semibold text-green-600' : 'font-semibold text-red-600'} data-testid="v101-rival-recap-cash"> ({v101SignedMoney(move.cash)})</span>}
+                <span className="opacity-80">: {move.why}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      <p className="mt-1 opacity-90" data-testid="v101-rival-recap-totals">
+        Rival cash {fmtMoney(turn.cashBefore)} → {fmtMoney(turn.cashAfter)}. Cash gap: {v101RecapLeadText(turn.leadBefore)} → {v101RecapLeadText(turn.leadAfter)}.
+      </p>
+    </section>
+  );
+}
+/** The card as the play screen mounts it. (It keeps no state of its own: the screen decides when it is shown.) */
+export const V101RivalRecapCard: React.FC<V101RivalRecapCardProps> = props => <V101RivalRecapCardView {...props} />;
+
 export function runV101RivalSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   return results;
@@ -210099,6 +210575,7 @@ function AustraliaGame() {
   // V9.6 solo rival-AI turn runtime (ephemeral; never persisted, never decides ownership).
   const soloAiClaimsRef = useRef<SoloAiClaimRegistry>(createSoloAiClaimRegistry());
   const soloAiRuntimeRef = useRef<SoloAiTurnRuntime | null>(null);
+  const v101RivalFreeCommitRef = useRef(false); // V10.1 (SECTION 20BC): the last committed rival action cost no action (set by executeAiAction, read by the turn loop)
   const [soloAiPhase, setSoloAiPhase] = useState<SoloAiTurnPhase>('idle');
   const v96LastAttemptAtRef = useRef<number>(0);
   // V9.9 (SECTION 20AS): the rival turn pace. The probe counts this component's renders and the render whose effects
@@ -213516,6 +213993,7 @@ function dispatchGameSettingsChange(
     ];
     return trackedSettings.reduce<DecisionSettingVisibilityState[]>((acc, setting) => {
       if (!setting.enabled || contributingSettingIds.has(setting.settingId)) return acc;
+      if (!isSettingLiveForRival(setting.settingId, gameState.selectedMode)) return acc; // V10.1 (SECTION 20BC): a setting only the team AI reads is not listed for a one-on-one rival
       const magnitude = getFactorMagnitude(setting.domain);
       let status: SettingVisibilityStatus = 'ignored';
       let summary = setting.summary || `${setting.label} was enabled, but this decision path did not use it directly.`;
@@ -216400,7 +216878,7 @@ function dispatchGameSettingsChange(
           settings: gameSettings,
           // V9.9 (SECTION 20AS): the turn loop's "this already failed" filter reaches the chooser (it was only read by the unreachable code below),
           // and a match started on V9.9 gets the R2 rules (stakes, region claims, Grand Tour, paid-for actions). Undefined = V9.8's chooser.
-          live: rivalLiveHooksFor({ options: decisionOptions, aiState, gameState, playerState, settings: gameSettings, difficultyKey: difficulty, onRuleError: reportRivalRuleError })
+          live: rivalLiveHooksFor({ options: decisionOptions, aiState, gameState, playerState, settings: gameSettings, difficultyKey: difficulty, onRuleError: reportRivalRuleError, themes: wp3LiveThemesRef.current /* V10.1 (SECTION 20BC): the challenge board's themes */ })
         }
       );
       return tuningChoice || {
@@ -217082,6 +217560,10 @@ function dispatchGameSettingsChange(
       return false;
     }
     const actionData = action.data || {};
+    // V10.1 (SECTION 20BC): in a match started on V10.1 the rival pays the player's fares and a sale costs it no action. Read from the live state (the world as it is now).
+    const v101Live = gameStateLiveRef.current;
+    const v101Rival = v101RivalRulesActive(v101Live, gameSettings);
+    v101RivalFreeCommitRef.current = false;
 
     // Validate action before execution
     try {
@@ -217106,7 +217588,8 @@ function dispatchGameSettingsChange(
 
         case 'travel':
           const region = actionData.region;
-          const cost = actionData.cost;
+          // V10.1 (SECTION 20BC): the fare is the player's fare function, from today's world — never a stale or flat candidate cost.
+          const cost = v101Rival && typeof actionData.region === 'string' && REGIONS[actionData.region] ? v101RivalTravelCost(String(currentAi.currentRegion || ''), actionData.region, currentAi, v101Live, gameSettings) : actionData.cost;
           if (typeof region !== 'string' || !REGIONS[region]) {
             console.error('Invalid region:', region);
             return false;
@@ -217518,7 +218001,7 @@ function dispatchGameSettingsChange(
 
       case 'travel':
         const region = actionData.region;
-        const cost = actionData.cost;
+        const cost = v101Rival ? v101RivalTravelCost(String(currentAi.currentRegion || ''), region, currentAi, v101Live, gameSettings) : actionData.cost; // V10.1 (SECTION 20BC): the player's fare function
         if (gameSettings.sabotageEnabled && isTravelBlocked(currentAi.debuffs)) {
           addNotification(`🤖 ${currentAi.name} couldn't travel due to sabotage`, 'ai', false);
           break;
@@ -217859,6 +218342,8 @@ function dispatchGameSettingsChange(
       }
     }
 
+    // V10.1 (SECTION 20BC): the rival's sale costs it what the player's sale costs (the rules' action cost for a sale: none), a market purchase at least one action.
+    if (consumeAp && v101Rival && v101RivalApCost(String(action.type), currentAi, gameSettings) <= 0) consumeAp = false;
     if (consumeAp && currentAi.masteryUnlocks?.includes("Efficiency Expert")) {
       if (drawGameplayRandom('Mastery') < 0.3) {
         consumeAp = false;
@@ -217873,6 +218358,7 @@ function dispatchGameSettingsChange(
       }));
       dispatchGameState({ type: 'INCREMENT_ACTIONS' });
     }
+    v101RivalFreeCommitRef.current = v101Rival && !consumeAp; // V10.1 (SECTION 20BC): the turn loop does not count a free commit against the day's actions
 
     commitMatchMemory({
       actionType: typeof action.data?.memoryActionType === 'string' ? action.data.memoryActionType : action.type,
@@ -217918,7 +218404,8 @@ function dispatchGameSettingsChange(
       commitMatchMemory,
       gameState.turnCounter,
       gameState.rulesVersion, // V10.0 (SECTION 20AY, F1): the streak payout reads the match's rules
-      gameSettings.classicRivalV99 // … and the classic-rival switch (read live, like the move picker)
+      gameSettings.classicRivalV99, // … and the classic-rival switch (read live, like the move picker)
+      gameSettings.classicRulesV100, gameSettings.actionLimitsEnabled, gameSettings.actionPointConsumptionSettings, gameSettings.regionalStandingEnabled, gameSettings.challengeApproachesEnabled // V10.1 (SECTION 20BC): the parity rules read these
 	  ]);
 
   // AE3/AE4: the one place a resolved AI decision engine actually gets consulted for solo
@@ -218095,6 +218582,16 @@ function dispatchGameSettingsChange(
   const finalizeSoloAiTurnRef = useRef(finalizeSoloAiTurn);
   finalizeSoloAiTurnRef.current = finalizeSoloAiTurn;
 
+  // V10.1 (SECTION 20BC): Rival Recap. Both refs are re-assigned on every render, so the turn loop reads the live setting and the live ranked list.
+  // Off = the recap session is never created and nothing in the turn below is computed, stored or shown.
+  const v101RecapOnRef = useRef(false);
+  v101RecapOnRef.current = gameSettings.rivalRecapEnabled === true && isSoloRivalModeSelection(gameState.selectedMode);
+  const v101RivalPreviewRef = useRef<(isRejected: (candidate: AIAction & { score: number }) => boolean) => Array<AIAction & { score: number }>>(() => []);
+  v101RivalPreviewRef.current = (isRejected) => previewRivalCandidates({
+    gameState: gameStateLiveRef.current, player: playerRef.current, aiPlayer: aiPlayerRef.current, settings: gameSettings,
+    weights: resolveLiveAiGenomeWeights(gameSettings, tuningArchiveRef.current, aiPlayerRef.current?.id), specialAbilityActive: Boolean(aiActiveSpecialAbilityRef.current), isRejected, themes: wp3LiveThemesRef.current
+  }, true);
+
   const performAiTurn = useCallback(async () => {
     const liveAtStart = gameStateLiveRef.current;
     if (liveAtStart.currentTurn !== 'ai' || liveAtStart.isAiThinking || liveAtStart.gameMode !== 'game') return;
@@ -218125,19 +218622,29 @@ function dispatchGameSettingsChange(
 
     // V9.9 (SECTION 20AS): a move that just failed is not proposed again until something else committed.
     const v99RetryGuard = createRivalRetryGuard();
+    // V10.1 (SECTION 20BC): Rival Recap — null (so nothing below runs) unless the setting is on in a solo rival mode.
+    const v101Recap = startV101RecapSession(v101RecapOnRef.current, Number(liveAtStart.day) || 0, Number(aiPlayerRef.current?.money) || 0, Number(playerRef.current?.money) || 0);
     const reason = await runSoloAiTurnLoop({
       runtime: rt,
       // V9.9 (SECTION 20AS): paidSlot = this action was bought with an override (R2: it is never spent "thinking").
-      decide: (isRejected) => resolveSoloAiDecisionViaEngineRef.current(aiPlayerRef.current, gameStateLiveRef.current, playerRef.current, { isRejected: candidate => isRejected(candidate) || rivalRetryBlocks(v99RetryGuard, gameStateLiveRef.current, candidate) /* W4A (F4-01): matches started on V9.9 only */, paidSlot: rt.successfulActions >= rt.baseBudget }),
+      decide: (isRejected) => {
+        const rejects = (candidate: AIAction & { score: number }) => isRejected(candidate) || rivalRetryBlocks(v99RetryGuard, gameStateLiveRef.current, candidate); /* W4A (F4-01): matches started on V9.9 only */
+        const picked = resolveSoloAiDecisionViaEngineRef.current(aiPlayerRef.current, gameStateLiveRef.current, playerRef.current, { isRejected: rejects, paidSlot: rt.successfulActions - (rt.freeCommits || 0) >= rt.baseBudget /* V10.1 (SECTION 20BC): free commits are not the day's actions */ });
+        // V10.1 (SECTION 20BC): the recap reads the ranked list AFTER the decision is made (the preview draws nothing), so it can never change the pick.
+        if (v101Recap) { try { v101RecapNoteDecision(v101Recap, picked, v101RivalPreviewRef.current(rejects), aiPlayerRef.current); } catch (recapError) { console.warn('[V10.1] rival recap skipped a decision', recapError); } }
+        return picked;
+      },
       execute: async (action) => {
         v96Flow('AI_ACTION_ATTEMPT', String(action?.type));
         let ok = false;
         try { ok = await executeAiActionRef.current(action as AIAction); }
         finally { v99RetryGuard.note(action, ok); }
+        if (ok && v101Recap) { try { v101RecapNoteCommit(v101Recap, action, aiPlayerRef.current); } catch (recapError) { console.warn('[V10.1] rival recap skipped a move', recapError); } }
         v96Flow(ok ? 'AI_ACTION_COMMITTED' : 'AI_ACTION_FAILED', `${action?.type} ${ok ? `actions=${rt.successfulActions + 1}/${rt.effectiveBudget}` : ''}`.trim());
         return ok;
       },
       fingerprint: () => soloAiProgressFingerprint(aiPlayerRef.current, gameStateLiveRef.current),
+      commitWasFree: () => v101RivalFreeCommitRef.current, // V10.1 (SECTION 20BC): a sale does not use one of the day's actions
       isStale: isSessionStale,
       ownsTurn: () => gameStateLiveRef.current.currentTurn === 'ai',
       isGameOver: () => gameStateLiveRef.current.gameMode !== 'game',
@@ -218166,6 +218673,14 @@ function dispatchGameSettingsChange(
       setCurrentAiAction(null); setSoloAiPhase('idle'); rt.phase = 'finished';
       v96Flow('AI_TURN_RELEASED', 'ownership already moved');
       return;
+    }
+    // V10.1 (SECTION 20BC): the finished turn goes into the match (optional state, capped) and one line into the Notification History.
+    if (v101Recap) {
+      try {
+        const finished = v101RecapFinish(v101Recap, Number(aiPlayerRef.current?.money) || 0, Number(playerRef.current?.money) || 0);
+        dispatchGameState({ type: 'UPDATE_GAME_STATE', payload: (st: GameStateSnapshot) => ({ ...st, rivalRecap: v101RecapAppend((st as { rivalRecap?: unknown }).rivalRecap, finished.turn) }) });
+        addNotification(finished.historyLine, 'ai', false);
+      } catch (recapError) { console.warn('[V10.1] rival recap could not be saved', recapError); }
     }
     await finalizeSoloAiTurnRef.current(rt, reason, epochAtStart);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -219106,6 +219621,7 @@ function dispatchGameSettingsChange(
         // V9.9 (SECTION 20AS): the seed this match runs on (optional field; a save without it is a pre-V9.9 match).
         matchSeed: sanitizeMatchSeed(wpMfMatchSeed) ?? undefined,
         matchEnd: undefined, // V9.9 (SECTION 20AS): a new match has not ended
+        rivalRecap: undefined, // V10.1 (SECTION 20BC): a new match has no rival turns to recap
         rulesVersion: v101RulesVersionForNewMatch(wpMfSettings), // V10.0 (SECTION 20AY): a match carries the rules it started with; V10.1 (SECTION 20BA): V10.1's unless the classic rules are on
         rivalRaces: undefined, // V10.0 (SECTION 20AZ): no race has run in a new match
         regionDeposits: {},
@@ -219785,6 +220301,7 @@ function dispatchGameSettingsChange(
 	      // V9.9 (SECTION 20AS): explicit, so the previous match's seed cannot survive the LOAD_STATE merge.
 	      matchSeed: readMatchSeed(data.gameState) ?? undefined,
 	      matchEnd: readMatchEnd(data.gameState) ?? undefined, // V9.9 (SECTION 20AS): how the loaded match ended, if it had
+	      rivalRecap: sanitizeRivalRecapState((data.gameState as { rivalRecap?: unknown }).rivalRecap) ?? undefined, // V10.1 (SECTION 20BC): explicit, so the previous match's recap cannot survive the LOAD_STATE merge
 	      // V10.0 (SECTIONS 20AY/20AZ): explicit, so the previous match's rules stamp and races cannot survive the LOAD_STATE merge.
 	      rulesVersion: readRulesVersion(data.gameState) ?? undefined,
 	      rivalRaces: sanitizeRivalRacesState((data.gameState as { rivalRaces?: unknown }).rivalRaces) ?? undefined,
@@ -230343,10 +230860,12 @@ function dispatchGameSettingsChange(
     const tauntsEnabled = (gameSettings.adaptiveAiTauntsEnabled || gameSettings.opponentPersonalityEnabled === true) && gameState.selectedMode === 'ai';
     if (tauntsEnabled) {
       const moodState = AI_MOOD_STATES[newMood];
-      if (aiRandom() < moodState.tauntChance) {
+      // V10.1 (SECTION 20BC): a taunt is flavour text — in a V10.1 match its draws come from the Opponent stream, never the rival's AIReasoning stream (so turning taunts on cannot change how the rival plays).
+      const tauntRandom = isV101Match(gameStateLiveRef.current) ? () => drawGameplayRandom('Opponent') : aiRandom;
+      if (tauntRandom() < moodState.tauntChance) {
         // V9.6 (SECTION 20AK): the memory-driven line when the opponent personality is on; the canned mood line otherwise.
         const wp5Taunt = wp5SpeakRef.current?.('taunt', String(projectedAi?.id || 'ai'), { mood: newMood }) || null;
-        const taunt = wp5Taunt || moodState.messages[Math.floor(aiRandom() * moodState.messages.length)];
+        const taunt = wp5Taunt || moodState.messages[Math.floor(tauntRandom() * moodState.messages.length)];
         addNotification(`${moodState.emoji} ${wp5Taunt ? String(projectedAi?.name || 'AI') : 'AI'}: "${taunt}"`, 'ai', false);
       }
     }
@@ -230751,7 +231270,7 @@ function dispatchGameSettingsChange(
           const bestPrice = gameState.resourcePrices[best] || 100;
           const nextPrice = gameState.resourcePrices[candidate] || 100;
           return nextPrice > bestPrice ? candidate : best;
-        }, actor.activeSpecialAbility === 'Scout Ahead' ? regionResources[0] : regionResources[Math.floor(aiRandom() * regionResources.length)])
+        }, actor.activeSpecialAbility === 'Scout Ahead' ? regionResources[0] : regionResources[Math.floor(v101ActorRandom(actor, gameStateLiveRef.current, aiRandom) * regionResources.length)])
       : null;
 
     const collectedList: string[] = collectedResource ? [collectedResource] : [];
@@ -230818,7 +231337,7 @@ function dispatchGameSettingsChange(
       }
     });
     const successChance = 0.9 + (actor.character.craftingBonus?.effect?.successBonus || 0);
-    const craftedSuccessfully = aiRandom() < successChance;
+    const craftedSuccessfully = v101ActorRandom(actor, gameStateLiveRef.current, aiRandom) < successChance; // V10.1 (SECTION 20BC): a human automation roll is not drawn from the rival's stream
     if (craftedSuccessfully) {
       nextInventory.push(recipe.output);
     }
@@ -230857,9 +231376,10 @@ function dispatchGameSettingsChange(
     // challenge-assist spend). No-op (0) when Sync 2.0 or its expertise sub-toggle is off.
     const successChance = calculateActorChallengeSuccessChance(challenge, actor, bonusSuccessChance + getChallengeCategoryExpertiseBonus(actor, challenge.type, gameSettings));
     // V9.6 (SECTION 20AL): a trailing side may reroll one failed challenge per turn (the extra draw happens only then).
-    const wp6FirstRoll = aiRandom() < successChance;
+    const wp6Random = () => v101ActorRandom(actor, gameStateLiveRef.current, aiRandom); // V10.1 (SECTION 20BC): a human automation roll is not drawn from the rival's AIReasoning stream
+    const wp6FirstRoll = wp6Random() < successChance;
     const wp6Rerolled = !wp6FirstRoll && wp6RerollRef.current?.(actorId) === true;
-    const success = wp6FirstRoll || (wp6Rerolled && aiRandom() < successChance);
+    const success = wp6FirstRoll || (wp6Rerolled && wp6Random() < successChance);
     if (wp6Rerolled) wp6RerollDoneRef.current?.(actorId, success);
     wp6AttemptRef.current?.(actorId, challenge || {}, String(actor.currentRegion || ''), success);
     if (success) {
@@ -238358,6 +238878,10 @@ function dispatchGameSettingsChange(
   }, [selectedDecisionTrace]);
 
   const buildSettingEffectSummary = useCallback((settingId: string) => {
+    // V10.1 (SECTION 20BC): a setting only the team AI reads says so in a one-on-one match, instead of describing an AI that is not playing.
+    const v101SummaryKey: Record<string, string> = { ai_market_modifiers: 'aiMarketModifierAwareness', ai_special_abilities: 'aiSpecialAbilityPriority', ai_economy: 'aiEconomyInteractionWeight', ai_win_condition: 'aiWinConditionSpendingStrength', ai_region_rush: 'aiRegionRushIntensity' };
+    const v101TeamOnly = v101TeamOnlySummary(v101SummaryKey[settingId], gameState.selectedMode);
+    if (v101TeamOnly) return v101TeamOnly;
     switch (settingId) {
       case 'ai_market_modifiers':
         return `Decision weight ${(gameSettings.aiMarketModifierAwareness * 100).toFixed(0)}% for weather, season, events, and pricing modifiers.`;
@@ -238384,7 +238908,7 @@ function dispatchGameSettingsChange(
       default:
         return '';
     }
-  }, [gameSettings, getAdvancedLoansAccessSummary]);
+  }, [gameSettings, getAdvancedLoansAccessSummary, gameState.selectedMode]);
 
   const settingDescriptors = useMemo<Record<string, SettingDescriptor>>(() => ({
     ai_market_modifiers: {
@@ -243433,6 +243957,15 @@ function dispatchGameSettingsChange(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [v100RaceInputs]);
   const v100RaceView = useMemo(() => (v100RaceInputs ? buildRivalRaceCardView(sanitizeRivalRacesState(gameState.rivalRaces), v100RaceInputs) : null), [v100RaceInputs, gameState.rivalRaces]);
+  // V10.1 (SECTION 20BC): Rival Recap (rivalRecapEnabled, profile setting; off = no card, nothing computed). The dismissed turn is remembered on this device only.
+  const [v101RecapDismissed, setV101RecapDismissed] = useState<string | null>(() => v101ReadRecapDismissed(v99BrowserStorage()));
+  const v101RecapTurn = v101RecapTurnToShow({ enabled: gameSettings.rivalRecapEnabled === true && !isolatedReplayRuntime, gameState, dismissedKey: v101RecapDismissed });
+  const v101DismissRecap = useCallback(() => {
+    if (!v101RecapTurn) return;
+    const key = v101RecapTurnKey(gameState, v101RecapTurn);
+    setV101RecapDismissed(key);
+    v101WriteRecapDismissed(v99BrowserStorage(), key);
+  }, [v101RecapTurn, gameState]);
   const v9CohesionRef = useRef<V9Cohesion | null>(null);
   v9CohesionRef.current = v9Cohesion;
   // After-action feedback for MAJOR player actions: the player's own root event and what the world did next.
@@ -248657,7 +249190,7 @@ function dispatchGameSettingsChange(
                         { key: 'nationalEventsEnabled' as keyof GameSettingsState, label: 'National Events Engine', desc: 'Country-wide random & scripted events' },
                         { key: 'careerProgressionEnabled' as keyof GameSettingsState, label: 'Career Progression', desc: 'Player level, XP & unlock progression' },
                         { key: 'achievementsEnabled' as keyof GameSettingsState, label: 'Achievements System', desc: 'Career badges & achievement tracking' },
-                        { key: 'fogOfWarEnabled' as keyof GameSettingsState, label: 'Fog of War System', desc: 'Hidden opponent visibility & intel' },
+                        { key: 'fogOfWarEnabled' as keyof GameSettingsState, label: 'Fog of War System', desc: 'Hides rival details from you (the one-on-one rival still reads your wealth)' }, // V10.1 (SECTION 20BC): honest text
                         { key: 'aiRivalryEnabled' as keyof GameSettingsState, label: 'AI Rivalry System', desc: 'Dynamic rival attitudes & rivalry perks' }
                       ].map(sw => (
                         <div key={String(sw.key)} className="flex items-center justify-between p-2 rounded bg-black/20 border border-white/10">
@@ -248732,7 +249265,7 @@ function dispatchGameSettingsChange(
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="font-semibold">AI Affects Economy</div>
-                      <div className="text-sm opacity-75">AI sales change supply and demand</div>
+                      <div className="text-sm opacity-75">AI sales change supply and demand. {/* V10.1 (SECTION 20BC): the whole truth */}In team modes it also gives Hard AIs $250 and Expert AIs $500 extra starting cash, plus small yield and cost bonuses.</div>
                     </div>
                     <button
                       onClick={() => trackedSetGameSettings("direct_player_change", "AI Difficulty", prev => ({ ...prev, aiAffectsEconomy: !prev.aiAffectsEconomy }))}
@@ -248744,7 +249277,7 @@ function dispatchGameSettingsChange(
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-semibold">AI Win-Condition Spending (Optional)</div>
+                        <div className="font-semibold">AI Win-Condition Spending (Optional)<V101RivalLiveChip settingKey="aiWinConditionSpendingEnabled" selectedMode={gameState.selectedMode} /></div>
                         <div className="text-sm opacity-75">Feature 1: money mode hoards more cash, regions mode spends more on control</div>
                       </div>
                       <button
@@ -248779,7 +249312,7 @@ function dispatchGameSettingsChange(
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-semibold">AI Win-Condition Adaptation V2 (Optional)</div>
+                        <div className="font-semibold">AI Win-Condition Adaptation V2 (Optional)<V101RivalLiveChip settingKey="aiWinConditionAdaptationV2Enabled" selectedMode={gameState.selectedMode} /></div>
                         <div className="text-sm opacity-75">Feature 2: dynamically adjusts decision weights based on game mode and win conditions</div>
                       </div>
                       <button
@@ -248793,7 +249326,7 @@ function dispatchGameSettingsChange(
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-semibold">AI Regions Majority Rush (Optional)</div>
+                        <div className="font-semibold">AI Regions Majority Rush (Optional)<V101RivalLiveChip settingKey="aiRegionsMajorityRushEnabled" selectedMode={gameState.selectedMode} /></div>
                         <div className="text-sm opacity-75">Feature 3: stronger region defense, takeovers, and anti-hoard spending in region mode</div>
                       </div>
                       <button
@@ -253157,13 +253690,13 @@ function dispatchGameSettingsChange(
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
-                          <SettingsSlider label={(v) => <>AI Loan Risk Weight: {v.toFixed(1)}x</>} id="setting-slider-87-ai-loan-risk-weight-x-1" min="0" max="2" step="0.1" value={gameSettings.aiLoanRiskWeight || 1} onChange={(val) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, aiLoanRiskWeight: val }))} disabled={gameSettings.advancedLoansAccessMode === 'player_only'} className="w-full" />
+                          <SettingsSlider label={(v) => <>AI Loan Risk Weight: {v.toFixed(1)}x<V101RivalLiveChip settingKey="aiLoanRiskWeight" selectedMode={gameState.selectedMode} /></>} id="setting-slider-87-ai-loan-risk-weight-x-1" min="0" max="2" step="0.1" value={gameSettings.aiLoanRiskWeight || 1} onChange={(val) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, aiLoanRiskWeight: val }))} disabled={gameSettings.advancedLoansAccessMode === 'player_only'} className="w-full" />
                         </div>
                         <div>
-                          <SettingsSlider label={(v) => <>AI Repayment Priority: {v.toFixed(1)}x</>} id="setting-slider-88-ai-repayment-priority-x-1" min="0" max="2" step="0.1" value={gameSettings.aiLoanRepaymentPriority || 1} onChange={(val) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, aiLoanRepaymentPriority: val }))} disabled={gameSettings.advancedLoansAccessMode === 'player_only'} className="w-full" />
+                          <SettingsSlider label={(v) => <>AI Repayment Priority: {v.toFixed(1)}x<V101RivalLiveChip settingKey="aiLoanRepaymentPriority" selectedMode={gameState.selectedMode} /></>} id="setting-slider-88-ai-repayment-priority-x-1" min="0" max="2" step="0.1" value={gameSettings.aiLoanRepaymentPriority || 1} onChange={(val) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, aiLoanRepaymentPriority: val }))} disabled={gameSettings.advancedLoansAccessMode === 'player_only'} className="w-full" />
                         </div>
                         <div>
-                          <SettingsSlider label={(v) => <>AI Refinancing Weight: {v.toFixed(1)}x</>} id="setting-slider-89-ai-refinancing-weight-x-1" min="0" max="2" step="0.1" value={gameSettings.aiLoanRefinancingWeight || 1} onChange={(val) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, aiLoanRefinancingWeight: val }))} disabled={gameSettings.advancedLoansAccessMode === 'player_only' || !gameSettings.loanRefinancingEnabled} className="w-full" />
+                          <SettingsSlider label={(v) => <>AI Refinancing Weight: {v.toFixed(1)}x<V101RivalLiveChip settingKey="aiLoanRefinancingWeight" selectedMode={gameState.selectedMode} /></>} id="setting-slider-89-ai-refinancing-weight-x-1" min="0" max="2" step="0.1" value={gameSettings.aiLoanRefinancingWeight || 1} onChange={(val) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, aiLoanRefinancingWeight: val }))} disabled={gameSettings.advancedLoansAccessMode === 'player_only' || !gameSettings.loanRefinancingEnabled} className="w-full" />
                         </div>
                         <div className="flex items-center justify-between">
                           <div>
@@ -255929,7 +256462,7 @@ function dispatchGameSettingsChange(
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="font-semibold">AI Region Majority Rush</div>
+                      <div className="font-semibold">AI Region Majority Rush<V101RivalLiveChip settingKey="aiRegionsMajorityRushEnabled" selectedMode={gameState.selectedMode} /></div>
                       <div className="text-sm opacity-75">AI aggressively prioritizes securing region majority control</div>
                     </div>
                     <button
@@ -260315,6 +260848,8 @@ function dispatchGameSettingsChange(
           {/* V9.9 (SECTION 20AX): "Since your last turn" — one card for what happened while the player waited (Turn Digest; off = not drawn). */}
           {v99td.digest && <OptionalSurfaceBoundary surface="Turn digest"><V99TurnDigestCard digest={v99td.digest} theme={themeStyles} collapsed={v99td.collapsed} historyCount={v99DigestHistoryCount(v99td.digest, notifications)} onToggle={v99td.onToggle} onDismiss={v99td.onDismiss} onShowAll={() => updateUiState({ showNotifications: true })} laneSide={v99DigestLaneSide(gameSettings.notificationSettings?.position, v99ClassicLayout, gameSettings.classicStickyToasts === true)} /></OptionalSurfaceBoundary>}
           {wp8State?.active && <V99ToastLaneBelow active={!v99ClassicLayout}>{/* V9.9 (SECTION 20AU, W4A — f1-06): no toast over the goal counters or "Skip tutorial" */}<OptionalSurfaceBoundary surface="Guided first run"><FirstRunPanel view={v100FirstRunPanelView(wp8State, wp8Signals, v99FirstRunAvailability(gameSettings))} onSkip={wp7Kit.fn('firstRunSkip', () => wp8Finish('skipped'))} theme={themeStyles} /></OptionalSurfaceBoundary></V99ToastLaneBelow>}
+          {/* V10.1 (SECTION 20BC): what the rival did and why (Rival Recap on, a solo rival mode, the player's turn; off = not drawn). */}
+          {v101RecapTurn && <OptionalSurfaceBoundary surface="Rival recap"><V101RivalRecapCard turn={v101RecapTurn} rivalName={String(aiPlayer?.name || 'The rival')} theme={themeStyles} onDismiss={v101DismissRecap} /></OptionalSurfaceBoundary>}
           {/* V10.0 (SECTION 20AZ): the open Rival Race (Rival Races on, AI Opponent mode; off = not drawn). */}
           {v100RaceView && <OptionalSurfaceBoundary surface="Rival races"><RivalRaceCard view={v100RaceView} theme={themeStyles} /></OptionalSurfaceBoundary>}
           {wp6HudView && <OptionalSurfaceBoundary surface="Match shape"><MatchShapeHud view={wp6HudView} theme={themeStyles} /></OptionalSurfaceBoundary>}
