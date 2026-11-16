@@ -214740,9 +214740,10 @@ export function runV101ContentSelfTests(): V9SelfTestResult[] {
 //      not stall the team AI, "Track as Goal" that no longer writes a stale copy of the whole match back, a Replay file reported as Healthy.
 //   4. PERFORMANCE: no advisor for a spectator; screen measuring once per frame instead of a forced layout after every render.
 //   5. A TEST SETUP TO TRUST: the chronic red v92 check fixed at its cause, known failures and critical rows that work, a manifest of every suite.
-// Gating: isolation, the error net, downloads, the paint fallback, the watchdog guard, track-goal, replay integrity, Auto Mode fields and the test
-// setup apply to EVERY match (they are bug fixes). Two things alter what a match in progress does and read the rules stamp: the spectator advisor
-// (isV101Match) and the registry-less load seed (isV101Match) and the replay id (isV101Match). A V10.0, unstamped or classic-rules match is unchanged.
+// Gating: isolation, the error net, downloads, the paint fallback, the watchdog guard, track-goal, replay integrity, Auto Mode fields, the bounded draw log,
+// the load preflight and the test setup apply to EVERY match (they are bug fixes). Four changes alter what a match in progress does and read the rules stamp
+// (isV101Match): the spectator advisor, the registry-less load seed, the replay recording id and the what-if fork id. A V10.0, unstamped or classic-rules
+// match is unchanged in all four.
 // New persisted state: none (the replay config gains optional matchSeed / rulesVersion fields inside the replay FILE, not in a save).
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -215039,6 +215040,7 @@ export const V101_SUITE_MANIFEST: ReadonlyArray<readonly [string, string]> = [
   ['runCoPilotCategory1SelfTests', 'part-of:copilot'], ['runCoPilotCategory2SelfTests', 'part-of:copilot'], ['runCoPilotCategory3SelfTests', 'part-of:copilot'],
   ['runCoPilotCategory4SelfTests', 'part-of:copilot'], ['runCoPilotCategory5SelfTests', 'part-of:copilot'], ['runCoPilotCategory6SelfTests', 'part-of:copilot'],
   ['runCoPilotCategory7SelfTests', 'part-of:copilot'], ['runCoPilotCategory8SelfTests', 'part-of:copilot'], ['runCoPilotCategory9SelfTests', 'part-of:copilot'],
+  ['runV1010WorkforceSelfTests', 'part-of:v1010'], ['runStateCapacitySelfTests', 'part-of:v1011'], // aliases of the V10.10 and V10.11 suites
   ['runAutoModeRuntimeDevTests', 'part-of:v101au'], ['runStrategyPlannerM6DevTests', 'part-of:v101sp'],
   // Suites that had no caller anywhere (they never ran, so a regression in them was invisible). Registered below as rows of their own.
   ['runAutoModeDevSelfTests', 'v101au'],
