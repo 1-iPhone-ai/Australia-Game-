@@ -48564,6 +48564,7 @@ export function chooseAction(
   const finalList = rescoreHook && rejectHook ? rescored.filter(candidate => !rejectHook(candidate)) : rescored;
   if (!finalList.length) return null;
   const ranked = [...finalList].sort((a, b) => (b.score || 0) - (a.score || 0));
+  if (options?.live?.onRanked) { try { options.live.onRanked(ranked); } catch { /* a reader of the list can never change the pick */ } } // V10.1 (SECTION 20BC): Rival Recap reads the list the pick is made from
   // V10.0 (SECTION 20AY, F1): the V10.0 rival plays its best move at its difficulty's rate; without the flag, V9.9's pick.
   // V10.1 (SECTION 20BC): in a V10.1 match the best-move rate IS the screen's "Decision" figure (the mistake share is taken out of it, not multiplied into it) and the pick always draws two values.
   if (v100Policy) return pickV100RivalDecision(ranked, rng, ctx.difficultyKey, mistakeRolled, options?.live?.v101Rules === true ? { mistakeChance: options?.live?.suppressMistake === true ? 0 : (Number(profile.mistakeChance) || 0) } : undefined);
@@ -195902,6 +195903,8 @@ export interface ClassicAiLiveHooks {
   v101Rules?: boolean;
   travelCost?: (fromRegion: string, toRegion: string, actor: unknown) => number;
   challengesFor?: (actor: unknown) => unknown[] | null;
+  /** V10.1 (SECTION 20BC): told the final ranked list (best first) right before the pick, for Rival Recap. Reading it draws nothing and changes nothing. */
+  onRanked?: (ranked: Array<AIAction & { score: number }>) => void;
 }
 /** The candidates the chooser may still propose. No hook = the list itself (same array, same order). */
 export function classicAiProposable<T extends AIAction & { score: number }>(candidates: T[], live: ClassicAiLiveHooks | null | undefined): T[] {
@@ -196267,6 +196270,8 @@ export interface RivalDecisionOptions {
   isRejected?: (candidate: RivalCandidate) => boolean;
   /** The action being chosen was bought with an Action Override (it is never spent "thinking"). */
   paidSlot?: boolean;
+  /** V10.1 (SECTION 20BC): receives the final ranked list the chooser picks from (Rival Recap; absent = nothing is read). */
+  onRanked?: (ranked: Array<AIAction & { score: number }>) => void;
 }
 /**
  * The live hooks for one rival decision (makeAiDecision passes them to chooseAction), in a match started on V9.9: the
@@ -196288,6 +196293,7 @@ export function rivalLiveHooksFor(input: { options: RivalDecisionOptions | null 
   // V10.0 (SECTION 20AY, F1): a match started on V10.0 gets the V10.0 pick unless the classic (V9.9) rival was chosen.
   // (Its stakes stay the R2 rules' Kelly-sized ones: a smaller early stake was tried and slowed the rival's opening.)
   if (v100RivalPolicyActive(input.gameState, input.settings)) hooks.v100Policy = true;
+  if (input.options?.onRanked) hooks.onRanked = input.options.onRanked; // V10.1 (SECTION 20BC): Rival Recap reads the final ranked list
   if (v101) {
     hooks.v101Rules = true;
     hooks.travelCost = v101TravelCost;
@@ -209439,7 +209445,7 @@ export function v101RecapLeadText(lead: number): string {
 export function V101RivalRecapCardView({ turn, rivalName, theme, onDismiss }: V101RivalRecapCardProps) {
   const headingId = `v101-rival-recap-h-${turn.id}`;
   return (
-    <section role="region" aria-labelledby={headingId} className={`${theme.card} ${theme.border} border rounded-xl px-3 py-2 ${theme.shadow} text-xs max-w-full`} data-testid="v101-rival-recap"
+    <section role="region" aria-labelledby={headingId} tabIndex={-1} className={`${theme.card} ${theme.border} border rounded-xl px-3 py-2 ${theme.shadow} text-xs max-w-full outline-none`} data-testid="v101-rival-recap"
       onKeyDown={(event: React.KeyboardEvent<HTMLElement>) => { if (event.key === 'Escape') { event.stopPropagation(); onDismiss(); } }}>
       <div className="flex items-start gap-2">
         <h2 id={headingId} className="font-bold text-sm flex-1 min-w-0" data-testid="v101-rival-recap-heading">🧭 What {rivalName} did — day {turn.day}</h2>
@@ -209624,10 +209630,11 @@ export function runV101RivalParityMatch(cfg: V101ParityMatchConfig): V101ParityM
     const guard = createRivalRetryGuard();
     const decide = (isRejected: (action: unknown) => boolean): AIAction | null => {
       const rejects = (c: AIAction & { score: number }) => isRejected(c) || rivalRetryBlocks(guard, gs, c);
-      const live = rivalLiveHooksFor({ options: { isRejected: rejects, paidSlot: rt.successfulActions - (rt.freeCommits || 0) >= rt.baseBudget }, aiState: rival, gameState: gs, playerState: player, settings, difficultyKey: cfg.difficulty });
+      let rankedByChooser: Array<AIAction & { score: number }> | null = null;
+      const live = rivalLiveHooksFor({ options: { isRejected: rejects, paidSlot: rt.successfulActions - (rt.freeCommits || 0) >= rt.baseBudget, ...(session ? { onRanked: (list: Array<AIAction & { score: number }>) => { rankedByChooser = list; } } : {}) }, aiState: rival, gameState: gs, playerState: player, settings, difficultyKey: cfg.difficulty });
       const picked = chooseAction(stateFor(), 'ai', weights, countedRng, { difficultyKey: cfg.difficulty, settings, live });
       trace.push(rivalAction(picked));
-      if (session) { try { v101RecapNoteDecision(session, picked, previewFor(rejects), rival); } catch { /* the recap never changes a decision */ } }
+      if (session) { try { v101RecapNoteDecision(session, picked, rankedByChooser || previewFor(rejects), rival); } catch { /* the recap never changes a decision */ } }
       return picked;
     };
     // The turn loop's own bookkeeping (runSoloAiTurnLoop calls the same functions), without its waits.
@@ -210005,10 +210012,10 @@ export function runV101RivalSelfTests(): V9SelfTestResult[] {
     onKeyDown?.({ key: 'Escape', stopPropagation: () => { stop.stopped += 1; } });
     (button?.props.onClick as (() => void) | undefined)?.();
     const text = v99ElementText(view);
-    const tabStops = all.filter(e => e.props.tabIndex !== undefined);
+    const tabStops = all.filter(e => typeof e.props.tabIndex === 'number' && e.props.tabIndex >= 0); // tabIndex -1 (focus by click or script) is not a tab stop
     const empty = v99ElementText(V101RivalRecapCardView({ turn: { ...turn, moves: [] }, rivalName: 'Rival', theme, onDismiss: () => {} }));
     return (!!section && section.props.role === 'region' && !!heading && section.props['aria-labelledby'] === heading.props.id && !!button && button.props['aria-label'] === 'Dismiss the rival recap' && !!status && String(v99ElementText(status)).includes('2 moves')
-      && afterEnter === 0 && dismissed === 2 && stop.stopped === 1 && tabStops.length === 0 && /\(\+\$660\)/.test(text) && /\(-\$350\)/.test(text) && /72% odds/.test(text) && /Rival cash \$1,500 → \$2,160/.test(text) && /made no move/.test(empty))
+      && section.props.tabIndex === -1 && afterEnter === 0 && dismissed === 2 && stop.stopped === 1 && tabStops.length === 0 && /\(\+\$660\)/.test(text) && /\(-\$350\)/.test(text) && /72% odds/.test(text) && /Rival cash \$1,500 → \$2,160/.test(text) && /made no move/.test(empty))
       || json({ section: !!section, role: section?.props.role, labelled: section?.props['aria-labelledby'] === heading?.props.id, button: button?.props['aria-label'], status: status ? v99ElementText(status) : null, dismissed, afterEnter, tabStops: tabStops.length, text });
   });
 
@@ -210073,6 +210080,25 @@ export function runV101RivalSelfTests(): V9SelfTestResult[] {
     const v100 = runV101RivalParityMatch({ seed: 21, rules: 'v100', difficulty: 'hard', days: 15 });
     return (v101.rivalFreeActions > 0 && v100.rivalFreeActions === 0 && v101.rivalPaidActions <= 3 * 15 && v100.rivalPaidActions <= 3 * 15 && v101.rivalNetWorth > 0 && v100.rivalNetWorth > 0)
       || json({ v101: [v101.rivalPaidActions, v101.rivalFreeActions], v100: [v100.rivalPaidActions, v100.rivalFreeActions] });
+  });
+
+  check('v101rv_29_the_ranked_list_is_read_not_changed', "Rival Recap reads the exact ranked list the chooser picks from: the pick is in it, nothing is drawn by reading it, a reader that throws changes nothing, and with no reader the decision and the draws are the same", () => {
+    const bad: string[] = [];
+    difficulties.forEach(difficulty => {
+      for (let seed = 1; seed <= 8; seed += 1) {
+        const b = bundle({ difficulty, money: 3000, inventory: seed % 2 ? ['Wool', 'Opal'] : [] });
+        let seen: Candidate[] | null = null;
+        const base = hooksFor(b)!;
+        const plain = choose(b, seed, base);
+        const read = choose(b, seed, { ...base, onRanked: list => { seen = list; } });
+        const boom = choose(b, seed, { ...base, onRanked: () => { throw new Error('reader failed'); } });
+        const list: Candidate[] = seen ?? [];
+        if (json(plain.pick) !== json(read.pick) || plain.draws !== read.draws || json(plain.pick) !== json(boom.pick) || plain.draws !== boom.draws) bad.push(`${difficulty}/${seed}: reading changed the decision`);
+        if (!plain.pick || v101RivalRankOf(plain.pick, list) === 0 || list.some((c, i) => i > 0 && (list[i - 1].score || 0) < (c.score || 0))) bad.push(`${difficulty}/${seed}: list is not the ranked list holding the pick`);
+        if (plain.pick && v101RivalRankOf(plain.pick, list) > 1 + (difficulty === 'easy' ? 3 : 1)) bad.push(`${difficulty}/${seed}: pick ranked ${v101RivalRankOf(plain.pick, list)}`);
+      }
+    });
+    return bad.length === 0 || json(bad.slice(0, 5));
   });
 
   check('v101rv_28_the_match_stays_deterministic', "The headless match is a pure function of its seed and rules (two runs agree to the dollar and to the last decision); a different seed plays differently", () => {
@@ -219246,9 +219272,10 @@ function dispatchGameSettingsChange(
       // V9.9 (SECTION 20AS): paidSlot = this action was bought with an override (R2: it is never spent "thinking").
       decide: (isRejected) => {
         const rejects = (candidate: AIAction & { score: number }) => isRejected(candidate) || rivalRetryBlocks(v99RetryGuard, gameStateLiveRef.current, candidate); /* W4A (F4-01): matches started on V9.9 only */
-        const picked = resolveSoloAiDecisionViaEngineRef.current(aiPlayerRef.current, gameStateLiveRef.current, playerRef.current, { isRejected: rejects, paidSlot: rt.successfulActions - (rt.freeCommits || 0) >= rt.baseBudget /* V10.1 (SECTION 20BC): free commits are not the day's actions */ });
-        // V10.1 (SECTION 20BC): the recap reads the ranked list AFTER the decision is made (the preview draws nothing), so it can never change the pick.
-        if (v101Recap) { try { v101RecapNoteDecision(v101Recap, picked, v101RivalPreviewRef.current(rejects), aiPlayerRef.current); } catch (recapError) { console.warn('[V10.1] rival recap skipped a decision', recapError); } }
+        // V10.1 (SECTION 20BC): with Rival Recap on, the chooser hands over the final ranked list it picks from (no draw, no change); a decision that did not come from the chooser (a planner's) falls back to the preview's list.
+        let rankedByChooser: Array<AIAction & { score: number }> | null = null;
+        const picked = resolveSoloAiDecisionViaEngineRef.current(aiPlayerRef.current, gameStateLiveRef.current, playerRef.current, { isRejected: rejects, paidSlot: rt.successfulActions - (rt.freeCommits || 0) >= rt.baseBudget /* V10.1 (SECTION 20BC): free commits are not the day's actions */, ...(v101Recap ? { onRanked: (list: Array<AIAction & { score: number }>) => { rankedByChooser = list; } } : {}) });
+        if (v101Recap) { try { v101RecapNoteDecision(v101Recap, picked, rankedByChooser || v101RivalPreviewRef.current(rejects), aiPlayerRef.current); } catch (recapError) { console.warn('[V10.1] rival recap skipped a decision', recapError); } }
         return picked;
       },
       execute: async (action) => {
