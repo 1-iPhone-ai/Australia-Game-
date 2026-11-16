@@ -30374,6 +30374,9 @@ export const resolveThemeStyles = (theme: GameTheme, systemPrefersDark: boolean 
       infoText: "text-sky-300",
       statMoney: "text-green-400",
       statInfo: "text-sky-300",
+      // V10.1 (SECTION 20BF): two more semantic accents (rival figures, highlighted figures); see V101_EXTRA_ACCENT_KEYS
+      rivalText: "text-pink-300",
+      highlightText: "text-yellow-400",
     };
   }
 
@@ -30416,11 +30419,11 @@ export const resolveThemeStyles = (theme: GameTheme, systemPrefersDark: boolean 
     // === PRIMARY BUTTONS ===
     button: isDark
       ? "bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white shadow-lg shadow-blue-500/25"
-      : "bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white shadow-lg shadow-blue-500/30",
+      : "bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-lg shadow-blue-500/30", // V10.1 (SECTION 20BF): was bg-blue-500 (white on it is 3.7:1); blue-600 is 5.2:1
     // V9.7 (SECTION 20AO): primary call-to-action buttons follow the theme.
     buttonPrimary: isDark
       ? "bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white shadow-lg shadow-blue-500/25"
-      : "bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white shadow-lg shadow-blue-500/30",
+      : "bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-lg shadow-blue-500/30", // V10.1 (SECTION 20BF): as button above
     buttonDisabled: isDark
       ? "bg-gray-600 text-gray-400 cursor-not-allowed"
       : "bg-gray-300 text-gray-500 cursor-not-allowed",
@@ -30563,6 +30566,9 @@ export const resolveThemeStyles = (theme: GameTheme, systemPrefersDark: boolean 
     infoText: isDark ? "text-blue-400" : "text-blue-700",
     statMoney: isDark ? "text-green-500" : "text-green-700",
     statInfo: isDark ? "text-blue-500" : "text-blue-700",
+    // V10.1 (SECTION 20BF): two more semantic accents (rival figures, highlighted figures); Dark keeps the classes the play screen hard-coded (pink-400, yellow-400), Light reads on white
+    rivalText: isDark ? "text-pink-400" : "text-pink-700",
+    highlightText: isDark ? "text-yellow-400" : "text-yellow-700",
   };
 };
 
@@ -88437,6 +88443,7 @@ export class GlobalUISurfaceManager {
       { flags: ['showRescueEmergencyOverlay', 'showRescueOverlay', 'showEmergencyOverlay'], surfaceId: 'rescue_emergency_overlay' }
     ];
 
+    v101SurfaceFlagSink.current = modalMapping; // V10.1 (SECTION 20BF): lets Escape and the rescue find every flag that opens a surface (see v101EscapeFlagPatch)
     const activeSurfacesInUI = new Set<string>();
     for (const item of modalMapping) {
       if (item.flags.some(flag => Boolean(uiState[flag]))) {
@@ -99640,6 +99647,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
   // the parent passed a fresh inline arrow function.
   const handleCloseRef = React.useRef(handleClose);
   React.useEffect(() => { handleCloseRef.current = handleClose; }, [handleClose]);
+  const settingsPressOnBackdropRef = React.useRef<boolean | null>(null); // V10.1 (SECTION 20BF): where the last pointer press began (null: no press seen, e.g. a keyboard-made click)
 
   // Autofocus: runs ONCE per open. Depending on the close callback here is
   // what made every keystroke in the search box bounce focus to the first
@@ -99741,7 +99749,13 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
       aria-label="Settings and Experience Director Shell"
       className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-hidden"
       style={{ zIndex: globalUISurfaceManager.getZIndex("settings_hub") }}
-      onClick={handleClose}
+      onPointerDown={(e) => { settingsPressOnBackdropRef.current = e.target === e.currentTarget; }}
+      onClick={(e) => {
+        // V10.1 (SECTION 20BF): a slider drag that ends over the backdrop fires a click on it; the hub closes only when the press also began on the backdrop.
+        const pressedOnBackdrop = settingsPressOnBackdropRef.current;
+        settingsPressOnBackdropRef.current = null;
+        if (v101BackdropClickCloses(pressedOnBackdrop, e.target === e.currentTarget)) handleClose();
+      }}
     >
       {(() => {
         const activeTheme = uiState?.theme || 'system';
@@ -183001,7 +183015,7 @@ export const ChallengeApproachPicker = React.memo(function ChallengeApproachPick
         </div>
         <div className="flex items-center gap-2 text-sm mb-3">
           <label htmlFor="approach-wager" className="font-semibold">Wager</label>
-          <input id="approach-wager" type="range" min={p.minWager} max={Math.max(p.minWager, p.maxWager)} value={Math.min(Math.max(p.wager, p.minWager), Math.max(p.minWager, p.maxWager))} onChange={e => p.onWagerChange(parseInt(e.target.value, 10) || p.minWager)} className="flex-1" aria-label="Wager amount" />
+          <input id="approach-wager" type="range" min={p.minWager} max={Math.max(p.minWager, p.maxWager)} step={v101WagerStep(p.maxWager)} value={Math.min(Math.max(p.wager, p.minWager), Math.max(p.minWager, p.maxWager))} onChange={e => p.onWagerChange(parseInt(e.target.value, 10) || p.minWager)} className="flex-1" aria-label="Wager amount" />
           <span className="font-bold w-16 text-right">${p.wager}</span>
           <span className="text-xs opacity-70">· reputation {p.reputation}/100</span>
         </div>
@@ -198024,7 +198038,13 @@ export function useV99EscapeToClose(active: boolean, onClose: () => void): void 
     const onKey = (event: KeyboardEvent) => {
       if (!(event.key === 'Escape' || event.key === 'Esc') || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
       const target = event.target instanceof HTMLElement ? event.target : null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) return; // typing: Escape belongs to the field
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+        // V10.1 (SECTION 20BF): Escape belongs to a field only while it holds text (it lets go of focus first); a slider, dropdown or empty field no longer swallows it.
+        const rule = v101EscapeFieldRule(event);
+        if (rule === 'blur') { v101BlurTarget(target); return; }
+        if (rule !== 'close') return;
+        v101BlurTarget(target);
+      }
       onCloseRef.current();
     };
     window.addEventListener('keydown', onKey);
@@ -200864,7 +200884,7 @@ export const V99TurnRow: React.FC<V99TurnRowProps> = ({ theme, pill, actions, pi
         <span>{action.icon}</span>
         <span>{action.label}</span>
         {pinned && <span className="text-[10px] text-blue-300 font-bold" title="Pinned action">📌</span>}
-        {action.hotkey && <kbd className={kbdClass}>{action.hotkey}</kbd>}
+        {v101AdvertisedHotkey(action.hotkey) && <kbd className={kbdClass}>{v101AdvertisedHotkey(action.hotkey)}</kbd>}{/* V10.1 (SECTION 20BF): a chip shows a key only when that key is a real shortcut */}
       </button>
     );
   };
@@ -201353,8 +201373,9 @@ export type V99ConcreteTheme = 'dark' | 'light' | 'retro';
 export const V99_CONCRETE_THEMES: readonly V99ConcreteTheme[] = ['dark', 'light', 'retro'];
 
 /** The accent text classes of the Dark theme (what V9.8 hard-coded on every theme); resolveThemeStyles('dark') carries the same values. */
-export const V99_DARK_ACCENT_TEXT: Readonly<Record<Exclude<V99ThemeAccentKey, 'cardIdle' | 'cardSelected'>, string>> = {
+export const V99_DARK_ACCENT_TEXT: Readonly<Record<Exclude<V99ThemeAccentKey, 'cardIdle' | 'cardSelected'> | V101ExtraAccentKey, string>> = {
   moneyPositive: 'text-green-400', moneyNegative: 'text-red-400', warningText: 'text-amber-300', successText: 'text-green-400', infoText: 'text-blue-400', statMoney: 'text-green-500', statInfo: 'text-blue-500',
+  rivalText: 'text-pink-400', highlightText: 'text-yellow-400', // V10.1 (SECTION 20BF): the two keys added for the play screen's rival and highlighted figures
 };
 
 /**
@@ -201362,7 +201383,7 @@ export const V99_DARK_ACCENT_TEXT: Readonly<Record<Exclude<V99ThemeAccentKey, 'c
  * accent is Dark's own keeps `v98Class` exactly — so Dark does not change by a shade — and any other theme (Light,
  * and Retro where it differs) gets its readable accent. A theme object without the key keeps `v98Class` too.
  */
-export function v99ThemeAccent(theme: object | null | undefined, key: Exclude<V99ThemeAccentKey, 'cardIdle' | 'cardSelected'>, v98Class: string): string {
+export function v99ThemeAccent(theme: object | null | undefined, key: Exclude<V99ThemeAccentKey, 'cardIdle' | 'cardSelected'> | V101ExtraAccentKey, v98Class: string): string {
   const value = (theme as Record<string, unknown> | null | undefined)?.[key];
   if (typeof value !== 'string' || !value.trim() || value === V99_DARK_ACCENT_TEXT[key]) return v98Class;
   return value;
@@ -201380,6 +201401,7 @@ export const V99_TAILWIND_HEX: Readonly<Record<string, string>> = {
   'red-400': '#f87171', 'red-700': '#b91c1c', 'rose-300': '#fda4af',
   'blue-100': '#dbeafe', 'blue-400': '#60a5fa', 'blue-500': '#3b82f6', 'blue-600': '#2563eb', 'blue-700': '#1d4ed8',
   'purple-100': '#f3e8ff', 'purple-600': '#9333ea', 'sky-300': '#7dd3fc',
+  'pink-300': '#f9a8d4', 'pink-400': '#f472b6', 'pink-700': '#be185d', 'yellow-400': '#facc15', 'yellow-700': '#a16207', // V10.1 (SECTION 20BF): the rival / highlight accents
 };
 
 /** '#rgb' or '#rrggbb' → [r, g, b] (0–255); null when the text is not a hex colour. */
@@ -201477,6 +201499,11 @@ export function v99ThemeContrastPairs(): V99ContrastPair[] {
     add('infoText on a panel', styles.infoText, base.panel, 4.5);
     add('statMoney on a panel', styles.statMoney, base.panel, 4.5);
     add('statInfo on a panel', styles.statInfo, base.panel, theme === 'dark' ? 3.9 : 4.5);
+    // V10.1 (SECTION 20BF): the two added accents and the primary button's label on its own fill
+    add('rivalText on a panel', styles.rivalText, base.panel, 4.5);
+    add('highlightText on a panel', styles.highlightText, base.panel, 4.5);
+    const buttonFill = v99SurfaceColors(styles.button, base.panel)[0];
+    add('primary button label on its fill', styles.button, buttonFill, 4.5);
   }
   return pairs;
 }
@@ -224037,7 +224064,12 @@ function dispatchGameSettingsChange(
 	      if (e.key === 'Tab') v99PointerFocusRef.current = null;
 	      // Don't trigger if user is typing in an input
 	      if (isInputFocused(e.target)) {
-	        return;
+	        // V10.1 (SECTION 20BF): Escape used to be swallowed while a slider, dropdown or text field had focus. It now backs out: a slider, dropdown, checkbox or empty
+	        // field is blurred and Escape goes on to close the window; a field with text only loses focus (a second Escape closes); an IME composition is left alone; Shift+Escape (the rescue) passes.
+	        const v101EscapeRule = v101EscapeFieldRule(e);
+	        if (v101EscapeRule === 'blur') { v101BlurTarget(e.target); return; }
+	        if (v101EscapeRule === 'close') v101BlurTarget(e.target);
+	        else if (v101EscapeRule !== 'rescue') return;
 	      }
 
 	      const key = e.key.toLowerCase();
@@ -224101,6 +224133,18 @@ function dispatchGameSettingsChange(
 	      });
 	      if (shortcutDecision.preventDefault) e.preventDefault?.();
 	      if (!shortcutDecision.action) return;
+	      // V10.1 (SECTION 20BF): a shortcut opens a feature only when the button for it would be shown: not while the guided first match still hides it (W on day 1) and not for
+	      // Negotiations while negotiation mode is off. A refused key says why in a toast instead of opening a dead window. A window that is already open still closes with its key.
+	      const v101ShortcutOk = v101ShortcutGate(shortcutDecision.action, {
+	        firstRun: wp8State,
+	        negotiationMode: gameSettings.negotiationMode === true,
+	        pendingNegotiations: Number(gameState.negotiationCenter?.pendingProposalsCount || 0),
+	        alreadyOpen: v99ShortcutOpenFlags(uiState)[V99_SHORTCUT_OPEN_FLAGS[shortcutDecision.action] || ''] === true
+	      });
+	      if (!v101ShortcutOk.allowed) {
+	        addNotification(v101ShortcutOk.message, 'info');
+	        return;
+	      }
 
       switch (shortcutDecision.action) {
         case 'endTurn':
@@ -224224,7 +224268,8 @@ function dispatchGameSettingsChange(
 	            };
 	            const flag = flagNameMap[activeSurfaceIdBefore];
 	            if (flag) {
-	              updateUiState({ [flag]: false });
+	              // V10.1 (SECTION 20BF): Escape clears EVERY flag that opens the surface (showStrategyPlannerModal, showNotificationDrawer, ...): clearing only the main one let the next sync re-open it.
+	              updateUiState(v101EscapeFlagPatch(activeSurfaceIdBefore, flag, uiState));
 	            }
 	            if (activeSurfaceIdBefore === 'narrative_decision_modal') {
 	              // V10.1 (SECTION 20BJ): "decide later": the popup closes and the undecided story decision comes back at the next day's check.
@@ -224417,6 +224462,7 @@ function dispatchGameSettingsChange(
     if (!uiState.showSettings) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) {
+        if (e.key === '/' && !e.ctrlKey && !e.metaKey && isInputFocused(e.target)) return; // V10.1 (SECTION 20BF): a "/" typed in any text field ("A/B") is text, not a jump to the search box
         const searchInput = document.querySelector('input[data-settings-search="true"]') as HTMLInputElement;
         if (searchInput && document.activeElement !== searchInput) {
           e.preventDefault();
@@ -226843,7 +226889,10 @@ function dispatchGameSettingsChange(
       showCareerProgressionModal: false,
       showAiRivalryModal: false,
       showEndGameModes: false,
-      showAiStats: false
+      showAiStats: false,
+      showStrategyPlanner: false, // V10.1 (SECTION 20BF): the rescue left these flags set, so the next sync re-opened the surface
+      showStrategyPlannerModal: false,
+      showNotificationDrawer: false
     });
 
     // V10.1 (SECTION 20BJ): the story-decision popup lives in the match state, so the rescue closes it there too (an undecided decision comes back at the next day's check).
@@ -244211,7 +244260,7 @@ function dispatchGameSettingsChange(
       case 'decision_transparency':
         return `Detail ${(gameSettings.decisionTransparencyDetailLevel).toFixed(0)}%, history ${gameSettings.decisionTransparencyMaxHistoryRetained}, ${gameSettings.decisionTransparencyViewMode} view.`;
       case 'notifications':
-        return `${gameSettings.notificationSettings?.size} cards, ${(gameSettings.notificationSettings?.maxVisible || 5) === 0 ? 'unlimited' : (gameSettings.notificationSettings?.maxVisible || 5)} visible, ${(gameSettings.notificationSettings?.position || "bottom-right")}.`;
+        return `${gameSettings.notificationSettings?.size} cards, ${(gameSettings.notificationSettings?.maxVisible ?? 3) === 0 ? 'unlimited' : (gameSettings.notificationSettings?.maxVisible ?? 3)} visible, ${(gameSettings.notificationSettings?.position || "bottom-right")}.`;
       default:
         return '';
     }
@@ -244501,7 +244550,7 @@ function dispatchGameSettingsChange(
         label: 'Investments',
         icon: '🏦',
         action: () => updateUiState({ showInvestments: true }),
-        hotkey: 'I',
+        hotkey: null, // V10.1 (SECTION 20BF): the key 'I' was advertised on this chip but no shortcut exists for it
         disabled: false,
         disabledReason: null,
         tooltip: 'Invest cash into regional properties/bonds'
@@ -244521,7 +244570,7 @@ function dispatchGameSettingsChange(
           }
           updateUiState({ showShop: true });
         },
-        hotkey: 'B',
+        hotkey: null, // V10.1 (SECTION 20BF): the key 'B' was advertised on this chip but no shortcut exists for it
         disabled: !isShopRegion,
         disabledReason: !isShopRegion ? 'Equipment shop only available in NSW or VIC' : null,
         tooltip: 'Purchase tools and equipment (NSW or VIC only)'
@@ -244535,7 +244584,7 @@ function dispatchGameSettingsChange(
         label: 'Sabotage',
         icon: SABOTAGE_ICON,
         action: () => updateUiState({ showSabotage: true }),
-        hotkey: 'S',
+        hotkey: null, // V10.1 (SECTION 20BF): the key 'S' was advertised on this chip but no shortcut exists for it
         disabled: false,
         disabledReason: null,
         tooltip: 'Execute competitive sabotage action against opponents'
@@ -244642,7 +244691,7 @@ function dispatchGameSettingsChange(
         label: 'End-Game Modes 🏆',
         icon: '⚡',
         action: () => updateUiState({ showEndGameModes: true }),
-        hotkey: 'E',
+        hotkey: null, // V10.1 (SECTION 20BF): the key 'E' was advertised on this chip but no shortcut exists for it
         disabled: false,
         disabledReason: null,
         tooltip: 'Open special end-game sandbox & battle royale modes'
@@ -261386,7 +261435,7 @@ function dispatchGameSettingsChange(
 	                    <div>
 	                      <div className="font-semibold mb-1">Max Visible</div>
 	                      <select
-	                        value={(gameSettings.notificationSettings?.maxVisible || 5)}
+	                        value={gameSettings.notificationSettings?.maxVisible ?? 3 /* V10.1 (SECTION 20BF): "Unlimited" (0) showed as 5 */}
 	                        onChange={(e) => trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => ({
 	                          ...prev,
 	                          notificationSettings: {
@@ -263130,7 +263179,7 @@ function dispatchGameSettingsChange(
     const ordered = settings.stackOrder === 'newest-first'
       ? [...filtered].reverse()
       : [...filtered];
-    const maxVisibleLimit = settings.maxVisible === 0 ? ordered.length : Math.min(settings.maxVisible || 4, 3);
+    const maxVisibleLimit = v101ToastLaneLimit(settings.maxVisible, ordered.length); // V10.1 (SECTION 20BF): 5, 10 and 20 all showed 3 (hard cap); the setting is now honoured (default 3 is unchanged)
     const visibleNotifications = ordered.slice(0, Math.max(0, maxVisibleLimit));
 
     // V9.9 (SECTION 20AU): with nothing to show the lane used to unmount; it now stays as an empty live region so a
@@ -263178,7 +263227,7 @@ function dispatchGameSettingsChange(
           : 1;
 
     return (
-      <div className={`fixed ${positionClass} space-y-2 ${V99_TOAST_LANE_WIDTH_CLASS} pointer-events-none`} data-testid="notification-toast-container" role="log" aria-live="polite" aria-relevant="additions">
+      <div className={`fixed ${positionClass} space-y-2 ${V99_TOAST_LANE_WIDTH_CLASS} pointer-events-none${v101ToastLaneExtraClass(settings.maxVisible)}`} data-testid="notification-toast-container" role="log" aria-live="polite" aria-relevant="additions">
         {visibleNotifications.map((notification, v99ToastIndex) => {
           const notifType = NOTIFICATION_TYPES[notification.type];
           // V9.4: configured animation + speed are honoured; routine items only fade, critical is static emphasis,
@@ -263481,19 +263530,19 @@ function dispatchGameSettingsChange(
 
     return (
       <div className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "day_transition_overlay") ? "bg-black bg-opacity-80" : "bg-transparent"} flex items-center justify-center`} style={{ zIndex: globalUISurfaceManager.getZIndex("day_transition_overlay") }} onClick={() => updateUiState({ showDayTransition: false })}>
-        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-8 max-w-md w-full text-center ${themeStyles.shadow}`} onClick={(e) => e.stopPropagation()}>
+        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-8 max-w-md w-full text-center ${themeStyles.shadow}`} onClick={(e) => e.stopPropagation()} {...v101DialogProps('day-transition', gameSettings.accessibilitySettings?.trapFocusInModals !== false)} /* V10.1 (SECTION 20BF): dialog semantics + focus */>
           <div className="text-4xl mb-4">🌅</div>
-          <h3 className="text-3xl font-bold mb-4">Day {dayTransitionData.prevDay} Complete</h3>
+          <h3 id={v101DialogTitleId('day-transition')} className="text-3xl font-bold mb-4">Day {dayTransitionData.prevDay} Complete</h3>
 
           {isCompetitiveMode && (
             <div className="space-y-3 mb-6">
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="text-sm opacity-75 mb-1">{isTeamMode ? `${teamsById[TEAM_PLAYER_ID]?.name || 'Your Team'} Net Worth` : 'Your Earnings'}</div>
-                <div className="text-2xl font-bold text-green-400">${dayTransitionData.playerEarned.toLocaleString('en-AU')}</div>
+                <div className={`text-2xl font-bold ${v99ThemeAccent(themeStyles, 'moneyPositive', 'text-green-400')}`}>${dayTransitionData.playerEarned.toLocaleString('en-AU')}</div>
               </div>
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="text-sm opacity-75 mb-1">{isTeamMode ? `${teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team'} Net Worth` : 'AI Earnings'}</div>
-                <div className="text-2xl font-bold text-pink-400">${dayTransitionData.aiEarned.toLocaleString('en-AU')}</div>
+                <div className={`text-2xl font-bold ${v99ThemeAccent(themeStyles, 'rivalText', 'text-pink-400')}`}>${dayTransitionData.aiEarned.toLocaleString('en-AU')}</div>
               </div>
             </div>
           )}
@@ -263946,7 +263995,7 @@ function dispatchGameSettingsChange(
                         <div className="font-bold text-sm">{event.name}</div>
                         <div className="text-xs opacity-75">{REGIONS[event.region]?.name || event.region} - {event.description}</div>
                       </div>
-                      <div className="text-sm bg-yellow-500 bg-opacity-20 text-yellow-400 px-2 py-1 rounded">
+                      <div className={`text-sm bg-yellow-500 bg-opacity-20 ${v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-400')} px-2 py-1 rounded`}>
                         {event.remainingDays} days
                       </div>
                     </div>
@@ -263982,7 +264031,7 @@ function dispatchGameSettingsChange(
                 return (
                   <>
                     {currentTier && (
-                      <div className="text-sm text-yellow-400">{currentTier.emoji} {currentTier.label}</div>
+                      <div className={`text-sm ${v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-400')}`}>{currentTier.emoji} {currentTier.label}</div>
                     )}
                     {nextTier && (
                       <div className="text-xs opacity-75 mt-1">
@@ -264196,7 +264245,7 @@ function dispatchGameSettingsChange(
                           <div>Aggressiveness: <span className="font-semibold text-amber-400">{Math.round((model.aggressiveness || 0) * 100)}%</span></div>
                           <div>Expansion: <span className="font-semibold text-blue-400">{Math.round((model.expansionRate || 0) * 100)}%</span></div>
                           <div>Sabotage: <span className="font-semibold text-red-400">{Math.round((model.sabotagePropensity || 0) * 100)}%</span></div>
-                          <div>Investment: <span className="font-semibold text-green-400">{Math.round((model.investmentBias || 0) * 100)}%</span></div>
+                          <div>Investment: <span className={`font-semibold ${v99ThemeAccent(themeStyles, 'successText', 'text-green-400')}`}>{Math.round((model.investmentBias || 0) * 100)}%</span></div>
                         </div>
 
                         {gameSettings.opponentThreatWeightsEnabled && (
@@ -265786,7 +265835,7 @@ function dispatchGameSettingsChange(
                   ))}
                 </ol>
                 <div className="text-xs opacity-70">{intentPath.completedCount} / {intentPath.totalCount} requirements completed</div>
-                {intentPath.unknownNotes.map(note => <div key={note} className="text-xs text-amber-300">{note}</div>)}
+                {intentPath.unknownNotes.map(note => <div key={note} className={`text-xs ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')}`}>{note}</div>)}
                 {intentPath.recommendedNext && <div className="text-sm">Recommended next: <span className="font-semibold">{intentPath.recommendedNext.label}</span></div>}
                 <div className="flex flex-wrap gap-2">
                   <button type="button" className={`${themeStyles.buttonPrimary || 'bg-emerald-600 hover:bg-emerald-500 text-white'} px-3 py-1 rounded-lg text-xs`} disabled={!isPlayerTurn} onClick={doObjectiveNextStep}>Do Next Step</button>
@@ -266984,11 +267033,11 @@ function dispatchGameSettingsChange(
                         <span>{action.icon}</span>
                         <span className={quickActionCompact ? 'text-xs' : 'text-sm'}>{action.label}</span>
                         {isPinned && <span className="text-[10px] text-blue-300 font-bold" title="Pinned action">📌</span>}
-                        {action.hotkey && (
+                        {v101AdvertisedHotkey(action.hotkey) && (
                           <kbd className={quickActionKbdClass}>
-                            {action.hotkey}
+                            {v101AdvertisedHotkey(action.hotkey)}
                           </kbd>
-                        )}
+                        )}{/* V10.1 (SECTION 20BF): only real shortcuts are advertised */}
                       </button>
                     );
                   })
@@ -267305,7 +267354,7 @@ function dispatchGameSettingsChange(
 	                  <div className="border-l border-gray-600 h-10 mx-2"></div>
 	                  <div>
 	                    <div className="text-sm opacity-75">Team Net Worth</div>
-	                    <div className="font-bold text-cyan-400">${(playerTeamScore?.netWorth || 0).toLocaleString('en-AU')}</div>
+	                    <div className={`font-bold ${v99ThemeAccent(themeStyles, 'infoText', 'text-cyan-400')}`}>${(playerTeamScore?.netWorth || 0).toLocaleString('en-AU')}</div>
 	                  </div>
 	                  <div>
 	                    <div className="text-sm opacity-75">Teammates</div>
@@ -267325,7 +267374,7 @@ function dispatchGameSettingsChange(
 	                  </div>
 	                  <div>
 	                    <div className="text-sm opacity-75">AI Control</div>
-	                    <div className="font-bold text-pink-400">
+	                    <div className={`font-bold ${v99ThemeAccent(themeStyles, 'rivalText', 'text-pink-400')}`}>
 	                      {aiControlledRegions}/{TOTAL_REGION_COUNT} ({fmtMoney(aiRegionInvested)} invested)
 	                    </div>
 	                  </div>
@@ -267413,7 +267462,7 @@ function dispatchGameSettingsChange(
               </div>
               <div className="relative group">
                 <div className="text-sm opacity-75">Weather</div>
-                <div className={`font-bold ${gameState.weather === 'Stormy' ? 'text-yellow-400' : gameState.weather === 'Rainy' ? 'text-blue-400' : ''}`}>
+                <div className={`font-bold ${gameState.weather === 'Stormy' ? v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-400') : gameState.weather === 'Rainy' ? v99ThemeAccent(themeStyles, 'infoText', 'text-blue-400') : ''}`}>
                   {gameState.weather === 'Sunny' ? '☀️' : gameState.weather === 'Cloudy' ? '☁️' : gameState.weather === 'Rainy' ? '🌧️' : '⛈️'} {gameState.weather}
                 </div>
                 {/* Weather effect tooltip */}
@@ -267441,7 +267490,7 @@ function dispatchGameSettingsChange(
               {(gameSettings.investmentsEnabled || playerInvestmentSummary.entries.length > 0) && (
                 <div className="relative group">
                   <div className="text-sm opacity-75">Investments</div>
-                  <div className="font-bold text-green-400">
+                  <div className={`font-bold ${v99ThemeAccent(themeStyles, 'successText', 'text-green-400')}`}>
                     {playerInvestmentSummary.entries.length}
                     {playerInvestmentSummary.totalIncome > 0 && ` (+${fmtMoney(Number(playerInvestmentSummary.totalIncome))}/day)`}
                   </div>
@@ -267497,7 +267546,7 @@ function dispatchGameSettingsChange(
               {gameState.activeEvents.length > 0 && (
                 <div className="relative group">
                   <div className="text-sm opacity-75">Events</div>
-                  <div className="font-bold text-yellow-400">
+                  <div className={`font-bold ${v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-400')}`}>
                     ⚡ {gameState.activeEvents.length} Active
                   </div>
                   <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block z-50">
@@ -267960,19 +268009,16 @@ function dispatchGameSettingsChange(
               <div className="hidden md:block w-px self-stretch bg-gray-500 opacity-30 mx-1" />
               {ACTION_GROUPS.secondary.map(actionId => renderActionDescriptor(actionDescriptors[actionId]))}
               {renderContextualActionButtons()}
-              <div className="relative">
-                <button
-                  onClick={() => updateUiState({ simplifiedMoreOpen: !uiState.simplifiedMoreOpen })}
-                  className={`${themeStyles.buttonSecondary} px-4 py-2 rounded-lg flex items-center gap-2`}
-                >
-                  <span>⋯</span>
-                  <span>More</span>
-                </button>
-                {uiState.simplifiedMoreOpen && (
-                  <div className={`absolute right-0 mt-2 ${themeStyles.card} ${themeStyles.border} border rounded-lg p-2 z-40 min-w-64 ${themeStyles.shadow}`}>
+              {/* V10.1 (SECTION 20BF): the popover was "absolute right-0" and opened off the left edge when the row wrapped (Settings, Help and Leave match unreachable at 1280 px); V101MorePopover measures the button and keeps the panel on screen. */}
+              <V101MorePopover
+                open={Boolean(uiState.simplifiedMoreOpen)}
+                onToggle={() => updateUiState({ simplifiedMoreOpen: !uiState.simplifiedMoreOpen })}
+                buttonClassName={`${themeStyles.buttonSecondary} px-4 py-2 rounded-lg flex items-center gap-2`}
+                panelClassName={`${themeStyles.card} ${themeStyles.border} border rounded-lg p-2 z-40 min-w-64 ${themeStyles.shadow}`}
+              >
                     <div className="text-[10px] uppercase tracking-wider opacity-60 px-1 pb-1">More · Build & Compete</div>
                     <div className="grid grid-cols-1 gap-2">
-                      {ACTION_GROUPS.advanced.map(actionId => renderActionDescriptor(actionDescriptors[actionId]))}
+                      {ACTION_GROUPS.advanced.map(actionId => renderActionDescriptor(v101MoreMenuDescriptor(actionDescriptors[actionId])))}
                       {/* V9.9 (SECTION 20AT): a running match can be left. */}
                       <V99LeaveMatchEntry className={actionButtonSecondaryClass} onOpen={v99OpenLeaveMatch} />
                     </div>
@@ -267981,9 +268027,7 @@ function dispatchGameSettingsChange(
                         All systems are listed here. Advanced AI, replay, and diagnostics stay available without leaving this menu.
                       </div>
                     )}
-                  </div>
-                )}
-              </div>
+              </V101MorePopover>
             </div>
           </div>
         ) : (
@@ -268331,7 +268375,7 @@ function dispatchGameSettingsChange(
                             <div className="font-bold mb-1">{region.name}</div>
                             {lrState?.regions[code] && <div className="opacity-90 mb-1">{lrState.regions[code].identity.label} · {LR_MOMENTUM_LABEL[lrState.regions[code].momentum.band]}</div>}
                             {rfInfluentialCount(rfState, code) > 0 && <div className="opacity-80 mb-1">{rfInfluentialCount(rfState, code)} influential stakeholder group{rfInfluentialCount(rfState, code) === 1 ? '' : 's'}</div>}
-                            <div className={canAfford ? 'text-green-400' : 'text-red-400'}>
+                            <div className={canAfford ? v99ThemeAccent(themeStyles, 'successText', 'text-green-400') : v99ThemeAccent(themeStyles, 'moneyNegative', 'text-red-400')}>
                               Travel: {fmtMoney(travelCost)}
                             </div>
                             {REGIONAL_RESOURCES[code] && (
@@ -268340,7 +268384,7 @@ function dispatchGameSettingsChange(
                               </div>
                             )}
 	                            {hasEvent && (
-	                              <div className="text-yellow-400 mt-1">
+	                              <div className={`${v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-400')} mt-1`}>
 	                                ⚡ {gameState.activeEvents.find((e: any) => e.region === code)?.name}
 	                              </div>
 	                            )}
@@ -268464,7 +268508,7 @@ function dispatchGameSettingsChange(
                             tab: 'overview'
                           });
                         }}
-                        className={`${themeStyles.buttonSecondary} text-cyan-400 px-3 py-1.5 rounded text-xs font-semibold flex items-center justify-center gap-1`}
+                        className={`${themeStyles.buttonSecondary} ${v99ThemeAccent(themeStyles, 'infoText', 'text-cyan-400')} px-3 py-1.5 rounded text-xs font-semibold flex items-center justify-center gap-1`}
                       >
                         <span>🗺️ Region Ledger Log</span>
                       </button>
@@ -268685,7 +268729,7 @@ function dispatchGameSettingsChange(
 	                                      e.stopPropagation();
 	                                      openLedgerWithFilter({ category: 'treasury', search: tx.id, tab: 'overview' });
 	                                    }}
-	                                    className="text-[10px] text-green-400 hover:underline shrink-0"
+	                                    className={`text-[10px] ${v99ThemeAccent(themeStyles, 'successText', 'text-green-400')} hover:underline shrink-0`}
 	                                  >
 	                                    State Delta
 	                                  </button>
@@ -268946,7 +268990,7 @@ function dispatchGameSettingsChange(
 	                  <button
 	                    type="button"
 	                    onClick={() => updateUiState({ showRegionalContractsModal: true })}
-	                    className={`${themeStyles.buttonSecondary} px-2 py-2 rounded text-xs font-bold transition flex items-center justify-center gap-1 border-amber-500/40 text-amber-300`}
+	                    className={`${themeStyles.buttonSecondary} px-2 py-2 rounded text-xs font-bold transition flex items-center justify-center gap-1 border-amber-500/40 ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')}`}
 	                  >
 	                    📑 Contracts
 	                  </button>
@@ -269001,11 +269045,11 @@ function dispatchGameSettingsChange(
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Inventory Value</div>
-                <div className="font-bold text-green-400">${getInventoryValue.toLocaleString('en-AU')}</div>
+                <div className={`font-bold ${v99ThemeAccent(themeStyles, 'moneyPositive', 'text-green-400')}`}>${getInventoryValue.toLocaleString('en-AU')}</div>
               </div>
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Crafted Items</div>
-                <div className="font-bold text-yellow-400">{craftedItemCount}</div>
+                <div className={`font-bold ${v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-400')}`}>{craftedItemCount}</div>
               </div>
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Passive Income</div>
@@ -269016,15 +269060,15 @@ function dispatchGameSettingsChange(
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Net Worth</div>
-                <div className="font-bold text-cyan-400">${getNetWorth.toLocaleString('en-AU')}</div>
+                <div className={`font-bold ${v99ThemeAccent(themeStyles, 'infoText', 'text-cyan-400')}`}>${getNetWorth.toLocaleString('en-AU')}</div>
               </div>
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Investments</div>
-                <div className="font-bold text-yellow-400">{player.investments?.length || 0} owned • {fmtMoney(Number(playerInvestmentSummary.totalIncome))}/day</div>
+                <div className={`font-bold ${v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-400')}`}>{player.investments?.length || 0} owned • {fmtMoney(Number(playerInvestmentSummary.totalIncome))}/day</div>
               </div>
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Equipment + Inventory</div>
-                <div className="font-bold text-green-400">{player.equipment?.length || 0} equipment • ${getInventoryValue.toLocaleString('en-AU')} inventory</div>
+                <div className={`font-bold ${v99ThemeAccent(themeStyles, 'moneyPositive', 'text-green-400')}`}>{player.equipment?.length || 0} equipment • ${getInventoryValue.toLocaleString('en-AU')} inventory</div>
               </div>
             </div>
           ) : (
@@ -269035,11 +269079,11 @@ function dispatchGameSettingsChange(
               </div>
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Majority Progress</div>
-                <div className="font-bold text-yellow-400">{Math.max(0, REGION_CONTROL_MAJORITY - playerControlledRegions)} needed</div>
+                <div className={`font-bold ${v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-400')}`}>{Math.max(0, REGION_CONTROL_MAJORITY - playerControlledRegions)} needed</div>
               </div>
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">{gameSettings.negotiationMode ? 'Current Region Status' : 'Current Region Cost To Take'}</div>
-                <div className="font-bold text-pink-400">
+                <div className={`font-bold ${v99ThemeAccent(themeStyles, 'rivalText', 'text-pink-400')}`}>
                   {gameSettings.negotiationMode
                     ? (currentRegionControlInfo.controllerId === 'player'
                       ? 'You control via negotiation'
@@ -269172,10 +269216,11 @@ function dispatchGameSettingsChange(
         {/* Travel Modal */}
         {uiState.showTravelModal && (
           <div className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "travel_modal") ? "bg-black bg-opacity-50" : "bg-transparent"} flex items-center justify-center p-4`} style={{ zIndex: globalUISurfaceManager.getZIndex("travel_modal") }} onClick={() => updateUiState({ showTravelModal: false })}>
-            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden ${themeStyles.scrollbar}`} onClick={(e) => e.stopPropagation()}>
+            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden ${themeStyles.scrollbar}`} onClick={(e) => e.stopPropagation()} {...v101DialogProps('travel', gameSettings.accessibilitySettings?.trapFocusInModals !== false)}>
               <div className="flex justify-between items-center mb-4 shrink-0">
-                <div><h3 className="text-xl font-bold">✈️ Travel</h3><p className="text-xs opacity-70" data-testid="travel-modal-loop-line">{V101_TRAVEL_LOOP_LINE}</p>{/* V10.1 (SECTION 20BE): the core loop, said where the player is */}</div>
+                <div><h3 id={v101DialogTitleId('travel')} className="text-xl font-bold">✈️ Travel</h3><p className="text-xs opacity-70" data-testid="travel-modal-loop-line">{V101_TRAVEL_LOOP_LINE}</p>{/* V10.1 (SECTION 20BE): the core loop, said where the player is */}</div>
                 <button
+                  aria-label="Close" /* V10.1 (SECTION 20BF): a bare ✕ had no accessible name */
                   onClick={() => updateUiState({ showTravelModal: false })}
                   className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
                 >
@@ -269280,7 +269325,7 @@ function dispatchGameSettingsChange(
 
                 {gameSettings.externalTerritoriesEnabled && (
                   <div className="mt-6 border-t border-slate-700 pt-4">
-                    <div className="font-bold text-md mb-3 flex items-center gap-2 text-cyan-400">
+                    <div className={`font-bold text-md mb-3 flex items-center gap-2 ${v99ThemeAccent(themeStyles, 'infoText', 'text-cyan-400')}`}>
                       <span>🌐 External Territories & Expeditions</span>
                       <span className="text-xs px-2 py-0.5 rounded bg-cyan-900 text-cyan-200 border border-cyan-700 font-normal">Offshore Expeditions</span>
                     </div>
@@ -269412,10 +269457,11 @@ function dispatchGameSettingsChange(
         {/* Challenges Modal */}
         {uiState.showChallenges && (
           <div className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "challenges_modal") ? "bg-black bg-opacity-50" : "bg-transparent"} flex items-center justify-center p-4`} style={{ zIndex: globalUISurfaceManager.getZIndex("challenges_modal") }} onClick={() => updateUiState({ showChallenges: false })}>
-            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden`} onClick={(e) => e.stopPropagation()}>
+            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden`} onClick={(e) => e.stopPropagation()} {...v101DialogProps('challenges', gameSettings.accessibilitySettings?.trapFocusInModals !== false)}>
               <div className="flex justify-between items-center mb-4 shrink-0">
-                <h3 className="text-xl font-bold">🎯 Challenges in {currentRegion?.name || "Region"}</h3>
+                <h3 id={v101DialogTitleId('challenges')} className="text-xl font-bold">🎯 Challenges in {currentRegion?.name || "Region"}</h3>
                 <button
+                  aria-label="Close" /* V10.1 (SECTION 20BF): a bare ✕ had no accessible name */
                   onClick={() => updateUiState({ showChallenges: false })}
                   className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
                 >
@@ -269438,7 +269484,7 @@ function dispatchGameSettingsChange(
                   </div>
                   {/* Show active event effects */}
                   {gameState.activeEvents.filter((e: any) => e.region === player.currentRegion).map((event: any) => (
-                    <div key={event.id} className="text-yellow-400">
+                    <div key={event.id} className={`${v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-400')}`}>
                       ⚡ {event.name}
                     </div>
                   ))}
@@ -269488,7 +269534,7 @@ function dispatchGameSettingsChange(
                               </span>
                             )}
                             {eventMod !== 0 && (
-                              <span className="text-yellow-400 text-xs">
+                              <span className={`${v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-400')} text-xs`}>
                                 (+{Math.round(eventMod * 100)}% event)
                               </span>
                             )}
@@ -269515,6 +269561,7 @@ function dispatchGameSettingsChange(
                               type="range"
                               min="50"
                               max={maxWager}
+                              step={v101WagerStep(maxWager)} /* V10.1 (SECTION 20BF): arrow keys moved the stake $1 at a time */
                               aria-label="Wager Amount"
                               aria-valuenow={Math.min(uiState.wagerAmount, maxWager)}
                               aria-valuemin={50}
@@ -269579,10 +269626,11 @@ function dispatchGameSettingsChange(
             <div
               className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-2xl w-full h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden`}
               onClick={(e) => e.stopPropagation()}
+              {...v101DialogProps('sell', gameSettings.accessibilitySettings?.trapFocusInModals !== false)} /* V10.1 (SECTION 20BF): dialog semantics + focus */
             >
               {/* Fixed Header */}
               <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border} shrink-0`}>
-	                <h3 className="text-xl font-bold">💰 Sell Market</h3>
+	                <h3 id={v101DialogTitleId('sell')} className="text-xl font-bold">💰 Sell Market</h3>
                   <GuardianInlineWarning actionType="sell_resource" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'sell_resource', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} />
                 <button
                   onClick={() => updateUiState({ showMarket: false })}
@@ -269627,9 +269675,9 @@ function dispatchGameSettingsChange(
                     <div className="mt-3 pt-3 border-t border-blue-500 border-opacity-30">
                       <div className="text-xs text-blue-400 font-bold mb-2">🔮 Market Insight Active - Next Turn Predictions:</div>
                       <div className="text-xs space-y-1">
-                        {gameState.marketTrend === 'rising' && <div className="text-green-400">↗ Prices likely to increase by 10-20%</div>}
+                        {gameState.marketTrend === 'rising' && <div className={`${v99ThemeAccent(themeStyles, 'successText', 'text-green-400')}`}>↗ Prices likely to increase by 10-20%</div>}
                         {gameState.marketTrend === 'falling' && <div className="text-red-400">↘ Prices likely to decrease by 10-20%</div>}
-                        {gameState.marketTrend === 'volatile' && <div className="text-yellow-400">⚡ Prices may swing +/- 30%</div>}
+                        {gameState.marketTrend === 'volatile' && <div className={`${v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-400')}`}>⚡ Prices may swing +/- 30%</div>}
                         {gameState.marketTrend === 'stable' && <div className="text-blue-400">➡ Prices will remain relatively stable (+/- 5%)</div>}
                       </div>
                       {/* Price History */}
@@ -269812,7 +269860,7 @@ function dispatchGameSettingsChange(
                               <div className="text-xs opacity-75 mt-1 flex items-center space-x-2">
                                 <span className="bg-gray-600 bg-opacity-50 px-1 rounded">{category}</span>
                                 {regionalBonus > 1 && (
-                                  <span className="text-green-400">+{Math.round((regionalBonus - 1) * 100)}% regional</span>
+                                  <span className={`${v99ThemeAccent(themeStyles, 'successText', 'text-green-400')}`}>+{Math.round((regionalBonus - 1) * 100)}% regional</span>
                                 )}
                                 {supplyMod < 1 && (
                                   <span className="text-red-400">-{Math.round((1 - supplyMod) * 100)}% supply</span>
@@ -269878,13 +269926,15 @@ function dispatchGameSettingsChange(
 	            <div
 	              className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-3xl w-full h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden`}
 	              onClick={(e) => e.stopPropagation()}
+	              {...v101DialogProps('resource-market', gameSettings.accessibilitySettings?.trapFocusInModals !== false)} /* V10.1 (SECTION 20BF): dialog semantics + focus */
 	            >
 	              <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
 	                <div>
-	                  <h3 className="text-xl font-bold">🛍️ Resource Market</h3>
+	                  <h3 id={v101DialogTitleId('resource-market')} className="text-xl font-bold">🛍️ Resource Market</h3>
 	                  <div className="text-xs opacity-75 mt-1">Unlimited supply. Buy any resource for crafting on your turn. Prices include the regional tariff.</div>
 	                </div>
 	                <button
+	                  aria-label="Close" /* V10.1 (SECTION 20BF): a bare ✕ had no accessible name */
 	                  onClick={() => updateUiState({ showResourceMarket: false })}
 	                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
 	                >
@@ -270010,9 +270060,10 @@ function dispatchGameSettingsChange(
             <div
               className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-2xl w-full h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden`}
               onClick={(e) => e.stopPropagation()}
+              {...v101DialogProps('shop', gameSettings.accessibilitySettings?.trapFocusInModals !== false)} /* V10.1 (SECTION 20BF): dialog semantics + focus */
             >
               <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
-                <h3 className="text-xl font-bold">Equipment Shop</h3>
+                <h3 id={v101DialogTitleId('shop')} className="text-xl font-bold">Equipment Shop</h3>
                 <button
                   onClick={() => updateUiState({ showShop: false })}
                   className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
@@ -270046,7 +270097,7 @@ function dispatchGameSettingsChange(
                         <div className="flex justify-between items-start">
                           <div>
                             {objectiveMentionsItem(currentObjective, item.name) && <div className="text-[11px] text-sky-300 mb-1">Needed for your tracked goal.</div>}
-                            {breaksGoal && <div className="text-[11px] text-amber-300 mb-1">Warning: this purchase would make your tracked objective unaffordable.</div>}
+                            {breaksGoal && <div className={`text-[11px] ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')} mb-1`}>Warning: this purchase would make your tracked objective unaffordable.</div>}
                             {shopBlocker && (
                               <div className="text-[11px] mb-2">
                                 {shopBlocker.whyUnavailable}
@@ -270055,7 +270106,7 @@ function dispatchGameSettingsChange(
                             )}
                             <div className="font-bold">{item.name}</div>
                             <div className="text-sm opacity-75">{item.description}</div>
-                            {owned && <div className="text-xs text-green-400 mt-1">Owned</div>}
+                            {owned && <div className={`text-xs ${v99ThemeAccent(themeStyles, 'successText', 'text-green-400')} mt-1`}>Owned</div>}
                             {!recruitmentAvail.available && (
                               <div className="text-xs text-red-400 mt-1">{recruitmentAvail.reason || 'Recruitment restricted in region'}</div>
                             )}
@@ -270100,12 +270151,13 @@ function dispatchGameSettingsChange(
             <div
               className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-3xl w-full h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden`}
               onClick={(e) => e.stopPropagation()}
+              {...v101DialogProps('workshop', gameSettings.accessibilitySettings?.trapFocusInModals !== false)} /* V10.1 (SECTION 20BF): dialog semantics + focus */
             >
               <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
                 <div>
-                  <h3 className="text-xl font-bold">🔨 Crafting Workshop</h3>
+                  <h3 id={v101DialogTitleId('workshop')} className="text-xl font-bold">🔨 Crafting Workshop</h3>
                   {player?.character?.craftingBonus && (
-                    <div className="text-xs text-green-400 mt-1">
+                    <div className={`text-xs ${v99ThemeAccent(themeStyles, 'successText', 'text-green-400')} mt-1`}>
                       {(player?.character?.name || "Player")} Bonus: {player.character.craftingBonus.description}
                     </div>
                   )}
@@ -270138,7 +270190,7 @@ function dispatchGameSettingsChange(
                       const available = player.inventory.filter((item: any) => item === resource).length;
                       const hasEnough = available >= (count as number);
                       return (
-                        <div key={resource} className={`text-xs ${hasEnough ? 'text-green-400' : 'text-red-400'}`}>
+                        <div key={resource} className={`text-xs ${hasEnough ? v99ThemeAccent(themeStyles, 'successText', 'text-green-400') : v99ThemeAccent(themeStyles, 'moneyNegative', 'text-red-400')}`}>
                           {resource}: {available}/{count}
                         </div>
                       );
@@ -270167,7 +270219,7 @@ function dispatchGameSettingsChange(
                             )}
                             {craftBlocker && (
                               <div className="text-[11px] bg-slate-950/70 border border-amber-700/40 rounded p-2 mb-2 space-y-1">
-                                <div className="font-semibold text-amber-300">{craftBlocker.title}</div>
+                                <div className={`font-semibold ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')}`}>{craftBlocker.title}</div>
                                 <div>Missing: {craftBlocker.missing.map(m => m.label).join(', ') || craftBlocker.whyUnavailable}</div>
                                 {craftBlocker.satisfied.length > 0 && <div className="text-emerald-300">Already satisfied: {craftBlocker.satisfied.map(s => s.label).join(' • ')}</div>}
                                 <div className="flex flex-wrap gap-2">
@@ -270198,7 +270250,7 @@ function dispatchGameSettingsChange(
                               </div>
                               <div>
                                 <div className="text-xs font-bold mb-1">Output:</div>
-                                <div className="text-sm text-green-400">{recipe.output}</div>
+                                <div className={`text-sm ${v99ThemeAccent(themeStyles, 'successText', 'text-green-400')}`}>{recipe.output}</div>
                                 {/* V9.9 (SECTION 20AU): the price the Sell Market really lists (was recipe.baseValue, which nothing paid) */}
                                 <div className="text-xs opacity-75" data-testid="v99-workshop-value">{/* V10.1 (SECTION 20BB): what a craft really earns: the materials' price with the tariff, the 10% of crafts that fail, the average result (a losing recipe says so) */}{v101WorkshopValueText(v101CraftEconomics(recipe, v101MaterialCostFor(gameState, 'player', player.currentRegion || 'NSW', { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true, settings: gameSettings }), 0.9 + (Number(player?.character?.craftingBonus?.effect?.successBonus) || 0)))}</div>
                                 <div className="text-xs opacity-75">
@@ -270249,9 +270301,10 @@ function dispatchGameSettingsChange(
             <div
               className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-2xl w-full h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden`}
               onClick={(e) => e.stopPropagation()}
+              {...v101DialogProps('investments', gameSettings.accessibilitySettings?.trapFocusInModals !== false)} /* V10.1 (SECTION 20BF): dialog semantics + focus */
             >
               <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
-                <h3 className="text-xl font-bold">Regional Investments</h3>
+                <h3 id={v101DialogTitleId('investments')} className="text-xl font-bold">Regional Investments</h3>
                 <button
                   onClick={() => updateUiState({ showInvestments: false })}
                   className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
@@ -270290,7 +270343,7 @@ function dispatchGameSettingsChange(
                             <div className="text-sm opacity-75">{REGIONS[regionCode]?.name}</div>
                             {investBlocker && !owned && (
                               <div className="text-[11px] bg-slate-950/70 border border-amber-700/40 rounded p-2 mt-2 space-y-1">
-                                <div className="font-semibold text-amber-300">{investBlocker.title}</div>
+                                <div className={`font-semibold ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')}`}>{investBlocker.title}</div>
                                 <div>{investBlocker.whyUnavailable}</div>
                                 {investBlocker.nextAction && <button type="button" className="underline text-sky-300" onClick={() => openIntentNav(investBlocker.nextAction)}>{investBlocker.nextAction.label}</button>}
                               </div>
@@ -270309,12 +270362,12 @@ function dispatchGameSettingsChange(
                                 <div className="text-xs opacity-75 mt-1">
                                   Daily Income: {fmtMoney(investment.dailyIncome)}
                                   {projectedDaily !== investment.dailyIncome && (
-                                    <span className="text-green-400 font-semibold ml-1">(Current Yield: +{fmtMoney(projectedDaily)}/day)</span>
+                                    <span className={`${v99ThemeAccent(themeStyles, 'moneyPositive', 'text-green-400')} font-semibold ml-1`}>(Current Yield: +{fmtMoney(projectedDaily)}/day)</span>
                                   )}
                                 </div>
                               );
                             })()}
-                            {owned && <div className="text-xs text-green-400 mt-1">Owned</div>}
+                            {owned && <div className={`text-xs ${v99ThemeAccent(themeStyles, 'successText', 'text-green-400')} mt-1`}>Owned</div>}
                           </div>
                           <div className="text-right ml-4">
                             <div className={`font-bold ${canAfford ? 'text-green-500' : 'text-red-500'}`}>{fmtMoney(investment.cost)}</div>
@@ -270353,9 +270406,10 @@ function dispatchGameSettingsChange(
             <div
               className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-2xl w-full h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden`}
               onClick={(e) => e.stopPropagation()}
+              {...v101DialogProps('sabotage', gameSettings.accessibilitySettings?.trapFocusInModals !== false)} /* V10.1 (SECTION 20BF): dialog semantics + focus */
             >
               <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
-                <h3 className="text-xl font-bold">Sabotage Actions</h3>
+                <h3 id={v101DialogTitleId('sabotage')} className="text-xl font-bold">Sabotage Actions</h3>
                 <button
                   onClick={() => updateUiState({ showSabotage: false })}
                   className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
@@ -270409,10 +270463,10 @@ function dispatchGameSettingsChange(
                             <div className="font-bold">{action.name}</div>
                             <div className="text-sm opacity-75">{action.description}</div>
                             <div className="text-xs opacity-75 mt-1">Duration: {action.duration} {action.duration === 1 ? 'day' : 'days'}</div>
-                            {active && <div className="text-xs text-yellow-400 mt-1">Active</div>}
+                            {active && <div className={`text-xs ${v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-400')} mt-1`}>Active</div>}
                             {sabotageBlocker && !active && (
                               <div className="text-[11px] bg-slate-950/70 border border-amber-700/40 rounded p-2 mt-2 space-y-1">
-                                <div className="font-semibold text-amber-300">{sabotageBlocker.title}</div>
+                                <div className={`font-semibold ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')}`}>{sabotageBlocker.title}</div>
                                 <div>{sabotageBlocker.whyUnavailable}</div>
                                 {sabotageBlocker.nextAction && <button type="button" className="underline text-sky-300" onClick={() => openIntentNav(sabotageBlocker.nextAction)}>{sabotageBlocker.nextAction.label}</button>}
                               </div>
@@ -270455,10 +270509,11 @@ function dispatchGameSettingsChange(
             <div
               className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-3xl w-full h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden`}
               onClick={(e) => e.stopPropagation()}
+              {...v101DialogProps('loans', gameSettings.accessibilitySettings?.trapFocusInModals !== false)} /* V10.1 (SECTION 20BF): dialog semantics + focus */
             >
               <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
                 <div>
-                  <h3 className="text-xl font-bold">🏦 Advanced Loans</h3>
+                  <h3 id={v101DialogTitleId('loans')} className="text-xl font-bold">🏦 Advanced Loans</h3>
                   <div className="text-sm mt-1 opacity-75">
                     {advancedLoansAccessSummary.scope}. {advancedLoansAccessSummary.description}
                   </div>
@@ -270506,7 +270561,7 @@ function dispatchGameSettingsChange(
                                       e.stopPropagation();
                                       openLedgerWithFilter({ category: 'treasury', search: loan.id, tab: 'overview' });
                                     }}
-                                    className={`${themeStyles.buttonSecondary} text-green-400 px-2 py-0.5 rounded text-[10px] flex items-center gap-1`}
+                                    className={`${themeStyles.buttonSecondary} ${v99ThemeAccent(themeStyles, 'successText', 'text-green-400')} px-2 py-0.5 rounded text-[10px] flex items-center gap-1`}
                                   >
                                     <span>📊 View State Delta</span>
                                   </button>
@@ -270578,7 +270633,7 @@ function dispatchGameSettingsChange(
                             </div>
                             {loanBlocker && (
                               <div className="text-[11px] bg-slate-950/70 border border-amber-700/40 rounded p-2 mt-2 space-y-1">
-                                <div className="font-semibold text-amber-300">{loanBlocker.title}</div>
+                                <div className={`font-semibold ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')}`}>{loanBlocker.title}</div>
                                 <div>{loanBlocker.whyUnavailable}</div>
                                 {loanBlocker.missing.length > 0 && <div>Missing: {loanBlocker.missing.map(m => m.label).join(', ')}</div>}
                                 <div className="flex flex-wrap gap-2">
@@ -270813,7 +270868,7 @@ function dispatchGameSettingsChange(
                       e.stopPropagation();
                       openLedgerWithFilter({ category: 'treasury', search: request.id, tab: 'overview' });
                     }}
-                    className={`${themeStyles.buttonSecondary} text-green-400 px-2 py-1 rounded text-xs flex items-center gap-1 font-semibold`}
+                    className={`${themeStyles.buttonSecondary} ${v99ThemeAccent(themeStyles, 'successText', 'text-green-400')} px-2 py-1 rounded text-xs flex items-center gap-1 font-semibold`}
                   >
                     <span>📊 View State Delta</span>
                   </button>
@@ -278333,7 +278388,7 @@ function dispatchGameSettingsChange(
               onOpenGuardian={() => updateUiState({ showGuardianAiCenter: true })}
               onOpenAiCommand={isCommandCenterSystemEnabled ? () => updateUiState({ showAiCommandCenterModal: true }) : undefined}
               onOpenStrategyPlanner={() => updateUiState({ showStrategyPlannerModal: true })}
-              onOpenNotifications={() => updateUiState({ showNotificationDrawer: true })}
+              onOpenNotifications={() => updateUiState({ showNotifications: true })} // V10.1 (SECTION 20BF): was showNotificationDrawer, a flag no drawer reads: the entry opened an invisible blocking surface
               onOpenQuickActions={() => updateUiState({ quickActionsOpen: true })}
               onOpenTools={() => updateUiState({ showDeveloperDiagnostics: true })}
             />
@@ -278431,6 +278486,18 @@ function dispatchGameSettingsChange(
         uiState={uiState}
         updateUiState={updateUiState}
         availableActions={getQuickActions}
+      />
+
+      {/* V10.1 (SECTION 20BF): the Strategy Planner modal was defined but never mounted, so the dock and launcher entry opened an invisible blocking surface.
+          It is mounted here with its existing props; closing clears both flag names (v101PlannerClosePatch). */}
+      <StrategyPlannerModal
+        isOpen={Boolean(uiState.showStrategyPlanner || uiState.showStrategyPlannerModal)}
+        onClose={() => updateUiState(v101PlannerClosePatch())}
+        gameState={gameState}
+        onUpdateGameState={(next: unknown) => {
+          const patch = v101PlannerStatePatch(next, gameState);
+          if (patch) dispatchGameState({ type: 'UPDATE_GAME_STATE_PARTIAL', payload: patch });
+        }}
       />
 
       <GuardianAiStatusPanel
