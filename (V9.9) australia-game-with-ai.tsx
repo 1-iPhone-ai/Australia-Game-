@@ -2,7 +2,6 @@
 // SECTION 1: IMPORTS
 // ============================================================================
 import React, { useState, useEffect, useCallback, useMemo, useReducer, useRef, useContext, createContext, ChangeEvent, useLayoutEffect } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server'; // V10.1 (SECTION 20BB): the self-tests render the real challenge line to static markup
 
 // ============================================================================
 // SECTION 1B: BUILT-IN AI MEMORY, PERSISTENT MEMORY AND AI COMMUNICATION
@@ -129260,11 +129259,12 @@ function balExecute(w: BalanceWorld, id: string, o: BalanceOption): boolean {
     case 'challenge': {
       const p = balChallengeChance(a, e);
       const win = balNext(w) < p;
+      const xpBefore = a.xp;
       const r = a.rules ? balChallengeReward(a, e, e.wager) : computeChallengeRewardCore({ wager: e.wager, rewardMultiplier: e.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1 }).reward;
       ok = balReduce(w, id, { type: 'challenge', price: e.wager, parameters: { wager: e.wager, isWin: win, reward: r, challengeName: e.name } });
       if (ok && win) { a.completedThisSeason = [...a.completedThisSeason, e.name]; a.consecutiveWins += 1; } // canonical COMPLETE_CHALLENGE on success only
       if (ok && !win) a.consecutiveWins = 0;
-      if (ok && a.rules) balLiveAfterChallenge(a, e, win); // V10.1 (SECTION 20BB): experience, repeat wins and fatigue in the live economy
+      if (ok && a.rules) balLiveAfterChallenge(a, e, win, xpBefore); // V10.1 (SECTION 20BB): experience, repeat wins and fatigue in the live economy
       break;
     }
     case 'travel': {
@@ -189579,7 +189579,7 @@ export function v99BuildTradeCandidate(i: V99TradeCandidateInput): CoPilotAction
   if (isV101Match(i.tariffState)) {
     // V10.1 (SECTION 20BB): the item AND the quantity are chosen together, by the total profit of buying that many and selling them here, one unit at a time,
     // at the prices the Resource Market charges and the Sell Market pays (v101ChooseTradeBuy). The old card chose the best one-unit margin and said "1 unit".
-    const stateOptions: V101StateQuoteOptions = { buyer: actor, approachesEnabled: Boolean(i.settings && i.settings.challengeApproachesEnabled === true) };
+    const stateOptions: V101StateQuoteOptions = { buyer: actor, approachesEnabled: Boolean(i.settings && i.settings.challengeApproachesEnabled === true), settings: i.settings, rival: i.rival };
     const bulkSale = v101MakeBulkSaleQuoter(actor, i.world, i.settings, i.rival);
     const cash = Number.isFinite(Number(i.cash)) ? Number(i.cash) : Number(actor.money) || 0;
     const room = MAX_INVENTORY - inventory.length;
@@ -209182,6 +209182,8 @@ export interface V101PurchaseQuoteInput {
   /** The buyer's regional reputation (only used with challenge approaches on, exactly as a sale uses the seller's). */
   buyer?: V99AdviceActorView | null;
   approachesEnabled?: boolean;
+  /** V10.1 (SECTION 20BB): the buyer holds the opt-in underdog handicap (+15% on every sale), so the purchase is priced with it as well. */
+  isUnderdog?: boolean;
 }
 
 export interface V101PurchaseQuote {
@@ -209201,17 +209203,22 @@ export interface V101PurchaseQuote {
  * card, the Workshop label and the rival's purchases all read it. Each unit costs
  *   max(base, list price) x (the region, event and season terms a sale of the same item uses) x (1 + tariff) x (1 + pressure),
  * where the pressure is 1% for every unit already bought (and not yet forgotten), this unit included, up to +25%. The
- * terms are v99ComputeSellPrice's own, with no character, handicap or sabotage terms, so selling the same item in the
- * same region right after buying it can never pay back the tariff and the spread, for any quantity. Pure: no RNG.
+ * terms are v99ComputeSellPrice's own, including the buyer's own character, mastery and (opted-in) underdog terms, so selling the same
+ * item in the same region right after buying it pays back less than it cost, for any quantity. Pure: no RNG. Known exceptions, pinned by v101ec_25: an
+ * underdog handicap the quote was not given the settings for, and a handicap that only starts because the purchase itself lowered the buyer's net worth.
  */
 export function v101QuoteMarketPurchase(i: V101PurchaseQuoteInput): V101PurchaseQuote {
   const quantity = Math.max(1, Math.floor(Number(i.quantity) || 0));
   const base = getResourceMarketPrice(i.resource) || 0;
   const list = Number(i.listPrice) > 0 ? Number(i.listPrice) : base;
-  const buyer: V99AdviceActorView = { regionalReputation: i.buyer ? i.buyer.regionalReputation : undefined };
+  // V10.1 (SECTION 20BB): the purchase is priced with the buyer's OWN sale multipliers (character, mastery, handicap), so reselling at once can never
+  // pay back more than the tariff and the spread whoever the seller is. Leader tax and sabotage only LOWER a sale, so leaving them out keeps the bound.
+  const buyer: V99AdviceActorView = i.buyer
+    ? { regionalReputation: i.buyer.regionalReputation, character: i.buyer.character, masteryUnlocks: i.buyer.masteryUnlocks }
+    : {};
   const gross = v99ComputeSellPrice({
     resource: i.resource, listPrice: Math.max(base, list), region: String(i.region || ''), unitsAlreadySold: 0, activeEvents: i.activeEvents ?? null,
-    season: i.season, seller: buyer, isUnderdog: false, leaderTax: false, approachesEnabled: i.approachesEnabled === true, sabotageEnabled: false
+    season: i.season, seller: buyer, isUnderdog: i.isUnderdog === true, leaderTax: false, approachesEnabled: i.approachesEnabled === true, sabotageEnabled: false
   }).finalPrice;
   const tariff = Math.max(0, Number(i.tariffRate) || 0);
   const pressure = Math.max(0, Math.floor(Number(i.pressureUnits) || 0));
@@ -209228,13 +209235,22 @@ export interface V101StateQuoteOptions {
   approachesEnabled?: boolean;
   /** Units bought in this same tick that the state does not show yet (several purchases before the next render). */
   extraPressure?: number;
+  /** V10.1 (SECTION 20BB): the match settings; with them the human buyer's opt-in underdog handicap is priced into the purchase (as it is into the sale). */
+  settings?: unknown;
+  /** The rival the handicap is measured against (the state's own actorsById.ai when left out). */
+  rival?: V99AdviceActorView | null;
 }
 
 /** v101QuoteMarketPurchase fed from the match state (list prices, events, season, standing tariff, purchase pressure). */
 export function v101QuotePurchaseFromState(resource: string, quantity: number, actorId: string, region: string, state: unknown, options?: V101StateQuoteOptions): V101PurchaseQuote {
   const s: Record<string, unknown> = v101IsRecord(state) ? state : {};
   const prices = v101IsRecord(s.resourcePrices) ? (s.resourcePrices as Record<string, number>) : null;
+  const rival = options?.rival !== undefined ? options.rival : (v101IsRecord(s.actorsById) ? (s.actorsById as Record<string, unknown>).ai as V99AdviceActorView | undefined : undefined);
+  const underdog = actorId === 'player' && options?.buyer && options.settings
+    ? v99HumanSellHandicap({ selectedMode: typeof s.selectedMode === 'string' ? s.selectedMode : undefined, resourcePrices: prices }, options.buyer, rival, options.settings).isUnderdog
+    : false;
   return v101QuoteMarketPurchase({
+    isUnderdog: underdog,
     resource, region, quantity, listPrice: v99MarketListPrice(resource, prices), tariffRate: calculateRegionalTariffRate(actorId, region, state),
     pressureUnits: (readPurchasePressure(state)[resource] || 0) + Math.max(0, Math.floor(Number(options?.extraPressure) || 0)),
     activeEvents: s.activeEvents, season: typeof s.season === 'string' ? s.season : null, buyer: options?.buyer, approachesEnabled: options?.approachesEnabled === true
@@ -209303,9 +209319,10 @@ export function v101MakeBulkSaleQuoter(actor: V99AdviceActorView, world: V99Advi
 }
 
 /** What `quantity` units of a resource would cost an actor: the V10.1 quote in a V10.1 match, else base price x quantity (the figure the AI's planning has always used). */
-export function v101PurchaseCostEstimate(state: unknown, actorId: string, region: string, resource: string, quantity: number): number {
+export function v101PurchaseCostEstimate(state: unknown, actorId: string, region: string, resource: string, quantity: number, extraPressure: number = 0, buyer?: V99AdviceActorView | null): number {
   const units = Math.max(1, Math.floor(Number(quantity) || 0));
-  return isV101Match(state) ? v101QuotePurchaseFromState(resource, units, actorId, region, state).total : getResourceMarketPrice(resource) * units;
+  // V10.1 (SECTION 20BB): extraPressure = units of this resource already counted earlier in the same shopping list (the charge adds them to the pressure, so the estimate must too)
+  return isV101Match(state) ? v101QuotePurchaseFromState(resource, units, actorId, region, state, { extraPressure, buyer }).total : getResourceMarketPrice(resource) * units;
 }
 
 /** The line under the Resource Market's cost in a V10.1 match: how the price moves. */
@@ -209320,6 +209337,10 @@ export const V101_MARKET_PRESSURE_NOTE = "Prices follow today's market, this reg
 //      thing pays less, so 90% odds no longer also pay 2.4x;
 //  (c) every challenge attempted tires the actor a little (the existing override-fatigue plumbing of the odds formula:
 //      -1% odds per attempt, to -5%, halved each night), so the same button pressed three times in a turn is worse each time.
+// V10.1 (SECTION 20BB): HONEST SCOPE. This is a RELATIVE balance change, not the removal of a free bet. Every shipped challenge still has a positive expected
+// value for a Tourist at levels 1, 3 and 6 after the ceiling and the curve (about +$9 to +$160 per $100 wagered, up to the $500 cap); a challenge is a
+// skill-and-odds bet the player is meant to win more often than not. What changed is how much better it is than everything else: the same button no
+// longer pays 2.4x at 95%, and pressing it again and again tires the actor. Challenge approaches, when switched on, keep their own multipliers and caps.
 /** The most a challenge's chance of winning can be in a V10.1 match (V10.0: 95%). */
 export const V101_ODDS_CEILING = 0.85;
 /** Below these odds a challenge pays its full multiplier; above, the pay falls V101_PAYOUT_SLOPE per point of odds, to V101_PAYOUT_FLOOR. */
@@ -209617,11 +209638,11 @@ function balLiveBuy(w: BalanceWorld, a: BalActor, item: string, quantity: number
 }
 
 /** What a challenge attempt does to an actor in the lab: experience and levels on a win, repeat-win mastery, and (V10.1) fatigue on every attempt. */
-function balLiveAfterChallenge(a: BalActor, c: { name: string; difficulty: number }, won: boolean): void {
+function balLiveAfterChallenge(a: BalActor, c: { name: string; difficulty: number }, won: boolean, xpBefore: number = a.xp): void {
   if (a.rules === 'v101') a.fatigue = v101FatigueAfterChallenge(a.fatigue);
   if (!won || !a.live) return;
   a.mastery = { ...(a.mastery || {}), [c.name]: ((a.mastery || {})[c.name] || 0) + 1 };
-  let xp = a.xp + c.difficulty * 20;
+  let xp = xpBefore + c.difficulty * 20; // V10.1 (SECTION 20BB): from the experience BEFORE the attempt (balReduce has already copied the reducer's own xp into the actor; adding to it would count a win twice)
   while (xp >= a.level * 100) {
     xp -= a.level * 100;
     a.level += 1;
@@ -209726,22 +209747,32 @@ export function runV101EconomySelfTests(): V9SelfTestResult[] {
     return (bought === 10 && readPurchasePressure(nextDay101).Gold === 7 && nextDay101.day === 5 && readPurchasePressure(nextDay100).Gold === 10 && nextDay100.day === 5) || json({ bought, d101: nextDay101.purchasePressure, d100: nextDay100.purchasePressure });
   });
 
-  check('v101ec_06_card_picks_item_and_quantity_together', 'The recommendation chooses the item and the quantity together by total profit: its N is the brute-force best, within cash and space, and the card names N, the total cost and the profit', () => {
-    // A trader whose bonuses beat the tariff (Businessman + Investment Genius) is the one case where a V10.1 purchase can earn money.
+  check('v101ec_06_card_picks_item_and_quantity_together', 'The trade choice picks the item and the quantity together by total profit (the brute-force best within cash and space), and the recommendation card, whose buy side now carries the buyer\'s own sale bonuses, finds no riskless resale for a Businessman with Investment Genius', () => {
+    // v101ChooseTradeBuy on a market where a resale does pay (synthetic quoters): its N is the brute-force best, within cash and space.
+    const synthBuy = (resource: string, quantity: number): V101PurchaseQuote => {
+      const unit = resource === 'A' ? 100 : 60;
+      const unitPrices = Array.from({ length: quantity }, (_, k) => Math.round(unit * (1 + 0.01 * (k + 1))));
+      return { quantity, unitPrices, total: unitPrices.reduce((x, y) => x + y, 0), first: unitPrices[0], last: unitPrices[quantity - 1], gross: unit, tariffPercent: 10 };
+    };
+    const synthSale = (resource: string, quantity: number): V99BulkSaleQuote => {
+      const unit = resource === 'A' ? 112 : 70;
+      const unitPrices = Array.from({ length: quantity }, (_, k) => Math.floor(unit * (1 - 0.01 * k)));
+      return { units: quantity, total: unitPrices.reduce((x, y) => x + y, 0), unitPrices, first: unitPrices[0], last: unitPrices[quantity - 1], regionalBonus: 1, supplyDemandModFirst: 1, supplyDemandModLast: 1 };
+    };
+    const cash = 1500;
+    const pick = v101ChooseTradeBuy({ resources: ['A', 'B'], maxUnits: MAX_INVENTORY, cash, buyQuote: synthBuy, saleQuote: synthSale });
+    let best = 0; let bestQ = 0; let bestR = '';
+    for (const r of ['A', 'B']) {
+      const b = synthBuy(r, MAX_INVENTORY); const sl = synthSale(r, MAX_INVENTORY); let cost = 0; let rev = 0;
+      for (let q = 1; q <= MAX_INVENTORY; q++) { cost += b.unitPrices[q - 1]; rev += sl.unitPrices[q - 1]; if (cost > cash) break; if (rev - cost > best) { best = rev - cost; bestQ = q; bestR = r; } }
+    }
+    // The shipped card for the trader who used to be able to buy-and-resell at a profit: now nothing resells for more than it costs.
     const trader: V99AdviceActorView = { id: 'player', money: 4000, currentRegion: 'NSW', inventory: [], character: { name: 'Businessman' }, masteryUnlocks: ['Investment Genius'], debuffs: [] };
     const world = s101({ resourcePrices: {}, supplyDemand: {} });
     const settings: V99AdviceSettingsView = { challengeApproachesEnabled: false, sabotageEnabled: false };
     const card = v99BuildTradeCandidate({ id: 'trade', actor: trader, world, settings, rival: null, tariffState: world, apSettings: DEFAULT_GAME_SETTINGS, wealthGoal: false, cash: 4000, reserve: 250 });
-    const p = (card.parameters || {}) as Record<string, unknown>;
-    const resource = String(p.resource);
-    const quantity = Number(p.quantity);
-    const buyAll = v101QuotePurchaseFromState(resource, MAX_INVENTORY, 'player', 'NSW', world, { buyer: trader });
-    const saleAll = v101MakeBulkSaleQuoter(trader, world, settings, null)(resource, MAX_INVENTORY);
-    let best = 0; let bestQ = 0; let cost = 0; let revenue = 0;
-    for (let q = 1; q <= MAX_INVENTORY; q++) { cost += buyAll.unitPrices[q - 1]; revenue += saleAll.unitPrices[q - 1]; if (cost > 4000 - 250) break; if (revenue - cost > best) { best = revenue - cost; bestQ = q; } }
-    const total = sum(buyAll.unitPrices.slice(0, quantity));
-    return (card.isValid && quantity > 1 && quantity === bestQ && p.v101TotalCost === total && card.costEstimate === total && card.expectedStateDelta.cashDelta === -total
-      && card.title.includes(`${quantity} ×`) && card.expectedOutcome.includes(`${quantity} ${resource}`) && p.countsAsMarketPurchase === true) || json({ valid: card.isValid, reason: card.invalidationReason, quantity, bestQ, total, title: card.title });
+    return (pick !== null && best > 0 && pick.resource === bestR && pick.quantity === bestQ && pick.profit === best && pick.buyTotal <= cash && pick.quantity > 1
+      && card.isValid === false && /resells here for more/.test(String(card.invalidationReason))) || json({ pick, best, bestQ, bestR, valid: card.isValid, reason: card.invalidationReason });
   });
 
   check('v101ec_07_card_for_a_neutral_player_is_not_a_money_machine', 'A V10.1 purchase card never proposes a buy-to-resell for a neutral character (no purchase earns money), and a V10.0 card is exactly as it was (one unit, the flat price)', () => {
@@ -209834,9 +209865,11 @@ export function runV101EconomySelfTests(): V9SelfTestResult[] {
     const offer = p.challenge as V99ChallengeOffer;
     const chance = Number(p.successChance); const wager = Number(p.wager);
     const truth = v101ChallengeTruth({ challenge: offer, actor: tourist, successChance: chance, wager, leaderPenalty: false, payoutFactor: v101PayoutFactorFor(world, chance) });
-    const html = renderToStaticMarkup(<V101ChallengeTruthLine truth={truth} />);
+    // V10.1 (SECTION 20BB): the line is read without a renderer - the component is a plain function, so call it and read the element's props and text
+    const lineEl = V101ChallengeTruthLine({ truth }) as React.ReactElement<Record<string, unknown>>;
+    const html = `${v99ElementText(lineEl)}|${String(lineEl.props['data-testid'])}`;
     const flat = v101ChallengeTruth({ challenge: { ...offer, reward: 2 }, actor: tourist, successChance: 0.4, wager: 100, leaderPenalty: false });
-    return (truth.win === Number(p.winReward) && truth.lose === wager && truth.average === Math.round(chance * truth.win - (1 - chance) * wager) && html.includes('Win +$') && html.includes('Tourist +20%') && html.includes('Lose -$') && html.includes('data-testid="v101-challenge-truth"')
+    return (truth.win === Number(p.winReward) && truth.lose === wager && truth.average === Math.round(chance * truth.win - (1 - chance) * wager) && html.includes('Win +$') && html.includes('Tourist +20%') && html.includes('Lose -$') && html.includes('|v101-challenge-truth')
       && flat.win === 240 && flat.effectiveMultiplier === 2.4 && /Tourist \+20%/.test(v101ChallengeTruthText(flat)) && v101PayLine(2, 240, 100) === 'base ×2, ×2.4 for you' && v101PayLine(1.8, 180, 100) === 'pays ×1.8')
       || json({ win: truth.win, card: p.winReward, html });
   });
@@ -209984,6 +210017,39 @@ export function runV101EconomySelfTests(): V9SelfTestResult[] {
     const after = gameStateReducer({ ...prev, purchasePressure: { Gold: 9 } }, { type: 'LOAD_STATE', payload: { rulesVersion: V101_RULES_VERSION, purchasePressure: undefined } }) as Record<string, unknown>;
     const same = v99ProjectExecutorStateOntoMatchState(post, post, { teamMode: false });
     return (json(payload.purchasePressure) === '{"Coral":3}' && after.purchasePressure === undefined && !('purchasePressure' in same)) || json({ payload, after: after.purchasePressure });
+  });
+
+  check('v101ec_25_every_seller_loses_on_a_round_trip', 'Buying then selling at once pays back less than it cost for every seller (Businessman, Investment Genius, both, the opt-in underdog handicap) even where the tariff is lowest, and a shopping list that names a resource twice is priced with the pressure of its first entry', () => {
+    const sellers: Array<[string, V99AdviceActorView, boolean]> = [
+      ['neutral', neutral, false],
+      ['businessman', { ...neutral, character: { name: 'Businessman' } }, false],
+      ['genius', { ...neutral, masteryUnlocks: ['Investment Genius'] }, false],
+      ['both', { ...neutral, character: { name: 'Businessman' }, masteryUnlocks: ['Investment Genius'] }, false],
+      ['underdog', neutral, true],
+      ['everything', { ...neutral, character: { name: 'Businessman' }, masteryUnlocks: ['Investment Genius'] }, true]
+    ];
+    let checked = 0;
+    for (const [label, seller, underdog] of sellers) for (const tariff of [0, 0.05, 0.1]) for (const region of ['NSW', 'WA']) for (const resource of RESOURCE_MARKET_RESOURCES) for (const quantity of [1, 8, 50]) {
+      const list = getResourceMarketPrice(resource);
+      const buy = v101QuoteMarketPurchase({ resource, region, quantity, listPrice: list, tariffRate: tariff, pressureUnits: 0, season: 'Summer', activeEvents: [], buyer: seller, isUnderdog: underdog });
+      const sale = v99QuoteBulkSale({ resource, listPrice: list, region, unitsAlreadySold: 0, activeEvents: [], season: 'Summer', seller, isUnderdog: underdog, leaderTax: false, approachesEnabled: false, sabotageEnabled: false }, quantity);
+      checked++;
+      if (sale.total > buy.total) return `${label}, tariff ${tariff}, ${resource} x${quantity} in ${region}: paid ${buy.total}, sold for ${sale.total}`;
+    }
+    // The state-level quote prices the human's underdog handicap in when the settings and the rival are known (the same handicap the sale gets).
+    const poor: V99AdviceActorView = { ...neutral, money: 100, inventory: [] };
+    const rich: V99AdviceActorView = { ...neutral, id: 'ai', money: 90000, inventory: [] };
+    const world = s101({ selectedMode: 'ai', actorsById: { ai: rich } });
+    const adaptive: V99AdviceSettingsView = { challengeApproachesEnabled: false, sabotageEnabled: false, adaptiveAiRubberBanding: true } as V99AdviceSettingsView;
+    const withHandicap = v101QuotePurchaseFromState('Gold', 10, 'player', 'NSW', world, { buyer: poor, settings: adaptive, rival: rich });
+    const withoutHandicap = v101QuotePurchaseFromState('Gold', 10, 'player', 'NSW', world, { buyer: poor, settings: { ...adaptive, adaptiveAiRubberBanding: false } as V99AdviceSettingsView, rival: rich });
+    const saleHandicap = v101MakeBulkSaleQuoter(poor, world, adaptive, rich)('Gold', 10);
+    // A list that names Gold twice costs what one list of both entries costs (the second entry starts above the first one's pressure).
+    const one = v101PurchaseCostEstimate(world, 'player', 'NSW', 'Gold', 5);
+    const two = v101PurchaseCostEstimate(world, 'player', 'NSW', 'Gold', 5, 5);
+    const all = v101PurchaseCostEstimate(world, 'player', 'NSW', 'Gold', 10);
+    const naive = one * 2;
+    return (checked > 600 && withHandicap.total > withoutHandicap.total && saleHandicap.total <= withHandicap.total && one + two === all && two > one && naive < all) || json({ checked, withHandicap: withHandicap.total, withoutHandicap: withoutHandicap.total, sale: saleHandicap.total, one, two, all });
   });
 
   return results;
@@ -216272,9 +216338,13 @@ function dispatchGameSettingsChange(
         const purchases = Array.isArray(data.purchases) ? data.purchases : [];
         if (purchases.length === 0) return false;
         const totalUnits = purchases.reduce((sum: number, entry: any) => sum + Math.max(1, Math.floor(Number(entry?.quantity) || 0)), 0);
+        const v101Running: Record<string, number> = {}; // V10.1 (SECTION 20BB): a resource listed twice is priced with the pressure of its earlier entry, as the charging loop does
         const totalCost = purchases.reduce((sum: number, entry: any) => {
           if (!entry || typeof entry.resource !== 'string' || !RESOURCE_CATEGORIES[entry.resource]) return Infinity;
-          return sum + v101PurchaseCostEstimate(gameState, String(actor.id || 'ai'), String(actor.currentRegion || 'NSW'), entry.resource, Math.max(1, Math.floor(Number(entry.quantity) || 0))); // V10.1 (SECTION 20BB): the V10.1 quote in a V10.1 match (the base price x quantity otherwise, as before)
+          const entryUnits = Math.max(1, Math.floor(Number(entry.quantity) || 0));
+          const entryCost = v101PurchaseCostEstimate(gameState, String(actor.id || 'ai'), String(actor.currentRegion || 'NSW'), entry.resource, entryUnits, v101Running[entry.resource] || 0, actor); // V10.1 (SECTION 20BB): the V10.1 quote in a V10.1 match (the base price in an older one)
+          v101Running[entry.resource] = (v101Running[entry.resource] || 0) + entryUnits;
+          return sum + entryCost;
         }, 0);
         return isFinite(totalCost) && actor.money >= totalCost && (actor.inventory || []).length + totalUnits <= MAX_INVENTORY;
       }
@@ -216736,7 +216806,7 @@ function dispatchGameSettingsChange(
     const successChance = calculateAiSuccessChance(challenge, aiState);
     const maxWager = Math.min(aiState.money, Math.floor(500 * postureRisk));
     const actualWager = Math.max(MINIMUM_WAGER, maxWager); // Ensure at least minimum wager
-    const potentialReward = actualWager * challenge.reward;
+    const potentialReward = actualWager * challenge.reward * v101PayoutFactorFor(gameState, successChance); // V10.1 (SECTION 20BB): the rival ranks challenges by what a win really pays (the pay curve; 1 outside a V10.1 match)
     const expectedValue = potentialReward * successChance - actualWager * (1 - successChance);
 
     // Adjust for difficulty profile
@@ -216760,7 +216830,7 @@ function dispatchGameSettingsChange(
       wager: actualWager,
       expectedValue
     };
-  }, [calculateAiSuccessChance, getWealthState]);
+  }, [calculateAiSuccessChance, getWealthState, gameState.rulesVersion]); // V10.1 (SECTION 20BB): the pay curve reads the match's rules stamp
 
   // AI Strategy: Evaluate best region to travel to
   const evaluateTravel = useCallback((region: any,aiState: any,difficulty: any,resourcePrices: any): any => {
@@ -228431,7 +228501,7 @@ function dispatchGameSettingsChange(
           wp6AttemptRef.current?.(String(player.id || 'player'), challenge, String(player.currentRegion || ''), success);
           // V9.6 (SECTION 20AJ): presentation-only roll card + sound.
           emitGameFeel({ kind: 'challenge', actor: 'human', success, odds: Math.min(1, successChance), label: approachPlan ? `${challenge.name} — ${approachPlan.label}` : String(challenge.name) });
-          // V10.1 (SECTION 20BB): in a V10.1 match every attempt tires the player a little (-3% odds on the next, to -15%, halved each night): the same button three times in a turn is worse each time.
+          // V10.1 (SECTION 20BB): in a V10.1 match every attempt tires the player a little (-1% odds on the next, to -5%, halved each night): the same button three times in a turn is worse each time.
           if (isV101Match(gameState)) dispatchPlayer({ type: 'MERGE_STATE', payload: { overrideFatigue: v101FatigueAfterChallenge(player.overrideFatigue) } });
 
           if (success) {
@@ -228753,7 +228823,7 @@ function dispatchGameSettingsChange(
     // V10.1 (SECTION 20BB): in a V10.1 match every unit is priced by v101QuoteMarketPurchase, the quote the market shows and the card gives (purchases made earlier in this same tick are counted).
     const v101Live = gameStateLiveRef.current;
     const v101Buy = isV101Match(v101Live)
-      ? v101QuotePurchaseFromState(resource, quantity, actorId, currentRegion, v101Live, { buyer: actorState, approachesEnabled: gameSettings.challengeApproachesEnabled === true, extraPressure: v101PendingPressure(resource) })
+      ? v101QuotePurchaseFromState(resource, quantity, actorId, currentRegion, v101Live, { buyer: actorState, approachesEnabled: gameSettings.challengeApproachesEnabled === true, extraPressure: v101PendingPressure(resource), settings: gameSettings })
       : null;
     const unitPrice = v101Buy ? v101Buy.first : Math.round(baseUnitPrice * (1 + tariffRate));
     const totalCost = v101Buy ? v101Buy.total : unitPrice * quantity;
@@ -264992,7 +265062,7 @@ function dispatchGameSettingsChange(
 	                      >
 	                        {RESOURCE_MARKET_RESOURCES.map(resource => (
 	                          <option key={resource} value={resource}>
-	                            {resource} ({fmtMoney(v99MarketBuyUnitPrice(resource, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true }))})
+	                            {resource} ({fmtMoney(v99MarketBuyUnitPrice(resource, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true, settings: gameSettings }))})
 	                          </option>
 	                        ))}
 	                      </select>
@@ -265012,8 +265082,8 @@ function dispatchGameSettingsChange(
 	                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
 	                    {/* V9.9 (SECTION 20AU): the sum that is charged — tariff included (the label left it out and the purchase was then refused) — and what it costs in actions. */}
 	                    <div className="text-sm" data-testid="v99-market-cost">
-	                      Cost: <span className={`font-bold ${v99ThemeAccent(themeStyles, 'warningText', 'text-yellow-400')}`}>{fmtMoney(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true }).total)}</span>
-	                      <span className="text-xs opacity-75"> — {v99PurchasePriceLabel(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true }))}. {v99MarketBuyActionNote(player, gameSettings)}</span>
+	                      Cost: <span className={`font-bold ${v99ThemeAccent(themeStyles, 'warningText', 'text-yellow-400')}`}>{fmtMoney(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true, settings: gameSettings }).total)}</span>
+	                      <span className="text-xs opacity-75"> — {v99PurchasePriceLabel(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true, settings: gameSettings }))}. {v99MarketBuyActionNote(player, gameSettings)}</span>
 	                      {isV101Match(gameState) && <div className="text-xs opacity-75" data-testid="v101-market-note">{V101_MARKET_PRESSURE_NOTE}</div> /* V10.1 (SECTION 20BB): says how the price moves */}
 	                    </div>
 	                    <button
@@ -265028,7 +265098,7 @@ function dispatchGameSettingsChange(
 
 	                <div className="space-y-3">
 	                  {RESOURCE_MARKET_RESOURCES.map(resource => {
-	                    const price = v99MarketBuyUnitPrice(resource, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true }); // V9.9 (SECTION 20AU): tariff included — the price that is charged
+	                    const price = v99MarketBuyUnitPrice(resource, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true, settings: gameSettings }); // V9.9 (SECTION 20AU): tariff included — the price that is charged
 	                    const category = RESOURCE_CATEGORIES[resource] || 'industrial';
 	                    return (
 	                      <div key={resource} className={`${themeStyles.border} border rounded-lg p-3`}>
@@ -265274,7 +265344,7 @@ function dispatchGameSettingsChange(
                                 <div className="text-xs font-bold mb-1">Output:</div>
                                 <div className="text-sm text-green-400">{recipe.output}</div>
                                 {/* V9.9 (SECTION 20AU): the price the Sell Market really lists (was recipe.baseValue, which nothing paid) */}
-                                <div className="text-xs opacity-75" data-testid="v99-workshop-value">{/* V10.1 (SECTION 20BB): what a craft really earns: the materials' price with the tariff, the 10% of crafts that fail, the average result (a losing recipe says so) */}{v101WorkshopValueText(v101CraftEconomics(recipe, v101MaterialCostFor(gameState, 'player', player.currentRegion || 'NSW', { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true }), 0.9 + (Number(player?.character?.craftingBonus?.effect?.successBonus) || 0)))}</div>
+                                <div className="text-xs opacity-75" data-testid="v99-workshop-value">{/* V10.1 (SECTION 20BB): what a craft really earns: the materials' price with the tariff, the 10% of crafts that fail, the average result (a losing recipe says so) */}{v101WorkshopValueText(v101CraftEconomics(recipe, v101MaterialCostFor(gameState, 'player', player.currentRegion || 'NSW', { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true, settings: gameSettings }), 0.9 + (Number(player?.character?.craftingBonus?.effect?.successBonus) || 0)))}</div>
                                 <div className="text-xs opacity-75">
                                   Actions: {isTourismWithBonus ? '0 (Tourist bonus!)' : recipe.craftTime}
                                 </div>
