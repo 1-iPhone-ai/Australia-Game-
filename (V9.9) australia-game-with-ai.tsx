@@ -10973,6 +10973,8 @@ export function computeChallengeSuccessChanceCore(i: {
   difficulty: number; type: string; stats: { strength: number; charisma: number; luck: number; intelligence: number };
   characterName?: string | null; level?: number; weatherEffect?: number; seasonEffect?: number; eventBonus?: number;
   equipmentBonus?: number; underdogBonus?: number; leaderPenalty?: number; fatiguePenalty?: number; sabotagePenalty?: number;
+  /** V10.1 (SECTION 20BB): the highest chance this match allows (a V10.1 match passes 0.85); absent = the V10.0 ceiling of 0.95. */
+  oddsCeiling?: number;
 }): number {
   const st = i.stats;
   const statValue = i.type === 'finale'
@@ -10981,15 +10983,19 @@ export function computeChallengeSuccessChanceCore(i: {
   const raw = 0.5 + statValue * 0.05 - i.difficulty * 0.1 + (i.characterName === 'Tourist' ? 0.1 : 0) + (i.level || 0) * 0.02
     + (i.weatherEffect || 0) + (i.seasonEffect || 0) + (i.eventBonus || 0) + (i.underdogBonus || 0) - (i.leaderPenalty || 0)
     - (i.fatiguePenalty || 0) - (i.sabotagePenalty || 0) + (i.equipmentBonus || 0);
-  return Math.min(0.95, Math.max(0.1, raw));
+  // V10.1 (SECTION 20BB): a V10.1 match caps the odds at 85% (oddsCeiling); every other caller keeps 95%.
+  const ceiling = typeof i.oddsCeiling === 'number' && Number.isFinite(i.oddsCeiling) ? Math.max(0.1, Math.min(0.95, i.oddsCeiling)) : 0.95;
+  return Math.min(ceiling, Math.max(0.1, raw));
 }
 
 /** Challenge payout on a win (the wager is kept; a loss costs the wager). */
 export function computeChallengeRewardCore(i: {
   wager: number; rewardMultiplier: number; characterName?: string | null; leaderPenalty?: boolean;
   luckyStreak?: boolean; consecutiveWins?: number; masteryCount?: number;
+  /** V10.1 (SECTION 20BB): the share of the multiplier a win pays at these odds (a V10.1 match passes v101ChallengePayoutFactor(chance)); absent = 1, the V10.0 payout. */
+  payoutFactor?: number;
 }): { reward: number; luckyStreakBonus: number; streakBonus: number; masteryBonus: number; masteryLabel: string } {
-  let reward = Math.floor(i.wager * i.rewardMultiplier);
+  let reward = typeof i.payoutFactor === 'number' && Number.isFinite(i.payoutFactor) && i.payoutFactor !== 1 && i.payoutFactor > 0 ? Math.floor(i.wager * i.rewardMultiplier * i.payoutFactor) : Math.floor(i.wager * i.rewardMultiplier); // V10.1 (SECTION 20BB): the pay curve
   if (i.characterName === 'Tourist') reward = Math.floor(reward * 1.2);
   if (i.characterName === 'Businessman') reward = Math.floor(reward * 1.1);
   if (i.leaderPenalty) reward = Math.floor(reward * 0.9);
@@ -11484,12 +11490,15 @@ export function reduceGameAction(
           const quantity = action.parameters?.quantity || 1;
           const isBuy = action.type === 'buy_market' || action.type === 'buyResource' || (action.parameters?.isBuy !== false && action.type !== 'sell' && action.type !== 'sellResource');
           const unitPrice = action.price || action.parameters?.unitPrice || action.parameters?.price || nextState.markets?.resourcePrices?.[item] || 100;
-          const totalPrice = unitPrice * quantity;
+          // V10.1 (SECTION 20BB): a V10.1 recommendation carries the total of its unit-by-unit quote (units get dearer as bought, cheaper as sold); without it, unit price x quantity as before.
+          const v101Explicit = isBuy ? v101ExplicitPurchaseTotal(action.parameters) : v101ExplicitSaleTotal(action.parameters);
+          const totalPrice = v101Explicit !== null ? v101Explicit : unitPrice * quantity;
           if (actor && item) {
             if (isBuy && actor.money >= totalPrice) {
               actor.money -= totalPrice;
               const itemsToAdd = Array.from({ length: quantity }, () => item);
               actor.inventory = [...(actor.inventory || []), ...itemsToAdd];
+              v101RecordCanonicalMarketPurchase(state, nextState, item, quantity, action.parameters); // V10.1 (SECTION 20BB): the purchase adds to the market's purchase pressure, as buying by hand does
               // V9.9 (SECTION 20AR): the recommended purchase costs what the Resource Market costs the player by hand
               // (one action) and says so in parameters.apCost; a purchase without it follows the configured rule as before.
               const v99BuyAp = v99ExplicitMarketBuyApCost(action.parameters);
@@ -11508,7 +11517,7 @@ export function reduceGameAction(
                 }
               }
               if (removed > 0) {
-                actor.money += unitPrice * removed;
+                actor.money += v101Explicit !== null && removed === quantity ? v101Explicit : unitPrice * removed; // V10.1 (SECTION 20BB): the stack's own unit-by-unit quote when the card carries one
                 v99RecordCanonicalMarketSale(state, nextState, item, removed, action.parameters); // V9.9 (SECTION 20AR): a recommended sale counts towards oversupply, like a Sell Market sale
                 actionExecuted = true;
               }
@@ -27697,7 +27706,7 @@ export function gameStateReducer(state: any, action: any) {
         console.error("[Non-Blocking Engine Error] NEXT_DAY ledger expectations evaluation failed:", err);
       }
       // V9.9 (SECTION 20AU): a new day also lets oversupply fade and ends yesterday's Double or Nothing offer (v99DayRolloverWorldPatch; empty when neither applies).
-      return { ...state, day: newDay, season: newSeason, actionsThisTurn: 0, gameActivityLedger: updatedLedger, ...v99DayRolloverWorldPatch(state) };
+      return { ...state, day: newDay, season: newSeason, actionsThisTurn: 0, gameActivityLedger: updatedLedger, ...v99DayRolloverWorldPatch(state), ...v101DayPressurePatch(state) }; // V10.1 (SECTION 20BB): purchase pressure fades too, in a V10.1 match
     }
     case 'UPDATE_WEATHER':
       return { ...state, weather: action.payload };
@@ -28142,6 +28151,8 @@ export function gameStateReducer(state: any, action: any) {
       const resource = action.payload.resource;
       newSupplyDemand[resource] = (newSupplyDemand[resource] || 0) + action.payload.amount;
       return { ...state, supplyDemand: newSupplyDemand };
+    case 'UPDATE_PURCHASE_PRESSURE': // V10.1 (SECTION 20BB): units bought into the Resource Market (a V10.1 match only; the buyer dispatches it)
+      return { ...state, purchasePressure: v101AddPurchasePressure(state.purchasePressure, String(action.payload?.resource || ''), Number(action.payload?.amount) || 0) };
     case 'SET_DOUBLE_OR_NOTHING':
       return { ...state, doubleOrNothingAvailable: action.payload.available, lastChallengeReward: action.payload.reward || 0 };
     case 'UPDATE_ACTIVE_EVENTS':
@@ -36645,6 +36656,7 @@ export const initialGameState = {
   netWorthHistory: [] as Array<{day: number, playerWorth: number, aiWorth: number}>,
   bestDayRecord: { day: 0, earned: 0 },
   supplyDemand: {} as Record<string, number>, // Tracks how much of each resource has been sold
+  purchasePressure: undefined as Record<string, number> | undefined, // V10.1 (SECTION 20BB): how much of each resource has been bought (V10.1 matches only; fades daily like supplyDemand)
   doubleOrNothingAvailable: false,
   lastChallengeReward: 0,
   bankruptcyTracker: { player: 0, ai: 0 },
@@ -71978,7 +71990,7 @@ export function generateCoPilotPlayerActionCandidates(
   // V9.9 (SECTION 20AR): the market candidate is a real trade at the market's real price. It used to sell the first
   // inventory entry for a flat $100 at "1 AP" (a sale is free, so it could never pass its own check) or buy
   // 'minerals', which the Resource Market does not sell.
-  candidates.push(v99BuildTradeCandidate({ id: makeId(4, 'trade'), actor: actorObj, world: gs, settings: gameSettings, rival: context?.aiPlayer || gs?.actorsById?.ai || null, tariffState: gs, apSettings, wealthGoal: goal === 'wealth' }));
+  candidates.push(v99BuildTradeCandidate({ id: makeId(4, 'trade'), actor: actorObj, world: gs, settings: gameSettings, rival: context?.aiPlayer || gs?.actorsById?.ai || null, tariffState: gs, apSettings, wealthGoal: goal === 'wealth', cash, reserve: minReserveFloor })); // V10.1 (SECTION 20BB): the quantity is sized to the spare cash
   // Always-legal income fallback (same 'work' action the team AI actors use: +$50 wage, 1 AP).
   // Without it, once cash sits at the reserve floor with debt outstanding every remaining
   // candidate is a costed one and the turn ends at 0/3 forever.
@@ -72267,12 +72279,12 @@ export function generateCoPilotPlayerActionCandidates(
     category: 'pass',
     categoryIndex: 12,
     categoryName: 'Pass / Conserve AP',
-    title: 'Conserve Action Points for Next Turn',
-    description: 'Bank unused Action Points to gain AP rollover bonus on the subsequent turn.',
+    title: V101_PASS_TURN_TITLE, // V10.1 (SECTION 20BB): was "Conserve Action Points for Next Turn" / "Rollover +1 AP": unused actions have never carried over
+    description: V101_PASS_TURN_DESCRIPTION,
     actionType: 'conserve_ap',
     apCost: 0,
     costEstimate: 0,
-    expectedOutcome: 'Rollover +1 AP to next turn reserve',
+    expectedOutcome: V101_PASS_TURN_OUTCOME,
     utilityScore: 65,
     riskFactor: 0,
     rewardScore: 55,
@@ -134337,6 +134349,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         // V10.1 (SECTION 20BA): optional match state added by the V10.1 work packages — one marker each; a package adds its line right below its marker
         // and its key to V101_ADDED_STATE_KEYS (absent in saves written before V10.1).
         // <<V101-STATE ECON>>
+        ...(stateData.purchasePressure !== undefined ? { purchasePressure: sanitizePurchasePressure(stateData.purchasePressure) ?? undefined } : {}),
         //
         // <<V101-STATE RIVAL>>
         //
@@ -189199,6 +189212,9 @@ export interface V99AdviceActorView {
 export interface V99AdviceWorldView {
   resourcePrices?: Record<string, number> | null;
   supplyDemand?: Record<string, number> | null;
+  /** V10.1 (SECTION 20BB): the match's rules stamp and the market's purchase pressure (both absent in an older match). */
+  rulesVersion?: number;
+  purchasePressure?: Record<string, number> | null;
   activeEvents?: unknown;
   season?: string;
   selectedMode?: string;
@@ -189447,7 +189463,9 @@ export function v99MakeSaleQuoter(actor: V99AdviceActorView, world: V99AdviceWor
 }
 
 /** What one unit costs in the Resource Market, tariff included — the same sum buyResourceFromMarket charges. */
-export function v99MarketBuyUnitPrice(resource: string, actorId: string, region: string, tariffState: unknown): number {
+export function v99MarketBuyUnitPrice(resource: string, actorId: string, region: string, tariffState: unknown, options?: V101StateQuoteOptions): number {
+  // V10.1 (SECTION 20BB): in a V10.1 match a unit costs what v101QuoteMarketPurchase says (live price, region and season, tariff, purchase pressure); older matches keep the flat sum.
+  if (isV101Match(tariffState)) return v101QuotePurchaseFromState(resource, 1, actorId, region, tariffState, options).first;
   return Math.round(getResourceMarketPrice(resource) * (1 + calculateRegionalTariffRate(actorId, region, tariffState)));
 }
 
@@ -189465,6 +189483,9 @@ export interface V99TradeCandidateInput {
   /** Settings the action costs are read from. */
   apSettings: unknown;
   wealthGoal: boolean;
+  /** V10.1 (SECTION 20BB): the cash on hand and the cash the advice never spends; a V10.1 purchase card sizes its quantity to what is left (absent = the actor's money, no reserve). */
+  cash?: number;
+  reserve?: number;
 }
 
 /**
@@ -189490,6 +189511,28 @@ export function v99BuildTradeCandidate(i: V99TradeCandidateInput): CoPilotAction
       if (q.price > best.price) { item = other; best = q; }
     }
     const apCost = v99CandidateRuleApCost('sell', actor, i.apSettings);
+    if (isV101Match(i.tariffState)) {
+      // V10.1 (SECTION 20BB): the card sells the whole stack of the best item in one go (a sale is one free action whatever the number of units), at the Sell Market's own
+      // unit-by-unit quote — the old card sold one unit per press, after a purchase of many.
+      const held = inventory.filter(x => x === item).length;
+      const bulk = v101MakeBulkSaleQuoter(actor, i.world, i.settings, i.rival)(item, held);
+      return {
+        ...base,
+        title: held > 1 ? `Sell ${held} × ${item} (${fmtMoney(bulk.total)})` : `Sell ${item} ($${best.price})`,
+        description: held > 1 ? `Sell all ${held} ${item} here today, one price after another (${fmtMoney(bulk.first)} down to ${fmtMoney(bulk.last)} each).` : `Sell 1 ${item} at today's price here.`,
+        actionType: 'sell',
+        apCost,
+        costEstimate: 0,
+        expectedOutcome: `Earn ${fmtMoney(bulk.total)} from ${held} ${item}`,
+        utilityScore: i.wealthGoal ? 88 : 82,
+        rewardScore: 85,
+        expectedStateDelta: { cashDelta: bulk.total, apDelta: apCost > 0 ? -apCost : 0 },
+        isValid: bulk.total > 0,
+        invalidationReason: bulk.total > 0 ? undefined : `${item} has no sale value here today`,
+        adviceReason: held > 1 ? `${held} sell for ${fmtMoney(bulk.total)} here today` : `sells for $${best.price} here today`,
+        parameters: { item, resource: item, commodity: item, quantity: held, price: best.price, unitPrice: best.price, listPrice: best.listPrice, countsAsMarketSale: true, v101TotalValue: bulk.total }
+      };
+    }
     return {
       ...base,
       title: `Sell ${item} ($${best.price})`,
@@ -189505,6 +189548,40 @@ export function v99BuildTradeCandidate(i: V99TradeCandidateInput): CoPilotAction
       invalidationReason: best.price > 0 ? undefined : `${item} has no sale value here today`,
       adviceReason: `sells for $${best.price} here today`,
       parameters: { item, resource: item, commodity: item, quantity: 1, price: best.price, unitPrice: best.price, listPrice: best.listPrice, countsAsMarketSale: true }
+    };
+  }
+
+  if (isV101Match(i.tariffState)) {
+    // V10.1 (SECTION 20BB): the item AND the quantity are chosen together, by the total profit of buying that many and selling them here, one unit at a time,
+    // at the prices the Resource Market charges and the Sell Market pays (v101ChooseTradeBuy). The old card chose the best one-unit margin and said "1 unit".
+    const stateOptions: V101StateQuoteOptions = { buyer: actor, approachesEnabled: Boolean(i.settings && i.settings.challengeApproachesEnabled === true) };
+    const bulkSale = v101MakeBulkSaleQuoter(actor, i.world, i.settings, i.rival);
+    const cash = Number.isFinite(Number(i.cash)) ? Number(i.cash) : Number(actor.money) || 0;
+    const room = MAX_INVENTORY - inventory.length;
+    const best = v101ChooseTradeBuy({
+      resources: RESOURCE_MARKET_RESOURCES, maxUnits: room, cash: cash - Math.max(0, Number(i.reserve) || 0),
+      buyQuote: (resource, quantity) => v101QuotePurchaseFromState(resource, quantity, actorId, region, i.tariffState, stateOptions), saleQuote: bulkSale
+    });
+    const apCost101 = v99MarketBuyActionCost(actor, i.apSettings);
+    const blocker101 = inventory.length >= MAX_INVENTORY ? `Inventory is full (${MAX_INVENTORY}/${MAX_INVENTORY})` : !best ? 'Nothing in the Resource Market resells here for more than it costs today' : null;
+    const item101 = best ? best.resource : '';
+    return {
+      ...base,
+      title: best ? `Buy ${best.quantity} × ${best.resource} (${fmtMoney(best.buyTotal)}) to resell` : 'Purchase Market Commodities',
+      description: best
+        ? `${best.quantity} ${best.resource} cost ${fmtMoney(best.buyTotal)} in the Resource Market (every unit bought makes the next dearer) and sell here for ${fmtMoney(best.saleTotal)} in all.`
+        : 'Buy a commodity in the Resource Market to resell when its price is higher.',
+      actionType: 'buy_market',
+      apCost: apCost101,
+      costEstimate: best ? best.buyTotal : 0,
+      expectedOutcome: best ? `${best.quantity} ${best.resource} to sell here for ${fmtMoney(best.saleTotal)} (+${fmtMoney(best.profit)} after the sale)` : 'Acquire 1 unit of commodity inventory',
+      utilityScore: best && best.profit >= 50 ? (i.wealthGoal ? 86 : 76) : 70,
+      rewardScore: 80,
+      expectedStateDelta: { cashDelta: best ? -best.buyTotal : 0, apDelta: apCost101 > 0 ? -apCost101 : 0 },
+      isValid: !blocker101,
+      invalidationReason: blocker101 || undefined,
+      adviceReason: best ? `${best.quantity} cost ${fmtMoney(best.buyTotal)}, sell here for ${fmtMoney(best.saleTotal)} today` : undefined,
+      parameters: { item: item101, resource: item101, commodity: item101, quantity: best ? best.quantity : 1, price: best ? best.buyFirst : 0, unitPrice: best ? best.buyFirst : 0, apCost: apCost101, v101TotalCost: best ? best.buyTotal : 0, countsAsMarketPurchase: true }
     };
   }
 
@@ -189630,8 +189707,9 @@ export function v99HumanDoItRoute(actionType: unknown): V99DoItRoute {
 export function v99RunHumanDoIt(route: V99DoItRoute, hands: V99HumanDoItHandlers, candidate: { targetId?: unknown; parameters?: unknown }): boolean {
   const p = v99IsRecord(candidate.parameters) ? candidate.parameters : {};
   if (route === 'travel') { hands.travel(String(candidate.targetId || p.region || '')); return true; }
-  if (route === 'sell') { hands.sell(String(p.item || ''), Number(p.listPrice) || 0); return true; }
-  if (route === 'buy_market') { hands.buy(String(p.item || '')); return true; }
+  // V10.1 (SECTION 20BB): the recommendation names a quantity (a V10.1 card sells the stack / buys N); an older card has none, and the handlers get what they always got.
+  if (route === 'sell') { if (Number(p.quantity) > 1) hands.sell(String(p.item || ''), Number(p.listPrice) || 0, Math.floor(Number(p.quantity))); else hands.sell(String(p.item || ''), Number(p.listPrice) || 0); return true; }
+  if (route === 'buy_market') { if (Number(p.quantity) > 1) hands.buy(String(p.item || ''), Math.floor(Number(p.quantity))); else hands.buy(String(p.item || '')); return true; }
   if (route === 'buy_equipment') { hands.buyEquipment(String(p.itemId || p.item || '')); return true; }
   if (route === 'challenge') {
     if (p.touristRetry === true) { if (!hands.touristRetry) return false; hands.touristRetry(); return true; } // W4A (f3-01): the free retry is the button's own handler
@@ -189657,8 +189735,8 @@ export function v99RunHumanDoIt(route: V99DoItRoute, hands: V99HumanDoItHandlers
 /** The play screen's own handlers and prices, handed to "Do It" (re-assigned every render; null outside a match). */
 export interface V99HumanDoItHandlers {
   travel: (region: string) => void;
-  sell: (resource: string, listPrice: number) => void;
-  buy: (resource: string) => boolean;
+  sell: (resource: string, listPrice: number, quantity?: number) => void; // V10.1 (SECTION 20BB): the optional quantity is the whole stack a V10.1 card sells
+  buy: (resource: string, quantity?: number) => boolean; // V10.1 (SECTION 20BB): the optional quantity is the N a V10.1 card buys
   buyEquipment: (itemId: string) => void;
   /** What the Travel dialog would charge for this trip right now. */
   travelCost: (toRegion: string) => number;
@@ -189899,16 +189977,18 @@ export function v99ClassicChallengeChance(challenge: V99ChallengeOffer, actor: V
     difficulty: v99Finite(challenge.difficulty, 1), type, stats: getActorStats(actor), characterName: actor.character ? actor.character.name : null, level: v99Finite(actor.level, 0),
     weatherEffect, seasonEffect, eventBonus, equipmentBonus: gear ? v99Finite(gear.challengeBonus[type], 0) : 0,
     underdogBonus: handicap && handicap.isUnderdog ? 0.1 : 0, leaderPenalty: handicap && handicap.leaderTax ? 0.05 : 0,
-    fatiguePenalty: v99Finite(actor.overrideFatigue, 0), sabotagePenalty: sabotage ? getSabotageChallengePenalty(debuffs) : 0
+    fatiguePenalty: v99Finite(actor.overrideFatigue, 0), sabotagePenalty: sabotage ? getSabotageChallengePenalty(debuffs) : 0,
+    oddsCeiling: v101OddsCeilingFor(world) // V10.1 (SECTION 20BB): 85% in a V10.1 match
   });
 }
 
 /** What a win pays on a wager: the roll's own payout function (computeChallengeRewardCore) with the actor's streak and mastery. */
-export function v99ChallengeWinReward(challenge: V99ChallengeOffer, actor: V99ChallengeActorView, wager: number, leaderPenalty: boolean): number {
+export function v99ChallengeWinReward(challenge: V99ChallengeOffer, actor: V99ChallengeActorView, wager: number, leaderPenalty: boolean, payoutFactor?: number): number {
   const mastery = v99IsRecord(actor.challengeMastery) ? v99Finite(actor.challengeMastery[challenge.name], 0) : 0;
   return computeChallengeRewardCore({
     wager, rewardMultiplier: v99Finite(challenge.reward, 1), characterName: actor.character ? actor.character.name : null, leaderPenalty,
-    luckyStreak: v99Strings(actor.masteryUnlocks).includes('Lucky Streak'), consecutiveWins: v99Finite(actor.consecutiveWins, 0), masteryCount: mastery + 1
+    luckyStreak: v99Strings(actor.masteryUnlocks).includes('Lucky Streak'), consecutiveWins: v99Finite(actor.consecutiveWins, 0), masteryCount: mastery + 1,
+    payoutFactor // V10.1 (SECTION 20BB): the pay curve (absent = 1, the old payout)
   }).reward;
 }
 
@@ -189948,13 +190028,13 @@ export interface V99ChallengeQuote {
 }
 
 /** Odds, a sensible wager and the payout for one challenge. Pure: the same inputs always give the same quote. */
-export function v99QuoteChallenge(i: { challenge: V99ChallengeOffer; actor: V99ChallengeActorView; successChance: number; cash: number; reserve: number; settings: V99ChallengeSettingsView | null | undefined; leaderPenalty: boolean }): V99ChallengeQuote {
-  const winPerDollar = v99ChallengeWinReward(i.challenge, i.actor, 100, i.leaderPenalty) / 100;
+export function v99QuoteChallenge(i: { challenge: V99ChallengeOffer; actor: V99ChallengeActorView; successChance: number; cash: number; reserve: number; settings: V99ChallengeSettingsView | null | undefined; leaderPenalty: boolean; payoutFactor?: number }): V99ChallengeQuote {
+  const winPerDollar = v99ChallengeWinReward(i.challenge, i.actor, 100, i.leaderPenalty, i.payoutFactor) / 100;
   const p = Math.max(0, Math.min(1, v99Finite(i.successChance, 0)));
   const favourable = winPerDollar > 0 && p - (1 - p) / winPerDollar > 1e-9;
   const wager = v99SensibleWager({ cash: i.cash, reserve: i.reserve, maxWager: v99MaxChallengeWager(i.challenge, i.actor, i.settings), successChance: p, winPerDollar });
   const shown = wager > 0 ? wager : MINIMUM_WAGER;
-  const winReward = v99ChallengeWinReward(i.challenge, i.actor, shown, i.leaderPenalty);
+  const winReward = v99ChallengeWinReward(i.challenge, i.actor, shown, i.leaderPenalty, i.payoutFactor);
   return { successChance: p, wager, winReward, expectedValue: p * winReward - (1 - p) * shown, favourable };
 }
 
@@ -189995,7 +190075,7 @@ export function v99BuildClassicChallengeCandidates(i: V99ChallengeCandidatesInpu
   const quoteFor = (challenge: V99ChallengeOffer, finale: boolean) => {
     const live = i.liveChance ? i.liveChance(challenge) : NaN;
     const successChance = Number.isFinite(live) ? live : v99ClassicChallengeChance(challenge, actor, i.world, i.settings, handicap);
-    return { challenge, finale, quote: v99QuoteChallenge({ challenge, actor, successChance, cash: i.cash, reserve: i.reserve, settings: i.settings, leaderPenalty: handicap.leaderTax }) };
+    return { challenge, finale, quote: v99QuoteChallenge({ challenge, actor, successChance, cash: i.cash, reserve: i.reserve, settings: i.settings, leaderPenalty: handicap.leaderTax, payoutFactor: v101PayoutFactorFor(i.world, successChance) }) }; // V10.1 (SECTION 20BB): the card quotes the pay curve the roll pays
   };
   // W4A (f3-06): on a points goal the best challenges are the ones that add the most points on average (dollars break ties).
   const byPoints = v99PointsGoal(i.settings);
@@ -190025,7 +190105,7 @@ export function v99BuildClassicChallengeCandidates(i: V99ChallengeCandidatesInpu
         categoryIndex: 5,
         categoryName: 'Challenge / Quest Execution',
         title: finale ? `Take the finale: ${challenge.name} — wager ${stakeText}` : `Take ${challenge.name} — wager ${stakeText}`,
-        description: `${challenge.type} challenge, difficulty ${challenge.difficulty}, pays ×${challenge.reward}: ${pct}% to win ${winText}${byPoints && !finale ? ` and ${pointsText}` : ''}; a loss costs the ${stakeText} wager.`,
+        description: `${challenge.type} challenge, difficulty ${challenge.difficulty}, ${v101PayLine(challenge.reward, quote.winReward, stake)}: ${pct}% to win ${winText}${byPoints && !finale ? ` and ${pointsText}` : ''}; a loss costs the ${stakeText} wager.`,
         actionType: 'challenge',
         apCost,
         costEstimate: stake,
@@ -190095,7 +190175,7 @@ export function v99IsRolledAction(actionType: unknown, parameters: unknown): boo
   return actionType === 'challenge_approach' || (actionType === 'challenge' && v99IsRecord(parameters) && parameters.resolveRoll === true);
 }
 
-export interface V99CanonicalChallengeResult { ok: boolean; reason: string | null; success: boolean; name: string; wager: number; reward: number; xpGain: number; successChance: number }
+export interface V99CanonicalChallengeResult { ok: boolean; reason: string | null; success: boolean; name: string; wager: number; reward: number; xpGain: number; successChance: number; fatigueAfter?: number /* V10.1 (SECTION 20BB): the actor's fatigue after this attempt (a V10.1 match only) */ }
 
 /**
  * The challenge-relevant part of the engine's state. The engine's working copy keeps only the slices it knows, so the
@@ -190116,7 +190196,7 @@ export function v99ChallengeWorldOf(workingState: unknown, startedFrom?: unknown
   if (v99IsRecord(priceSource)) Object.keys(priceSource).forEach(k => { const v: unknown = priceSource[k]; if (typeof v === 'number') resourcePrices[k] = v; });
   const rival = first('aiPlayer', v99IsRecord);
   return {
-    world: { weather: text('weather'), season: text('season'), selectedMode: text('selectedMode'), activeEvents: first('activeEvents', Array.isArray), day: v99Finite(first('day', x => typeof x === 'number'), 1), resourcePrices },
+    world: { weather: text('weather'), season: text('season'), selectedMode: text('selectedMode'), activeEvents: first('activeEvents', Array.isArray), day: v99Finite(first('day', x => typeof x === 'number'), 1), resourcePrices, rulesVersion: sanitizeRulesVersion(first('rulesVersion', x => typeof x === 'number')) ?? undefined }, // V10.1 (SECTION 20BB): the match's rules stamp
     rival: v99IsRecord(rival) ? rival : null
   };
 }
@@ -190137,20 +190217,23 @@ export function v99ResolveCanonicalChallenge(actor: V99ChallengeActorView, param
   const handicap = v99HumanSellHandicap(world, actor, rival, settings);
   const successChance = v99ClassicChallengeChance(challenge, actor, world, settings, handicap);
   const success = draw() < successChance;
-  return { ok: true, reason: null, success, name, wager, reward: success ? v99ChallengeWinReward(challenge, actor, wager, handicap.leaderTax) : 0, xpGain: success ? v99Finite(challenge.difficulty, 1) * 20 : 0, successChance };
+  // V10.1 (SECTION 20BB): in a V10.1 match the win pays the pay curve for these odds and every attempt tires the actor a little (as the player's own roll does).
+  const fatigueAfter = isV101Match(world) ? v101FatigueAfterChallenge(actor.overrideFatigue) : undefined;
+  return { ok: true, reason: null, success, name, wager, reward: success ? v99ChallengeWinReward(challenge, actor, wager, handicap.leaderTax, v101PayoutFactorFor(world, successChance)) : 0, xpGain: success ? v99Finite(challenge.difficulty, 1) * 20 : 0, successChance, ...(fatigueAfter !== undefined ? { fatigueAfter } : {}) };
 }
 
 /** The actor fields a rolled challenge changes (what the player's own roll changes: cash, streak, experience, completion, mastery). */
 export function v99ChallengeActorUpdate(actor: V99ChallengeActorView, result: V99CanonicalChallengeResult): Record<string, unknown> {
   const money = v99Finite(actor.money, 0);
-  if (!result.success) return { money: Math.max(0, money - result.wager), consecutiveWins: 0 };
+  if (!result.success) return { money: Math.max(0, money - result.wager), consecutiveWins: 0, ...(result.fatigueAfter !== undefined ? { overrideFatigue: result.fatigueAfter } : {}) };
   const completed = v99Strings(actor.challengesCompleted);
   const season = v99Strings(actor.completedThisSeason);
   const mastery: Record<string, unknown> = v99IsRecord(actor.challengeMastery) ? actor.challengeMastery : {};
   return {
     money: money + result.reward, xp: v99Finite(actor.xp, 0) + result.xpGain, consecutiveWins: v99Finite(actor.consecutiveWins, 0) + 1,
     challengesCompleted: [...completed, result.name], completedThisSeason: season.includes(result.name) ? season : [...season, result.name],
-    challengeMastery: { ...mastery, [result.name]: v99Finite(mastery[result.name], 0) + 1 }
+    challengeMastery: { ...mastery, [result.name]: v99Finite(mastery[result.name], 0) + 1 },
+    ...(result.fatigueAfter !== undefined ? { overrideFatigue: result.fatigueAfter } : {}) // V10.1 (SECTION 20BB)
   };
 }
 
@@ -200694,14 +200777,22 @@ export function v99SaleNotice(resource: string, quote: V99BulkSaleQuote, notes: 
   return `Sold ${quote.units} × ${resource} for ${fmtMoney(quote.total)}${tail}`;
 }
 
-export interface V99PurchaseQuote { unitBase: number; unitPrice: number; tariffPercent: number; quantity: number; total: number }
+export interface V99PurchaseQuote {
+  unitBase: number; unitPrice: number; tariffPercent: number; quantity: number; total: number;
+  /** V10.1 (SECTION 20BB): the price of the last unit (units get dearer as they are bought) — absent in an older match, where every unit costs the same. */
+  lastUnitPrice?: number;
+}
 
 /**
  * What a Resource Market purchase costs — v99MarketBuyUnitPrice, the sum buyResourceFromMarket charges, for the
  * quantity asked. V9.8 printed the price without the regional tariff and then refused the purchase for lack of money.
  */
-export function v99QuoteResourcePurchase(resource: string, rawQuantity: number, actorId: string, region: string, tariffState: unknown): V99PurchaseQuote {
+export function v99QuoteResourcePurchase(resource: string, rawQuantity: number, actorId: string, region: string, tariffState: unknown, options?: V101StateQuoteOptions): V99PurchaseQuote {
   const quantity = Math.max(1, Math.floor(Number(rawQuantity) || 0));
+  if (isV101Match(tariffState)) { // V10.1 (SECTION 20BB): the quantity preview is the very quote the purchase charges
+    const q = v101QuotePurchaseFromState(resource, quantity, actorId, region, tariffState, options);
+    return { unitBase: getResourceMarketPrice(resource), unitPrice: q.first, tariffPercent: q.tariffPercent, quantity, total: q.total, lastUnitPrice: q.last };
+  }
   const unitBase = getResourceMarketPrice(resource);
   const unitPrice = v99MarketBuyUnitPrice(resource, actorId, region, tariffState);
   return { unitBase, unitPrice, tariffPercent: Math.round(calculateRegionalTariffRate(actorId, region, tariffState) * 100), quantity, total: unitPrice * quantity };
@@ -200709,6 +200800,9 @@ export function v99QuoteResourcePurchase(resource: string, rawQuantity: number, 
 
 /** "$132 each (incl. 10% tariff)" — or just the price when no tariff applies. */
 export function v99PurchasePriceLabel(quote: V99PurchaseQuote): string {
+  if (typeof quote.lastUnitPrice === 'number' && quote.lastUnitPrice > quote.unitPrice) { // V10.1 (SECTION 20BB): every unit bought makes the next one dearer
+    return `${fmtMoney(quote.unitPrice)} each rising to ${fmtMoney(quote.lastUnitPrice)}${quote.tariffPercent > 0 ? ` (incl. ${quote.tariffPercent}% tariff)` : ''}`;
+  }
   return quote.tariffPercent > 0 ? `${fmtMoney(quote.unitPrice)} each (incl. ${quote.tariffPercent}% tariff)` : `${fmtMoney(quote.unitPrice)} each`;
 }
 
@@ -208766,6 +208860,7 @@ export function v101RulesVersionForNewMatch(settings: { classicRulesV100?: unkno
 /** Optional match-state keys the V10.1 work packages add to gameState. A save written before V10.1 cannot carry them. */
 export const V101_ADDED_STATE_KEYS: readonly string[] = [
   // <<V101-KEYS ECON>>
+  'purchasePressure',
   //
   // <<V101-KEYS RIVAL>>
   //
@@ -208975,7 +209070,418 @@ export function runV101FoundationsSelfTests(): V9SelfTestResult[] {
 // SECTION 20BB: V10.1 ECONOMY & CHALLENGE BALANCE — NO ONE-BUTTON WINS, NO RISKLESS MARKET LOOP
 // ============================================================================
 // <<V101-SLOT ECON begin>>
-// (work package ECON: replace everything between the two markers; keep the markers and the exported suite function below.)
+// What a V10.1 review of the economy found (V10.1_DIAGNOSIS.md, tier 1 and tier 2):
+//  * Buying from the Resource Market cost the category's base price plus a flat tariff and never moved, while a sale paid
+//    the LIVE price times the region and season terms. One action buys up to 50 units and a sale is free, so a same-region
+//    "buy, then sell" round trip was a riskless, compounding money engine that beat every other line of play.
+//  * Every challenge on offer was worth taking: the best odds paid the same multiplier as the worst, and failure cost only
+//    the wager. One button ("Do It" on the Recommended Action) won a 29-day match from $1,000 to $132,856.
+//  * Several money screens told less than the truth (the challenge list showed "Reward: 1.8x" and no dollars, the Workshop
+//    showed a profit for recipes that lose money, "Bonus Resources +25%" and "Conserve Action Points" promised what nothing did).
+// Rule changes (market pricing, challenge odds ceiling and pay curve, challenge fatigue) are gated by isV101Match(gameState):
+// a match started before V10.1, and any match started with "Classic rules (V10.0)", plays exactly as before, move for move.
+// Honest text and the investment day factor apply to every match. The sections below are in that order.
+// Suite v101ec (runV101EconomySelfTests).
+
+// ---- 1. The Resource Market: a purchase is priced like the sale it competes with ------------------------------------------
+/** Each unit bought pushes the price of the next unit of that resource up by this share (1%), to V101_BUY_PRESSURE_CAP. */
+export const V101_BUY_PRESSURE_PER_UNIT = 0.01;
+/** The most the purchase pressure can add to a unit's price (+25%, the same size as the oversupply floor on the sale side). */
+export const V101_BUY_PRESSURE_CAP = 0.25;
+/** Purchase pressure fades like oversupply does: the market keeps 70% of it a day later (V99_SUPPLY_RECOVERY_KEEP). */
+export const V101_PRESSURE_KEEP = V99_SUPPLY_RECOVERY_KEEP;
+/** The most units of one resource the pressure map remembers (a sanity bound for saves: 50 per action, a few actions a day). */
+export const V101_PRESSURE_UNITS_MAX = 2000;
+
+function v101IsRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** gameState.purchasePressure as loaded from a save: only real resources with a positive whole number of units; null when it is not a map. */
+export function sanitizePurchasePressure(raw: unknown): Record<string, number> | null {
+  if (!v101IsRecord(raw)) return null;
+  const out: Record<string, number> = {};
+  Object.keys(raw).forEach(key => {
+    const value = raw[key];
+    if (!RESOURCE_CATEGORIES[key] || typeof value !== 'number' || !Number.isFinite(value)) return;
+    const units = Math.min(V101_PRESSURE_UNITS_MAX, Math.floor(value));
+    if (units > 0) out[key] = units;
+  });
+  return out;
+}
+
+/** The match's purchase pressure per resource (empty for a match that has none: an older match, or nothing bought yet). */
+export function readPurchasePressure(state: unknown): Record<string, number> {
+  const raw = v101IsRecord(state) ? state.purchasePressure : undefined;
+  return sanitizePurchasePressure(raw) || {};
+}
+
+/** The pressure a day later: 70% kept, whole units (v99DecaySupplyDemand's rule). Returns the same object when there is none. Draws no RNG. */
+export function v101DecayPurchasePressure(pressure: unknown): Record<string, number> {
+  return v99DecaySupplyDemand(pressure);
+}
+
+/** What a new day changes about the pressure: fades it, in a V10.1 match only. Empty when nothing changes (so an old match's state is untouched). */
+export function v101DayPressurePatch(state: unknown): { purchasePressure?: Record<string, number> } {
+  if (!isV101Match(state) || !v101IsRecord(state) || !v101IsRecord(state.purchasePressure)) return {};
+  const faded = v101DecayPurchasePressure(state.purchasePressure);
+  return faded !== state.purchasePressure ? { purchasePressure: faded } : {};
+}
+
+/** The same map after `units` more units of `resource` were bought. The old map is not changed. */
+export function v101AddPurchasePressure(pressure: unknown, resource: string, units: number): Record<string, number> {
+  const base = sanitizePurchasePressure(pressure) || {};
+  const added = Math.max(0, Math.floor(Number(units) || 0));
+  if (!RESOURCE_CATEGORIES[resource] || added <= 0) return base;
+  return { ...base, [resource]: Math.min(V101_PRESSURE_UNITS_MAX, (base[resource] || 0) + added) };
+}
+
+/** The price factor the pressure puts on a unit: 1 + 1% per unit, to +25%. */
+export function v101PressureFactor(units: number): number {
+  return 1 + Math.min(V101_BUY_PRESSURE_CAP, V101_BUY_PRESSURE_PER_UNIT * Math.max(0, Number(units) || 0));
+}
+
+export interface V101PurchaseQuoteInput {
+  resource: string;
+  /** The region the purchase is made in (the sale would be made in the same one). */
+  region: string;
+  quantity: number;
+  /** Today's list price (what the Sell Market lists); the base price when the market has none. */
+  listPrice: number;
+  /** The regional standing tariff (0.10 by default). */
+  tariffRate: number;
+  /** Units of this resource bought into the market and not yet forgotten. */
+  pressureUnits: number;
+  activeEvents?: unknown;
+  season?: string | null;
+  /** The buyer's regional reputation (only used with challenge approaches on, exactly as a sale uses the seller's). */
+  buyer?: V99AdviceActorView | null;
+  approachesEnabled?: boolean;
+}
+
+export interface V101PurchaseQuote {
+  quantity: number;
+  /** Price of each unit in order: every unit bought makes the next one 1% dearer (to +25%). */
+  unitPrices: number[];
+  total: number;
+  first: number;
+  last: number;
+  /** The price of one unit before the tariff and the pressure: max(base, list) x the region, event and season terms the sale uses. */
+  gross: number;
+  tariffPercent: number;
+}
+
+/**
+ * THE price of a Resource Market purchase in a V10.1 match; the Resource Market, the quantity preview, the recommendation
+ * card, the Workshop label and the rival's purchases all read it. Each unit costs
+ *   max(base, list price) x (the region, event and season terms a sale of the same item uses) x (1 + tariff) x (1 + pressure),
+ * where the pressure is 1% for every unit already bought (and not yet forgotten), this unit included, up to +25%. The
+ * terms are v99ComputeSellPrice's own, with no character, handicap or sabotage terms, so selling the same item in the
+ * same region right after buying it can never pay back the tariff and the spread, for any quantity. Pure: no RNG.
+ */
+export function v101QuoteMarketPurchase(i: V101PurchaseQuoteInput): V101PurchaseQuote {
+  const quantity = Math.max(1, Math.floor(Number(i.quantity) || 0));
+  const base = getResourceMarketPrice(i.resource) || 0;
+  const list = Number(i.listPrice) > 0 ? Number(i.listPrice) : base;
+  const buyer: V99AdviceActorView = { regionalReputation: i.buyer ? i.buyer.regionalReputation : undefined };
+  const gross = v99ComputeSellPrice({
+    resource: i.resource, listPrice: Math.max(base, list), region: String(i.region || ''), unitsAlreadySold: 0, activeEvents: i.activeEvents ?? null,
+    season: i.season, seller: buyer, isUnderdog: false, leaderTax: false, approachesEnabled: i.approachesEnabled === true, sabotageEnabled: false
+  }).finalPrice;
+  const tariff = Math.max(0, Number(i.tariffRate) || 0);
+  const pressure = Math.max(0, Math.floor(Number(i.pressureUnits) || 0));
+  const unitPrices: number[] = [];
+  for (let k = 0; k < quantity; k++) unitPrices.push(Math.round(gross * (1 + tariff) * v101PressureFactor(pressure + k + 1)));
+  return {
+    quantity, unitPrices, total: unitPrices.reduce((sum, price) => sum + price, 0), first: unitPrices[0], last: unitPrices[quantity - 1], gross,
+    tariffPercent: Math.round(tariff * 100)
+  };
+}
+
+export interface V101StateQuoteOptions {
+  buyer?: V99AdviceActorView | null;
+  approachesEnabled?: boolean;
+  /** Units bought in this same tick that the state does not show yet (several purchases before the next render). */
+  extraPressure?: number;
+}
+
+/** v101QuoteMarketPurchase fed from the match state (list prices, events, season, standing tariff, purchase pressure). */
+export function v101QuotePurchaseFromState(resource: string, quantity: number, actorId: string, region: string, state: unknown, options?: V101StateQuoteOptions): V101PurchaseQuote {
+  const s: Record<string, unknown> = v101IsRecord(state) ? state : {};
+  const prices = v101IsRecord(s.resourcePrices) ? (s.resourcePrices as Record<string, number>) : null;
+  return v101QuoteMarketPurchase({
+    resource, region, quantity, listPrice: v99MarketListPrice(resource, prices), tariffRate: calculateRegionalTariffRate(actorId, region, state),
+    pressureUnits: (readPurchasePressure(state)[resource] || 0) + Math.max(0, Math.floor(Number(options?.extraPressure) || 0)),
+    activeEvents: s.activeEvents, season: typeof s.season === 'string' ? s.season : null, buyer: options?.buyer, approachesEnabled: options?.approachesEnabled === true
+  });
+}
+
+/** What a purchase the canonical engine carries out costs in total, when the recommendation says so (parameters.v101TotalCost); else null (unit price x quantity, as before). */
+export function v101ExplicitPurchaseTotal(parameters: unknown): number | null {
+  const raw = v101IsRecord(parameters) ? parameters.v101TotalCost : undefined;
+  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? Math.round(raw) : null;
+}
+
+/** What a sale the canonical engine carries out pays in total, when the recommendation says so (parameters.v101TotalValue); else null (unit price x units, as before). */
+export function v101ExplicitSaleTotal(parameters: unknown): number | null {
+  const raw = v101IsRecord(parameters) ? parameters.v101TotalValue : undefined;
+  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? Math.round(raw) : null;
+}
+
+/**
+ * A recommended purchase (parameters.countsAsMarketPurchase) adds to the market's purchase pressure when the canonical
+ * engine carries it out, exactly as buying by hand does. Written onto the engine's result from the state the action started from.
+ */
+export function v101RecordCanonicalMarketPurchase(liveState: unknown, nextState: unknown, item: unknown, units: number, parameters: unknown): void {
+  if (!v101IsRecord(parameters) || parameters.countsAsMarketPurchase !== true || typeof item !== 'string' || !(units > 0) || !v101IsRecord(nextState)) return;
+  nextState.purchasePressure = v101AddPurchasePressure(v101IsRecord(liveState) ? liveState.purchasePressure : undefined, item, units);
+}
+
+export interface V101TradePick { resource: string; quantity: number; buyTotal: number; buyFirst: number; saleTotal: number; saleFirst: number; profit: number }
+
+/**
+ * The best purchase to resell in the same region: the item AND the quantity together, the one with the most profit
+ * (what the units sell for one by one, minus what they cost one by one), within `maxUnits` and the cash. The quotes are
+ * the ones the Resource Market charges and the Sell Market pays, so the card's numbers are the numbers the market gives.
+ * The first of equal profits wins (resources are tried in the given order), the smaller quantity on a tie. null when nothing earns money.
+ */
+export function v101ChooseTradeBuy(i: { resources: readonly string[]; maxUnits: number; cash: number; buyQuote: (resource: string, quantity: number) => V101PurchaseQuote; saleQuote: (resource: string, quantity: number) => V99BulkSaleQuote }): V101TradePick | null {
+  const cap = Math.max(0, Math.min(MAX_INVENTORY, Math.floor(Number(i.maxUnits) || 0)));
+  if (cap < 1) return null;
+  let best: V101TradePick | null = null;
+  for (const resource of i.resources) {
+    const buy = i.buyQuote(resource, cap);
+    const sale = i.saleQuote(resource, cap);
+    let cost = 0; let revenue = 0;
+    for (let q = 1; q <= cap; q++) {
+      cost += buy.unitPrices[q - 1];
+      revenue += sale.unitPrices[q - 1] || 0;
+      if (cost > i.cash) break;
+      const profit = revenue - cost;
+      if (profit > 0 && (!best || profit > best.profit)) best = { resource, quantity: q, buyTotal: cost, buyFirst: buy.unitPrices[0], saleTotal: revenue, saleFirst: sale.unitPrices[0] || 0, profit };
+    }
+  }
+  return best;
+}
+
+/** What the sale of `count` units of an item would pay the human here and now (the sale price, the Sell Market's own). */
+export function v101MakeBulkSaleQuoter(actor: V99AdviceActorView, world: V99AdviceWorldView | null | undefined, settings: V99AdviceSettingsView | null | undefined, rival: V99AdviceActorView | null | undefined): (resource: string, count: number) => V99BulkSaleQuote {
+  const handicap = v99HumanSellHandicap(world, actor, rival, settings);
+  const region = String(actor.currentRegion || '');
+  return (resource: string, count: number) => v99QuoteBulkSale({
+    resource, listPrice: v99MarketListPrice(resource, world ? world.resourcePrices : null), region,
+    unitsAlreadySold: Number(world && world.supplyDemand ? world.supplyDemand[resource] : 0) || 0,
+    activeEvents: world ? world.activeEvents : null, season: world ? world.season : null, seller: actor,
+    isUnderdog: handicap.isUnderdog, leaderTax: handicap.leaderTax,
+    approachesEnabled: Boolean(settings && settings.challengeApproachesEnabled === true), sabotageEnabled: Boolean(settings && settings.sabotageEnabled)
+  }, count);
+}
+
+/** What `quantity` units of a resource would cost an actor: the V10.1 quote in a V10.1 match, else base price x quantity (the figure the AI's planning has always used). */
+export function v101PurchaseCostEstimate(state: unknown, actorId: string, region: string, resource: string, quantity: number): number {
+  const units = Math.max(1, Math.floor(Number(quantity) || 0));
+  return isV101Match(state) ? v101QuotePurchaseFromState(resource, units, actorId, region, state).total : getResourceMarketPrice(resource) * units;
+}
+
+/** The line under the Resource Market's cost in a V10.1 match: how the price moves. */
+export const V101_MARKET_PRESSURE_NOTE = "Prices follow today's market, this region and the season. Every unit you buy makes the next one 1% dearer (up to +25%); that fades over a few days. Selling the same goods straight back here loses the tariff and the spread.";
+
+
+// ---- 2. Challenges: a decision, not a free button ------------------------------------------------------------------------
+// The skeptic's constraints: no per-region diminishing returns (a challenge can be won once per season already) and no
+// wager cap tied to level (that would raise the $500 cap). What changes, in a V10.1 match only:
+//  (a) the odds ceiling is 85%, not 95% (the Tourist at level 5 sat on 95% for everything);
+//  (b) the pay multiplier falls as the odds rise (a risk-reward curve): the long shots keep their full multiplier, a sure
+//      thing pays less, so 90% odds no longer also pay 2.4x;
+//  (c) every challenge attempted tires the actor a little (the existing override-fatigue plumbing of the odds formula:
+//      -3% odds per attempt, to -15%, halved each night), so the same button pressed three times in a turn is worse each time.
+/** The most a challenge's chance of winning can be in a V10.1 match (V10.0: 95%). */
+export const V101_ODDS_CEILING = 0.85;
+/** Below these odds a challenge pays its full multiplier; above, the pay falls V101_PAYOUT_SLOPE per point of odds, to V101_PAYOUT_FLOOR. */
+export const V101_PAYOUT_KNEE = 0.5;
+export const V101_PAYOUT_SLOPE = 1.4;
+export const V101_PAYOUT_FLOOR = 0.45;
+/** Each challenge attempted adds this to the actor's fatigue (it lowers every later challenge's odds by the same amount), to V101_FATIGUE_MAX. */
+export const V101_FATIGUE_PER_CHALLENGE = 0.03;
+export const V101_FATIGUE_MAX = 0.15;
+
+/** The odds ceiling for the match: 85% in a V10.1 match, undefined (the formula's own 95%) in any other. */
+export function v101OddsCeilingFor(state: unknown): number | undefined {
+  return isV101Match(state) ? V101_ODDS_CEILING : undefined;
+}
+
+/** The share of a challenge's multiplier a win pays at these odds: 1 up to 50%, then falling to 0.45 (at 89%+). Pure. */
+export function v101ChallengePayoutFactor(successChance: number): number {
+  const p = Math.max(0, Math.min(1, Number(successChance) || 0));
+  if (p <= V101_PAYOUT_KNEE) return 1;
+  return Math.max(V101_PAYOUT_FLOOR, 1 - (p - V101_PAYOUT_KNEE) * V101_PAYOUT_SLOPE);
+}
+
+/** The pay factor for the match: 1 outside a V10.1 match (so the payout is the multiplier, as before), the curve inside one. `successChance` is the odds shown for the challenge (before any one-off ability). */
+export function v101PayoutFactorFor(state: unknown, successChance: number): number {
+  return isV101Match(state) ? v101ChallengePayoutFactor(successChance) : 1;
+}
+
+/** The actor's fatigue after one more challenge attempt: +3%, to 15% (a fatigue already above 15% from overrides is left alone). */
+export function v101FatigueAfterChallenge(current: unknown): number {
+  const now = Number.isFinite(Number(current)) ? Math.max(0, Number(current)) : 0;
+  return now >= V101_FATIGUE_MAX ? now : Math.min(V101_FATIGUE_MAX, now + V101_FATIGUE_PER_CHALLENGE);
+}
+
+/** The fatigue an attempt leaves behind: unchanged outside a V10.1 match. */
+export function v101FatigueForMatch(state: unknown, current: unknown): number {
+  const now = Number.isFinite(Number(current)) ? Math.max(0, Number(current)) : 0;
+  return isV101Match(state) ? v101FatigueAfterChallenge(now) : now;
+}
+
+/** What one challenge is worth to the player at a wager: the dollars the list shows (the same numbers as the Recommended Action's card). */
+export interface V101ChallengeTruth {
+  /** Odds as shown (whole percent). */
+  chancePct: number;
+  wager: number;
+  /** What a win pays: v99ChallengeWinReward, the Co-Pilot card's function. */
+  win: number;
+  /** What a loss costs: the wager. */
+  lose: number;
+  /** chance x win - (1 - chance) x wager, whole dollars. */
+  average: number;
+  baseMultiplier: number;
+  /** What a win really pays per dollar wagered (win / wager, one decimal place). */
+  effectiveMultiplier: number;
+  /** Plain-language reasons the win differs from the base multiplier ("Tourist +20%"). */
+  notes: string[];
+}
+
+/**
+ * The list's numbers for one challenge: dollars won and lost at the wager, from the same functions the recommendation uses
+ * (v99ChallengeWinReward with the live odds). `payoutFactor` is 1 outside a V10.1 match.
+ */
+export function v101ChallengeTruth(i: { challenge: V99ChallengeOffer; actor: V99ChallengeActorView; successChance: number; wager: number; leaderPenalty: boolean; payoutFactor?: number }): V101ChallengeTruth {
+  const wager = Math.max(0, Math.floor(Number(i.wager) || 0));
+  const p = Math.max(0, Math.min(1, Number(i.successChance) || 0));
+  const factor = Number.isFinite(i.payoutFactor) && (i.payoutFactor as number) > 0 ? (i.payoutFactor as number) : 1;
+  const win = v99ChallengeWinReward(i.challenge, i.actor, wager, i.leaderPenalty, factor);
+  const mastery = v101IsRecord(i.actor.challengeMastery) ? Number(i.actor.challengeMastery[i.challenge.name]) || 0 : 0;
+  const parts = computeChallengeRewardCore({
+    wager, rewardMultiplier: Number(i.challenge.reward) || 1, characterName: i.actor.character ? i.actor.character.name : null, leaderPenalty: i.leaderPenalty,
+    luckyStreak: Array.isArray(i.actor.masteryUnlocks) && i.actor.masteryUnlocks.includes('Lucky Streak'), consecutiveWins: Number(i.actor.consecutiveWins) || 0, masteryCount: mastery + 1, payoutFactor: factor
+  });
+  const notes: string[] = [];
+  const character = i.actor.character ? i.actor.character.name : null;
+  if (character === 'Tourist') notes.push('Tourist +20%');
+  if (character === 'Businessman') notes.push('Businessman +10%');
+  if (i.leaderPenalty) notes.push('leading by a lot -10%');
+  if (parts.luckyStreakBonus > 0) notes.push(`Lucky Streak +${Math.round(parts.luckyStreakBonus * 100)}%`);
+  if (parts.streakBonus > 0) notes.push(`win streak +${Math.round(parts.streakBonus * 100)}%`);
+  if (parts.masteryBonus > 0) notes.push(`${parts.masteryLabel || 'mastery'} +${Math.round(parts.masteryBonus * 100)}%`);
+  if (factor < 1) notes.push(`pay trimmed ${Math.round((1 - factor) * 100)}% for ${Math.round(p * 100)}% odds`);
+  return {
+    chancePct: Math.round(p * 100), wager, win, lose: wager, average: Math.round(p * win - (1 - p) * wager), baseMultiplier: Number(i.challenge.reward) || 1,
+    effectiveMultiplier: wager > 0 ? Math.round((win / wager) * 10) / 10 : Number(i.challenge.reward) || 1, notes
+  };
+}
+
+/** "Win +$1,920 (x3.8 with Tourist +20%) · Lose -$500 · on average +$410 at 74%" — the one line the challenge list prints under the wager. */
+export function v101ChallengeTruthText(t: V101ChallengeTruth): string {
+  const avg = `${t.average >= 0 ? '+' : '-'}${fmtMoney(Math.abs(t.average))}`;
+  const how = t.notes.length > 0 ? ` (x${t.effectiveMultiplier} with ${t.notes.join(', ')})` : ` (x${t.effectiveMultiplier})`;
+  return `Win +${fmtMoney(t.win)}${how} · Lose -${fmtMoney(t.lose)} · on average ${avg} at ${t.chancePct}%`;
+}
+
+/** The challenge list's money line (every match). Stateless. */
+export function V101ChallengeTruthLine({ truth, className }: { truth: V101ChallengeTruth; className?: string }): React.ReactElement {
+  return (
+    <div className={className || 'text-xs opacity-90'} data-testid="v101-challenge-truth" aria-live="polite">
+      {v101ChallengeTruthText(truth)}
+    </div>
+  );
+}
+
+/** The pay phrase of a challenge card: the base multiplier, and what a win really pays per dollar when that differs ("base ×2, ×2.4 for you"). */
+export function v101PayLine(baseMultiplier: number, win: number, stake: number): string {
+  const base = Number(baseMultiplier) || 1;
+  const effective = stake > 0 ? Math.round((win / stake) * 10) / 10 : base;
+  return Math.abs(effective - Math.round(base * 10) / 10) < 0.05 ? `pays ×${base}` : `base ×${base}, ×${effective} for you`;
+}
+
+
+// ---- 3. Screens that tell the truth about money (every match) ---------------------------------------------------------------
+/** What a craft really earns on average: what it sells for, less what its materials cost to buy and the share of crafts that fail (the materials are lost). */
+export interface V101CraftEconomics {
+  /** The reference sale value of the output (what the Workshop has always shown). */
+  sells: number;
+  /** What the materials cost to buy in the Resource Market, tariff included, at the quoted prices. */
+  materials: number;
+  /** Chance a craft succeeds (90% for most characters). */
+  successChance: number;
+  /** successChance x sells - materials: the average result of one craft from bought materials. */
+  average: number;
+  /** True when the average is below zero. */
+  losesMoney: boolean;
+}
+
+/**
+ * The Workshop's honest numbers for a recipe. `materialCost(resource, count)` is what `count` units of an input cost
+ * in the Resource Market for this match (v101QuoteMarketPurchase in a V10.1 match, base price plus the tariff in an older one).
+ */
+export function v101CraftEconomics(recipe: { output: string; inputs: object }, materialCost: (resource: string, count: number) => number, successChance: number = 0.9): V101CraftEconomics {
+  const sells = v99ResourceBasePrice(recipe.output);
+  const materials = Object.entries(recipe.inputs).reduce((sum, [input, count]) => sum + materialCost(input, Math.max(1, Math.floor(Number(count) || 0))), 0);
+  const chance = Math.max(0, Math.min(1, Number(successChance) || 0));
+  const average = Math.round(chance * sells - materials);
+  return { sells, materials, successChance: chance, average, losesMoney: average < 0 };
+}
+
+/** The Workshop's value line: "Sells for about $700; the materials cost about $660 to buy (tariff included), and 1 craft in 10 fails and loses them: on average -$30 a craft." */
+export function v101WorkshopValueText(e: V101CraftEconomics): string {
+  const failing = Math.round((1 - e.successChance) * 100);
+  const avg = `${e.average >= 0 ? '+' : '-'}${fmtMoney(Math.abs(e.average))}`;
+  return `Sells for about ${fmtMoney(e.sells)}. Materials cost about ${fmtMoney(e.materials)} to buy (tariff included); ${failing}% of crafts fail and lose them. On average ${avg} a craft${e.losesMoney ? ' - a loss' : ''}.`;
+}
+
+/**
+ * The materials' price for the Workshop label: the V10.1 purchase quote in a V10.1 match; in an older match the base
+ * price plus the standing tariff, which is what the Resource Market charges there.
+ */
+export function v101MaterialCostFor(state: unknown, actorId: string, region: string, options?: V101StateQuoteOptions): (resource: string, count: number) => number {
+  return (resource: string, count: number) => {
+    if (!RESOURCE_CATEGORIES[resource]) return Math.round(getResourceMarketPrice(resource) || 0) * count;
+    if (isV101Match(state)) return v101QuotePurchaseFromState(resource, count, actorId, region, state, options).total;
+    return Math.round(getResourceMarketPrice(resource) * (1 + calculateRegionalTariffRate(actorId, region, state))) * count;
+  };
+}
+
+/** "Conserve Action Points": the actions left over at the end of a turn do NOT carry into the next one, and this says so. */
+export const V101_PASS_TURN_TITLE = 'Pass the Rest of Your Actions';
+export const V101_PASS_TURN_DESCRIPTION = 'End your turn without using the actions you have left. Unused actions do not carry over: every turn starts with its full number again.';
+export const V101_PASS_TURN_OUTCOME = 'Your turn ends; the unused actions are lost (there is no rollover)';
+
+/** The Spring/Summer/Autumn/Winter tooltip's income line: the season's yield bonus is real only for investment income, so it is shown only when investments are on. */
+export function v101SeasonInvestmentLine(season: string, investmentsEnabled: boolean): string | null {
+  if (!investmentsEnabled) return null;
+  const bonus = Number(SEASON_EFFECTS[season]?.bonusResourceChance) || 0;
+  return `Investment income: ${bonus >= 0 ? '+' : '-'}${Math.round(Math.abs(bonus) * 100)}%`;
+}
+
+/** The regional standing panel's yield cell: standing sets travel costs and the tariff, never the yields (nothing reads the old "Yields: 125%" figure). */
+export const V101_STANDING_YIELD_TEXT = 'Yields: unchanged';
+
+/**
+ * The turn number the nightly investment payout uses, so the quote on screen is the money that arrives. A two-player
+ * match pays with the day the night ends into (day + 1); a team match with the turn counter + 1. The quotes used the turn
+ * counter in every mode, which a two-player match advances on every actor switch (up to 11% more than was paid by day 28).
+ */
+export function investmentPayoutTurn(state: { day?: unknown; turnCounter?: unknown; selectedMode?: unknown } | null | undefined): number {
+  const day = Math.max(1, Math.floor(Number(state?.day) || 1));
+  const counter = Math.floor(Number(state?.turnCounter) || 0);
+  return isTeamModeSelection(typeof state?.selectedMode === 'string' ? state.selectedMode : null) ? (counter > 0 ? counter : day) + 1 : day + 1;
+}
+
+/** The turn the AI's investment ROI projects from: the honest payout turn in a V10.1 match, the old turn counter in an older one (its choices must not change). */
+export function v101AiInvestmentTurn(state: { day?: unknown; turnCounter?: unknown; selectedMode?: unknown; rulesVersion?: unknown } | null | undefined): number {
+  return isV101Match(state) ? investmentPayoutTurn(state) : (Number(state?.turnCounter) || Number(state?.day) || 1);
+}
+
 export function runV101EconomySelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   return results;
@@ -209906,6 +210412,18 @@ function AustraliaGame() {
   takeoverSessionLiveRef.current = Boolean(takeoverSession && !isCoPilotManuallyStopped(takeoverSession));
   const gameStateLiveRef = useRef(gameState);
   gameStateLiveRef.current = gameState;
+  // V10.1 (SECTION 20BB): units bought in this tick that the state does not show yet (the AI buys several things in one action); forgotten when the state's purchase pressure changes.
+  const v101PressureOverlayRef = useRef<{ base: unknown; extra: Record<string, number> }>({ base: undefined, extra: {} });
+  const v101PendingPressure = (resource: string): number => {
+    const overlay = v101PressureOverlayRef.current;
+    if (overlay.base !== gameStateLiveRef.current.purchasePressure) { overlay.base = gameStateLiveRef.current.purchasePressure; overlay.extra = {}; }
+    return overlay.extra[resource] || 0;
+  };
+  const v101NotePendingPressure = (resource: string, units: number) => {
+    v101PendingPressure(resource);
+    const overlay = v101PressureOverlayRef.current;
+    overlay.extra[resource] = (overlay.extra[resource] || 0) + units;
+  };
   // V9.6 human lockout: while the solo rival owns the turn, human-actor gameplay handlers do nothing (AI actors,
   // team modes, inspection and settings are unaffected). Reads the live canonical turn, never a stale closure.
   const v96HumanLockedOut = (actorId: string = 'player'): boolean => {
@@ -215253,7 +215771,7 @@ function dispatchGameSettingsChange(
         const totalUnits = purchases.reduce((sum: number, entry: any) => sum + Math.max(1, Math.floor(Number(entry?.quantity) || 0)), 0);
         const totalCost = purchases.reduce((sum: number, entry: any) => {
           if (!entry || typeof entry.resource !== 'string' || !RESOURCE_CATEGORIES[entry.resource]) return Infinity;
-          return sum + (getResourceMarketPrice(entry.resource) * Math.max(1, Math.floor(Number(entry.quantity) || 0)));
+          return sum + v101PurchaseCostEstimate(gameState, String(actor.id || 'ai'), String(actor.currentRegion || 'NSW'), entry.resource, Math.max(1, Math.floor(Number(entry.quantity) || 0))); // V10.1 (SECTION 20BB): the V10.1 quote in a V10.1 match (the base price x quantity otherwise, as before)
         }, 0);
         return isFinite(totalCost) && actor.money >= totalCost && (actor.inventory || []).length + totalUnits <= MAX_INVENTORY;
       }
@@ -215603,14 +216121,14 @@ function dispatchGameSettingsChange(
     // V9.6 (SECTION 20AH): the modifier sum without the stat/difficulty/level terms (approach odds add their own).
     if (mode === 'situational') return weatherEffect + seasonEffect + eventBonus + underdogBonus - leaderPenalty - fatiguePenalty - sabotagePenalty + abilityBonus + equipmentBonus + autoModeDiceBonus;
     return Math.min(
-      0.98,
+      isV101Match(gameState) ? Math.min(0.98, V101_ODDS_CEILING + Math.max(0, abilityBonus)) : 0.98, // V10.1 (SECTION 20BB): the rival plays under the same 85% ceiling (a one-off ability still adds to it)
       Math.max(
         0.1,
         baseChance + statBonus - difficultyPenalty + characterBonus + levelBonus +
           weatherEffect + seasonEffect + eventBonus + underdogBonus - leaderPenalty - fatiguePenalty - sabotagePenalty + abilityBonus + equipmentBonus + autoModeDiceBonus
       )
     );
-  }, [gameSettings.aiUsesMarketModifiers, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.weather, gameState.season, gameState.activeEvents, getUnderdogBonus, getWealthState]);
+  }, [gameSettings.aiUsesMarketModifiers, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.weather, gameState.season, gameState.activeEvents, gameState.rulesVersion, getUnderdogBonus, getWealthState]);
 
   const calculateAiTravelCost = useCallback((fromRegion: any,toRegion: any,aiState: any) => {
     let weatherModifier = 1.0;
@@ -215909,7 +216427,7 @@ function dispatchGameSettingsChange(
         if (missingCount > 0) {
           missing.push({ resource, quantity: missingCount });
           totalMissingUnits += missingCount;
-          totalCost += getResourceMarketPrice(resource) * missingCount;
+          totalCost += v101PurchaseCostEstimate(gameState, String(aiState.id || 'ai'), String(aiState.currentRegion || 'NSW'), resource, missingCount); // V10.1 (SECTION 20BB): what the rival would really pay
         }
       });
 
@@ -216017,7 +216535,7 @@ function dispatchGameSettingsChange(
     if (investSpendable - investment.cost < requiredSafetyBuffer) {
       return { region: regionCode, score: -Infinity };
     }
-    const currentTurn = gameState.turnCounter || gameState.day || 1;
+    const currentTurn = v101AiInvestmentTurn(gameState); // V10.1 (SECTION 20BB): the rival projects from the turn the payout uses (an older match keeps its old projection)
     let projectedTotalYield = 0;
     for (let d = 0; d < daysRemaining; d++) {
       projectedTotalYield += getActorScaledInvestmentReturn(
@@ -217263,7 +217781,7 @@ function dispatchGameSettingsChange(
 	            }
 	            const quantity = Math.max(1, Math.floor(Number(entry.quantity) || 0));
 	            totalUnits += quantity;
-	            totalCost += getResourceMarketPrice(entry.resource) * quantity;
+	            totalCost += v101PurchaseCostEstimate(gameState, String(currentAi.id || 'ai'), String(currentAi.currentRegion || 'NSW'), entry.resource, quantity); // V10.1 (SECTION 20BB): what the rival would really pay
 	          }
 
 	          if (currentAi.money - totalCost < AI_SAFETY_BUFFER) return false;
@@ -217344,7 +217862,8 @@ function dispatchGameSettingsChange(
         emitGameFeel({ kind: 'challenge', actor: 'ai', success, odds: Math.min(1, successChance), label: String(challenge?.name || 'Challenge') });
 
         if (success) {
-          let reward = Math.floor(wager * (wp2Plan ? wp2Plan.rewardMultiplier : challenge.reward));
+          // V10.1 (SECTION 20BB): the rival is paid by the same pay curve as the player in a V10.1 match (its own odds; an approach plan keeps its multiplier).
+          let reward = Math.floor(wager * (wp2Plan ? wp2Plan.rewardMultiplier : challenge.reward) * (wp2Plan ? 1 : v101PayoutFactorFor(gameState, successChance)));
 
           if (currentAi.character.name === "Tourist") {
             reward = Math.floor(reward * 1.2);
@@ -217445,6 +217964,7 @@ function dispatchGameSettingsChange(
               : [...prev.completedThisSeason, challenge.name],
             challengeMastery: { ...prev.challengeMastery, [challenge.name]: masteryCount },
             consecutiveWins: prev.consecutiveWins + 1,
+            ...(isV101Match(gameState) ? { overrideFatigue: v101FatigueAfterChallenge(prev.overrideFatigue) } : {}), // V10.1 (SECTION 20BB): every attempt tires the rival too
             ...levelUpData
           }));
           dispatchGameState({
@@ -217500,7 +218020,8 @@ function dispatchGameSettingsChange(
           updateAiPlayerState((prev: any) => ({
             ...prev,
             money: deductMoney(prev.money, wp2Plan ? wp2Plan.failureLoss : wager),
-            consecutiveWins: 0
+            consecutiveWins: 0,
+            ...(isV101Match(gameState) ? { overrideFatigue: v101FatigueAfterChallenge(prev.overrideFatigue) } : {}) // V10.1 (SECTION 20BB): every attempt tires the rival too
           }));
 
           addNotification(
@@ -217758,8 +218279,16 @@ function dispatchGameSettingsChange(
 
 	        const boughtItems: string[] = [];
 	        let totalCost = 0;
+	        const v101RivalBuys = isV101Match(gameState); // V10.1 (SECTION 20BB): the rival pays the Resource Market's V10.1 price (live price, region and season, tariff, purchase pressure) and adds to the pressure, as the player does
+	        const v101PressureNow: Record<string, number> = {};
 	        normalized.forEach((entry: any) => {
-	          totalCost += getResourceMarketPrice(entry.resource) * entry.quantity;
+	          if (v101RivalBuys) {
+	            totalCost += v101QuotePurchaseFromState(entry.resource, entry.quantity, String(currentAi.id || 'ai'), String(currentAi.currentRegion || 'NSW'), gameState, { buyer: currentAi, extraPressure: v101PressureNow[entry.resource] || 0 }).total;
+	            v101PressureNow[entry.resource] = (v101PressureNow[entry.resource] || 0) + entry.quantity;
+	            dispatchGameState({ type: 'UPDATE_PURCHASE_PRESSURE', payload: { resource: entry.resource, amount: entry.quantity } });
+	          } else {
+	            totalCost += getResourceMarketPrice(entry.resource) * entry.quantity;
+	          }
 	          for (let i = 0; i < entry.quantity; i += 1) {
 	            boughtItems.push(entry.resource);
 	          }
@@ -219788,6 +220317,7 @@ function dispatchGameSettingsChange(
 	      // V10.0 (SECTIONS 20AY/20AZ): explicit, so the previous match's rules stamp and races cannot survive the LOAD_STATE merge.
 	      rulesVersion: readRulesVersion(data.gameState) ?? undefined,
 	      rivalRaces: sanitizeRivalRacesState((data.gameState as { rivalRaces?: unknown }).rivalRaces) ?? undefined,
+	      purchasePressure: sanitizePurchasePressure((data.gameState as { purchasePressure?: unknown }).purchasePressure) ?? undefined, // V10.1 (SECTION 20BB): explicit, so the previous match's purchase pressure cannot survive the LOAD_STATE merge
 	      adaptiveAiPhase: data.gameState.adaptiveAiPhase || 'normal',
 	      adaptiveAiDaysTriggered: data.gameState.adaptiveAiDaysTriggered ?? 0,
 	      playerDominanceDays: data.gameState.playerDominanceDays ?? 0,
@@ -220360,8 +220890,8 @@ function dispatchGameSettingsChange(
     void baseChance; void statBonus; void difficultyPenalty; void characterBonus; void levelBonus;
     // V9.6 (SECTION 20AH): the modifier sum without the stat/difficulty/level terms (approach odds add their own).
     if (mode === 'situational') return weatherEffect + seasonEffect + eventBonus + equipmentBonus + underdogBonus - leaderPenalty - fatiguePenalty - sabotagePenalty;
-    return computeChallengeSuccessChanceCore({ difficulty: challenge.difficulty, type: challenge.type, stats: playerStats, characterName: player?.character?.name, level: player.level, weatherEffect, seasonEffect, eventBonus, equipmentBonus, underdogBonus, leaderPenalty, fatiguePenalty, sabotagePenalty });
-  }, [player.stats, player.character, player.level, player.currentRegion, player.overrideFatigue, player.equipment, player.debuffs, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.weather, gameState.season, gameState.activeEvents, getUnderdogBonus, getWealthState]);
+    return computeChallengeSuccessChanceCore({ difficulty: challenge.difficulty, type: challenge.type, stats: playerStats, characterName: player?.character?.name, level: player.level, weatherEffect, seasonEffect, eventBonus, equipmentBonus, underdogBonus, leaderPenalty, fatiguePenalty, sabotagePenalty, oddsCeiling: v101OddsCeilingFor(gameState) }); // V10.1 (SECTION 20BB): 85% in a V10.1 match
+  }, [player.stats, player.character, player.level, player.currentRegion, player.overrideFatigue, player.equipment, player.debuffs, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.weather, gameState.season, gameState.activeEvents, gameState.rulesVersion, getUnderdogBonus, getWealthState]);
 
   const getInventoryValue = useMemo(() => {
     return calculateInventoryMarketValue(player.inventory, gameState.resourcePrices);
@@ -221494,8 +222024,8 @@ function dispatchGameSettingsChange(
       guaranteeSuccess = true;
     }
     if (guaranteeSuccess) return 1;
-    return Math.min(0.97, Math.max(0.1, baseChance + statBonus - difficultyPenalty + characterBonus + levelBonus + weatherEffect + seasonEffect + eventBonus + equipmentBonus - fatiguePenalty - sabotagePenalty + abilityBonus));
-  }, [gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.activeEvents, gameState.season, gameState.weather]);
+    return Math.min(isV101Match(gameState) ? Math.min(0.97, V101_ODDS_CEILING + Math.max(0, abilityBonus)) : 0.97, Math.max(0.1, baseChance + statBonus - difficultyPenalty + characterBonus + levelBonus + weatherEffect + seasonEffect + eventBonus + equipmentBonus - fatiguePenalty - sabotagePenalty + abilityBonus)); // V10.1 (SECTION 20BB): the 85% ceiling
+  }, [gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.activeEvents, gameState.season, gameState.weather, gameState.rulesVersion]);
 
   const estimateActorImmediateTeamValue = useCallback((actor: ActorState, cashOverride?: number) => {
     const availableMoney = Math.max(0, Math.floor(Number(cashOverride ?? actor.money) || 0));
@@ -223017,7 +223547,7 @@ function dispatchGameSettingsChange(
 
   const playerInvestmentSummary = useMemo(() => {
     const investments = Array.isArray(player.investments) ? player.investments : [];
-    const currentTurn = gameState.turnCounter || gameState.day || 1;
+    const currentTurn = investmentPayoutTurn(gameState); // V10.1 (SECTION 20BB): the quote uses the turn the nightly payout uses
     const entries = investments
       .map((regionCode: any) => {
         const investment = REGIONAL_INVESTMENTS[regionCode];
@@ -223046,7 +223576,7 @@ function dispatchGameSettingsChange(
 
   const aiInvestmentSummary = useMemo(() => {
     const investments = Array.isArray(aiPlayer.investments) ? aiPlayer.investments : [];
-    const currentTurn = gameState.turnCounter || gameState.day || 1;
+    const currentTurn = investmentPayoutTurn(gameState); // V10.1 (SECTION 20BB): the quote uses the turn the nightly payout uses
     const entries = investments
       .map(regionCode => {
         const investment = REGIONAL_INVESTMENTS[regionCode];
@@ -227335,6 +227865,8 @@ function dispatchGameSettingsChange(
 
     // V9.6 (SECTION 20AH): an approach brings its own odds (abilities below still apply).
     let successChance = approachPlan ? approachPlan.successChance : calculateSuccessChance(challenge);
+    // V10.1 (SECTION 20BB): in a V10.1 match a win pays the pay curve for the odds the list showed (before a one-off ability changes them); approaches keep their own multiplier.
+    const v101PayoutFactor = approachPlan ? 1 : v101PayoutFactorFor(gameState, successChance);
 
     // V9.9 (SECTION 20AU): the ability of THIS attempt (resolveChallengeAttemptAbility — the same two rules that were
     // written out here). "Retry Challenge" names it explicitly: the React state it used to set had not been rendered
@@ -227395,13 +227927,15 @@ function dispatchGameSettingsChange(
           wp6AttemptRef.current?.(String(player.id || 'player'), challenge, String(player.currentRegion || ''), success);
           // V9.6 (SECTION 20AJ): presentation-only roll card + sound.
           emitGameFeel({ kind: 'challenge', actor: 'human', success, odds: Math.min(1, successChance), label: approachPlan ? `${challenge.name} — ${approachPlan.label}` : String(challenge.name) });
+          // V10.1 (SECTION 20BB): in a V10.1 match every attempt tires the player a little (-3% odds on the next, to -15%, halved each night): the same button three times in a turn is worse each time.
+          if (isV101Match(gameState)) dispatchPlayer({ type: 'MERGE_STATE', payload: { overrideFatigue: v101FatigueAfterChallenge(player.overrideFatigue) } });
 
           if (success) {
             // V9.1: the payout arithmetic is the canonical computeChallengeRewardCore (shared with balance simulation).
             const { isUnderdog, leader } = getUnderdogBonus('player');
             const hasLuckyStreak = player.masteryUnlocks.includes("Lucky Streak");
             const masteryCount = (player.challengeMastery?.[challenge.name] || 0) + 1;
-            const rewardCore = computeChallengeRewardCore({ wager, rewardMultiplier: approachPlan ? approachPlan.rewardMultiplier : challenge.reward, characterName: player?.character?.name, leaderPenalty: leader === 'player' && getWealthState().ratio > 2, luckyStreak: hasLuckyStreak, consecutiveWins: player.consecutiveWins, masteryCount });
+            const rewardCore = computeChallengeRewardCore({ wager, rewardMultiplier: approachPlan ? approachPlan.rewardMultiplier : challenge.reward, characterName: player?.character?.name, leaderPenalty: leader === 'player' && getWealthState().ratio > 2, luckyStreak: hasLuckyStreak, consecutiveWins: player.consecutiveWins, masteryCount, payoutFactor: v101PayoutFactor });
             const reward = rewardCore.reward;
             if (rewardCore.luckyStreakBonus > 0) {
               addNotification(`Lucky Streak! +${Math.round(rewardCore.luckyStreakBonus * 100)}% bonus`, 'success');
@@ -227708,8 +228242,13 @@ function dispatchGameSettingsChange(
     const baseUnitPrice = getResourceMarketPrice(resource);
     const currentRegion = actorState.currentRegion || 'NSW';
     const tariffRate = calculateRegionalTariffRate(actorId, currentRegion, gameState);
-    const unitPrice = Math.round(baseUnitPrice * (1 + tariffRate));
-    const totalCost = unitPrice * quantity;
+    // V10.1 (SECTION 20BB): in a V10.1 match every unit is priced by v101QuoteMarketPurchase, the quote the market shows and the card gives (purchases made earlier in this same tick are counted).
+    const v101Live = gameStateLiveRef.current;
+    const v101Buy = isV101Match(v101Live)
+      ? v101QuotePurchaseFromState(resource, quantity, actorId, currentRegion, v101Live, { buyer: actorState, approachesEnabled: gameSettings.challengeApproachesEnabled === true, extraPressure: v101PendingPressure(resource) })
+      : null;
+    const unitPrice = v101Buy ? v101Buy.first : Math.round(baseUnitPrice * (1 + tariffRate));
+    const totalCost = v101Buy ? v101Buy.total : unitPrice * quantity;
 
     // V6.8 Phase B: afford-gate uses spendable (not total) cash once the Vault is on — scoped to
     // AI actors only (per spec, Vault rules never restrict ordinary human actions).
@@ -227761,8 +228300,9 @@ function dispatchGameSettingsChange(
       },
       (attempt) => {
         const finalQuantity = Math.min(quantity, remainingSlots);
-        const finalCost = finalQuantity * unitPrice;
+        const finalCost = v101Buy ? v101Buy.unitPrices.slice(0, finalQuantity).reduce((sum, price) => sum + price, 0) : finalQuantity * unitPrice; // V10.1 (SECTION 20BB): the units actually taken, one price after another
         const purchased = Array.from({ length: finalQuantity }, () => resource);
+        if (v101Buy) { v101NotePendingPressure(resource, finalQuantity); dispatchGameState({ type: 'UPDATE_PURCHASE_PRESSURE', payload: { resource, amount: finalQuantity } }); } // V10.1 (SECTION 20BB): buying pushes the price up (it fades over a few days)
 
         updateActorState(actorId, (prev: any) => ({
           ...prev,
@@ -227983,8 +228523,8 @@ function dispatchGameSettingsChange(
   // exactly what the Travel dialog, the Sell Market, the Resource Market and the equipment shop do (re-assigned every render).
   v99DoItHandlersRef.current = {
     travel: region => travelToRegion(region, { confirmed: true }),
-    sell: (resource, listPrice) => sellResource(resource, listPrice, { confirmed: true }),
-    buy: resource => buyResourceFromMarket(resource, 1, 'player', { consumeAction: true }),
+    sell: (resource, listPrice, quantity) => sellResource(resource, listPrice, quantity && quantity > 1 ? { confirmed: true, quantity } : { confirmed: true }), // V10.1 (SECTION 20BB): the card's quantity
+    buy: (resource, quantity) => buyResourceFromMarket(resource, quantity && quantity > 1 ? quantity : 1, 'player', { consumeAction: true }), // V10.1 (SECTION 20BB): the card's quantity
     buyEquipment: itemId => buyEquipment(itemId),
     travelCost: toRegion => calculateTravelCost(player.currentRegion, toRegion),
     // A2: challenges — the dialog's own "Take Challenge", its odds, and the approach picker's own plans.
@@ -230567,8 +231107,9 @@ function dispatchGameSettingsChange(
     if (typeof rawChance !== 'number' || !Number.isFinite(rawChance) || Number.isNaN(rawChance)) {
       return 0.1;
     }
-    return Math.min(0.97, Math.max(0.1, rawChance));
-  }, [gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.activeEvents, gameState.season, gameState.weather]);
+    const v101Cap = isV101Match(gameState) && !guaranteeSuccess ? Math.min(0.97, V101_ODDS_CEILING + Math.max(0, abilityBonus) + Math.max(0, safeBonusChance)) : 0.97; // V10.1 (SECTION 20BB): the 85% ceiling (an ability or an initiative assist still adds to it)
+    return Math.min(v101Cap, Math.max(0.1, rawChance));
+  }, [gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.activeEvents, gameState.season, gameState.weather, gameState.rulesVersion]);
 
   const calculateActorTravelCost = useCallback((fromRegion: string, toRegion: string, actorState: ActorState) => {
     const fromData = getRegionData(fromRegion);
@@ -230863,7 +231404,7 @@ function dispatchGameSettingsChange(
     if (wp6Rerolled) wp6RerollDoneRef.current?.(actorId, success);
     wp6AttemptRef.current?.(actorId, challenge || {}, String(actor.currentRegion || ''), success);
     if (success) {
-      let reward = Math.floor(wager * challenge.reward);
+      let reward = Math.floor(wager * challenge.reward * v101PayoutFactorFor(gameState, Math.min(successChance, V101_ODDS_CEILING))); // V10.1 (SECTION 20BB): the pay curve (1 outside a V10.1 match)
       if (actor.character.name === "Tourist") reward = Math.floor(reward * 1.2);
       if (actor.character.name === "Businessman") reward = Math.floor(reward * 1.1);
       if (actor.masteryUnlocks?.includes("Lucky Streak") && actor.consecutiveWins > 0) {
@@ -230899,6 +231440,7 @@ function dispatchGameSettingsChange(
             ? { ...prev.challengeCategoryExpertise, [challenge.type]: nextCategoryExpertiseCount }
             : prev.challengeCategoryExpertise,
           consecutiveWins: prev.consecutiveWins + 1,
+          ...(isV101Match(gameState) ? { overrideFatigue: v101FatigueAfterChallenge(prev.overrideFatigue) } : {}), // V10.1 (SECTION 20BB): every attempt tires the actor
           activeSpecialAbility: ['Tourist Luck', 'Calculate Odds'].includes(String(prev.activeSpecialAbility || ''))
             ? null
             : prev.activeSpecialAbility
@@ -230934,6 +231476,7 @@ function dispatchGameSettingsChange(
       ...prev,
       money: deductMoney(prev.money, wager),
       consecutiveWins: 0,
+      ...(isV101Match(gameState) ? { overrideFatigue: v101FatigueAfterChallenge(prev.overrideFatigue) } : {}), // V10.1 (SECTION 20BB): every attempt tires the actor
       activeSpecialAbility: ['Tourist Luck', 'Calculate Odds'].includes(String(prev.activeSpecialAbility || ''))
         ? null
         : prev.activeSpecialAbility
@@ -233554,7 +234097,7 @@ function dispatchGameSettingsChange(
         if (evaluation.score <= 0) return;
         const roiValue = evaluation.score > 0 && evaluation.investment
           ? (() => {
-              const currentTurn = gameState.turnCounter || gameState.day || 1;
+              const currentTurn = v101AiInvestmentTurn(gameState); // V10.1 (SECTION 20BB): the rival projects from the turn the payout uses (an older match keeps its old projection)
               const daysRemaining = Math.max(0, gameSettings.totalDays - gameState.day);
               let totalYield = 0;
               for (let d = 0; d < daysRemaining; d++) {
@@ -261436,7 +261979,7 @@ function dispatchGameSettingsChange(
                     <div className="font-bold mb-1">{SEASON_EFFECTS[gameState.season]?.description}</div>
                     <div className="space-y-0.5 opacity-75">
                       <div>Travel: {SEASON_EFFECTS[gameState.season]?.travelCostModifier > 1 ? `+${Math.round((SEASON_EFFECTS[gameState.season].travelCostModifier - 1) * 100)}%` : SEASON_EFFECTS[gameState.season]?.travelCostModifier < 1 ? `-${Math.round((1 - SEASON_EFFECTS[gameState.season].travelCostModifier) * 100)}%` : 'Normal'}</div>
-                      <div>Bonus Resources: +{Math.round((SEASON_EFFECTS[gameState.season]?.bonusResourceChance || 0) * 100)}%</div>
+                      {v101SeasonInvestmentLine(gameState.season, gameSettings.investmentsEnabled === true) && <div>{v101SeasonInvestmentLine(gameState.season, gameSettings.investmentsEnabled === true)}</div> /* V10.1 (SECTION 20BB): "Bonus Resources +X%" promised extra finds on arrival; only investment income uses the figure */}
                     </div>
                   </div>
                 </div>
@@ -263248,7 +263791,7 @@ function dispatchGameSettingsChange(
                             </div>
                             <div className="flex justify-between text-opacity-75 opacity-75 mt-1">
                               <span>Travel: {Math.round(multipliers.travelCost * 100)}%</span>
-                              <span>Yields: {Math.round(multipliers.depositYield * 100)}%</span>
+                              <span title="Standing changes travel costs and the tariff; it does not change what a region pays out.">{V101_STANDING_YIELD_TEXT}</span>{/* V10.1 (SECTION 20BB): depositYield is read by nothing, so the panel no longer prints "Yields: 125%" */}
                               <span>Tariff: {Math.round(multipliers.tariffRate * 100)}%</span>
                             </div>
                           </div>
@@ -263522,7 +264065,7 @@ function dispatchGameSettingsChange(
                         </div>
                         <div className="text-right">
                           <div className="text-sm">Difficulty: {'⭐'.repeat(challenge.difficulty)}</div>
-                          <div className="text-sm">Reward: {challenge.reward}x</div>
+                          <div className="text-sm">Base reward: {challenge.reward}x</div>{/* V10.1 (SECTION 20BB): "Reward 2x" hid the character bonus, streaks and mastery; the dollars are printed under the wager */}
                           {gameSettings.dynamicWagerEnabled && (
                             <div className="text-xs opacity-50">Max bet: {fmtMoney(dynamicMaxWager)}</div>
                           )}
@@ -263550,6 +264093,8 @@ function dispatchGameSettingsChange(
                             />
                             <span className="text-sm font-bold w-16 text-right">{fmtMoney(Math.min(uiState.wagerAmount, maxWager))}</span>
                           </div>
+                          {/* V10.1 (SECTION 20BB): what a win and a loss are worth in dollars at this wager and these odds, from the functions the Recommended Action's card uses (v99ChallengeWinReward + the live odds) */}
+                          <V101ChallengeTruthLine truth={v101ChallengeTruth({ challenge, actor: player, successChance, wager: Math.min(uiState.wagerAmount, maxWager), leaderPenalty: getUnderdogBonus('player').leader === 'player' && getWealthState().ratio > 2, payoutFactor: v101PayoutFactorFor(gameState, successChance) })} className="text-xs mb-2" />
 
                           <div className="flex space-x-2">
                             {gameSettings.challengeApproachesEnabled === true && !isGrandTourFinale && resolveChallengeDefinition(challenge, player.currentRegion) ? (
@@ -263939,7 +264484,7 @@ function dispatchGameSettingsChange(
 	                      >
 	                        {RESOURCE_MARKET_RESOURCES.map(resource => (
 	                          <option key={resource} value={resource}>
-	                            {resource} ({fmtMoney(v99MarketBuyUnitPrice(resource, 'player', player.currentRegion || 'NSW', gameState))})
+	                            {resource} ({fmtMoney(v99MarketBuyUnitPrice(resource, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true }))})
 	                          </option>
 	                        ))}
 	                      </select>
@@ -263959,8 +264504,9 @@ function dispatchGameSettingsChange(
 	                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
 	                    {/* V9.9 (SECTION 20AU): the sum that is charged — tariff included (the label left it out and the purchase was then refused) — and what it costs in actions. */}
 	                    <div className="text-sm" data-testid="v99-market-cost">
-	                      Cost: <span className={`font-bold ${v99ThemeAccent(themeStyles, 'warningText', 'text-yellow-400')}`}>{fmtMoney(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState).total)}</span>
-	                      <span className="text-xs opacity-75"> — {v99PurchasePriceLabel(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState))}. {v99MarketBuyActionNote(player, gameSettings)}</span>
+	                      Cost: <span className={`font-bold ${v99ThemeAccent(themeStyles, 'warningText', 'text-yellow-400')}`}>{fmtMoney(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true }).total)}</span>
+	                      <span className="text-xs opacity-75"> — {v99PurchasePriceLabel(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true }))}. {v99MarketBuyActionNote(player, gameSettings)}</span>
+	                      {isV101Match(gameState) && <div className="text-xs opacity-75" data-testid="v101-market-note">{V101_MARKET_PRESSURE_NOTE}</div> /* V10.1 (SECTION 20BB): says how the price moves */}
 	                    </div>
 	                    <button
 	                      onClick={handlePlayerResourceMarketPurchase}
@@ -263974,7 +264520,7 @@ function dispatchGameSettingsChange(
 
 	                <div className="space-y-3">
 	                  {RESOURCE_MARKET_RESOURCES.map(resource => {
-	                    const price = v99MarketBuyUnitPrice(resource, 'player', player.currentRegion || 'NSW', gameState); // V9.9 (SECTION 20AU): tariff included — the price that is charged
+	                    const price = v99MarketBuyUnitPrice(resource, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true }); // V9.9 (SECTION 20AU): tariff included — the price that is charged
 	                    const category = RESOURCE_CATEGORIES[resource] || 'industrial';
 	                    return (
 	                      <div key={resource} className={`${themeStyles.border} border rounded-lg p-3`}>
@@ -264220,7 +264766,7 @@ function dispatchGameSettingsChange(
                                 <div className="text-xs font-bold mb-1">Output:</div>
                                 <div className="text-sm text-green-400">{recipe.output}</div>
                                 {/* V9.9 (SECTION 20AU): the price the Sell Market really lists (was recipe.baseValue, which nothing paid) */}
-                                <div className="text-xs opacity-75" data-testid="v99-workshop-value">{v99WorkshopValueLabel(recipe)}</div>
+                                <div className="text-xs opacity-75" data-testid="v99-workshop-value">{/* V10.1 (SECTION 20BB): what a craft really earns: the materials' price with the tariff, the 10% of crafts that fail, the average result (a losing recipe says so) */}{v101WorkshopValueText(v101CraftEconomics(recipe, v101MaterialCostFor(gameState, 'player', player.currentRegion || 'NSW', { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true }), 0.9 + (Number(player?.character?.craftingBonus?.effect?.successBonus) || 0)))}</div>
                                 <div className="text-xs opacity-75">
                                   Actions: {isTourismWithBonus ? '0 (Tourist bonus!)' : recipe.craftTime}
                                 </div>
@@ -264316,7 +264862,7 @@ function dispatchGameSettingsChange(
                               </div>
                             )}
                             {(() => {
-                              const currentTurn = gameState.turnCounter || gameState.day || 1;
+                              const currentTurn = investmentPayoutTurn(gameState); // V10.1 (SECTION 20BB): the quote uses the turn the nightly payout uses
                               const projectedDaily = getActorScaledInvestmentReturn(
                                 investment.dailyIncome,
                                 player,
