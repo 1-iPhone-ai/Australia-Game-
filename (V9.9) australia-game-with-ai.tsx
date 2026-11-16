@@ -36657,7 +36657,6 @@ export const initialGameState = {
   netWorthHistory: [] as Array<{day: number, playerWorth: number, aiWorth: number}>,
   bestDayRecord: { day: 0, earned: 0 },
   supplyDemand: {} as Record<string, number>, // Tracks how much of each resource has been sold
-  purchasePressure: undefined as Record<string, number> | undefined, // V10.1 (SECTION 20BB): how much of each resource has been bought (V10.1 matches only; fades daily like supplyDemand)
   doubleOrNothingAvailable: false,
   lastChallengeReward: 0,
   bankruptcyTracker: { player: 0, ai: 0 },
@@ -189894,7 +189893,7 @@ export function v99ProjectExecutorStateOntoMatchState(prev: Record<string, unkno
   const payload: Record<string, unknown> = {};
   if (!prev || !post) return payload;
   const teamMode = Boolean(options && options.teamMode === true);
-  const keys = teamMode ? Array.from(new Set([...Object.keys(prev), ...V99_EXECUTOR_TEAM_KEYS])) : Object.keys(prev);
+  const keys = Array.from(new Set([...(teamMode ? [...Object.keys(prev), ...V99_EXECUTOR_TEAM_KEYS] : Object.keys(prev)), 'purchasePressure'])); // V10.1 (SECTION 20BB): a V10.1 optional key the engine writes (purchasePressure) is carried back even when the match had none yet
   for (const key of keys) {
     if (V99_EXECUTOR_TURN_OWNER_KEYS.includes(key)) continue;
     const teamKey = V99_EXECUTOR_TEAM_KEYS.includes(key);
@@ -209978,6 +209977,15 @@ export function runV101EconomySelfTests(): V9SelfTestResult[] {
     return reached >= Math.ceil(seeds * 0.9) || `only ${reached} of ${seeds} seeds reached the goal`;
   });
 
+  check('v101ec_24_engine_result_comes_back_into_the_match', 'What the engine records for a recommended purchase (the pressure) is carried back into the match even when the match had none yet, and a new match or a load never inherits the old match\'s pressure', () => {
+    const prev = { day: 3, money: 5, supplyDemand: {}, rulesVersion: V101_RULES_VERSION };
+    const post = { ...prev, purchasePressure: { Coral: 3 } };
+    const payload = v99ProjectExecutorStateOntoMatchState(prev, post, { teamMode: false });
+    const after = gameStateReducer({ ...prev, purchasePressure: { Gold: 9 } }, { type: 'LOAD_STATE', payload: { rulesVersion: V101_RULES_VERSION, purchasePressure: undefined } }) as Record<string, unknown>;
+    const same = v99ProjectExecutorStateOntoMatchState(post, post, { teamMode: false });
+    return (json(payload.purchasePressure) === '{"Coral":3}' && after.purchasePressure === undefined && !('purchasePressure' in same)) || json({ payload, after: after.purchasePressure });
+  });
+
   return results;
 }
 // <<V101-SLOT ECON end>>
@@ -210910,7 +210918,8 @@ function AustraliaGame() {
   const v101PressureOverlayRef = useRef<{ base: unknown; extra: Record<string, number> }>({ base: undefined, extra: {} });
   const v101PendingPressure = (resource: string): number => {
     const overlay = v101PressureOverlayRef.current;
-    if (overlay.base !== gameStateLiveRef.current.purchasePressure) { overlay.base = gameStateLiveRef.current.purchasePressure; overlay.extra = {}; }
+    const pressureNow = (gameStateLiveRef.current as { purchasePressure?: unknown }).purchasePressure;
+    if (overlay.base !== pressureNow) { overlay.base = pressureNow; overlay.extra = {}; }
     return overlay.extra[resource] || 0;
   };
   const v101NotePendingPressure = (resource: string, units: number) => {
@@ -220131,6 +220140,7 @@ function dispatchGameSettingsChange(
         matchEnd: undefined, // V9.9 (SECTION 20AS): a new match has not ended
         rulesVersion: v101RulesVersionForNewMatch(wpMfSettings), // V10.0 (SECTION 20AY): a match carries the rules it started with; V10.1 (SECTION 20BA): V10.1's unless the classic rules are on
         rivalRaces: undefined, // V10.0 (SECTION 20AZ): no race has run in a new match
+        purchasePressure: undefined, // V10.1 (SECTION 20BB): nothing has been bought in a new match (explicit, so the previous match's pressure cannot survive the LOAD_STATE merge)
         regionDeposits: {},
         standingPerActor: initializeRegionalStanding(nextTurnOrder),
         regionControlStats: createDefaultRegionControlStats(),
@@ -228512,8 +228522,12 @@ function dispatchGameSettingsChange(
 
             setFailedChallengeData(null);
 
+            // V10.1 (SECTION 20BB): in a V10.1 match the unlock reads the level this win just reached (the reducer's own GAIN_XP); the old check read the level from before the win, so a mastery arrived one win late (or never, on the last win).
+            const v101LevelNow = isV101Match(gameState)
+              ? Number((playerReducer(player, { type: 'GAIN_XP', payload: { amount: xpGain, applyEquipment: gameSettings.equipmentShopEnabled && !(gameSettings.sabotageEnabled && isEquipmentJammed(player.debuffs)) } }) as { level?: number }).level) || player.level
+              : player.level;
             Object.entries(player.character.masteryTree || {}).forEach(([name, mastery]) => {
-              if (player.level >= (mastery as { unlockLevel: number }).unlockLevel && !player.masteryUnlocks.includes(name)) {
+              if (v101LevelNow >= (mastery as { unlockLevel: number }).unlockLevel && !player.masteryUnlocks.includes(name)) {
                 dispatchPlayer({ type: 'UNLOCK_MASTERY', payload: name });
                 addNotification(`Mastery Unlocked: ${name}!`, 'levelup', true);
               }
