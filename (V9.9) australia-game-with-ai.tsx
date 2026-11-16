@@ -186800,7 +186800,7 @@ export const FirstRunPanel = React.memo(function FirstRunPanel({ view, onSkip, t
           <h2 id="first-run-h" className="font-bold text-base">🎓 Your first match — {view.goalText}</h2>
           {view.goalMetLine
             ? <div className="text-xs font-semibold text-emerald-500" data-testid="first-run-goal-met">{view.goalMetLine}</div>
-            : <div className="text-xs opacity-80">Day {view.day} of {view.byDay} of your warm-up{view.matchDays ? ` · the match itself runs to day ${view.matchDays}` : ''} · new tools unlock as they become useful, one at a time. {/* V10.1 (SECTION 20BE): the header says "Day 1 / 30"; the two lengths are no longer left to contradict each other */}</div>}
+            : <div className="text-xs opacity-80">Day {view.day} of {view.byDay} of your warm-up{view.matchDays ? ` · the match runs ${view.matchDays + 1} days (the last day played is ${view.matchDays})` : ''} · new tools unlock as they become useful, one at a time. {/* V10.1 (SECTION 20BE): the header says "Day 1 / 30"; the panel now says both numbers (30 days, last day played 29) so they no longer contradict each other */}</div>}
         </div>
         <button type="button" onClick={onSkip} className="px-5 py-3 rounded-lg font-bold text-base bg-sky-600 hover:bg-sky-500 text-white shadow" data-testid="first-run-skip">Skip tutorial — open the full game</button>
       </div>
@@ -209116,9 +209116,43 @@ export function v101FirstRunChrome(firstRun: { active?: boolean } | null | undef
   return { active, showLayerNav: !active, compactControl: active, forcedLayer: active ? 'play' : null };
 }
 
-/** The layer the page shows: PLAY while the guided first match is active (a saved or earlier INTELLIGENCE / LAB choice waits), else the chosen one. */
+/** The layer the page shows: PLAY while the guided first match is active (a saved or earlier INTELLIGENCE / LAB choice is put back to PLAY by the page; see v101RouteLayerRequest), else the chosen one. */
 export function v101EffectiveExperienceLayer(layer: ExperienceLayer, firstRun: { active?: boolean } | null | undefined): ExperienceLayer {
   return v101FirstRunChrome(firstRun).forcedLayer ?? layer;
+}
+
+/**
+ * Where a request for another layer goes. Outside the guided first match it goes where it asked. Inside it there are no tabs, so the page stays on PLAY and
+ * an answer (an Ask button, a "why did this change") is shown inline on PLAY instead (inline = true): the click is never answered with nothing.
+ */
+export function v101RouteLayerRequest(requested: ExperienceLayer, firstRun: { active?: boolean } | null | undefined): { layer: ExperienceLayer; inline: boolean } {
+  const forced = v101FirstRunChrome(firstRun).forcedLayer;
+  return forced && requested !== forced ? { layer: forced, inline: true } : { layer: requested, inline: false };
+}
+
+/** The toast for a request to open a tab that is hidden during the guided first match (an "Open"/"View plan" button; a question is answered inline instead). */
+export const V101_LAYER_HELD_LINE = 'That view opens when the tutorial ends. Use "Skip tutorial" to open it now.';
+
+/** The inline answer shown on PLAY during the guided first match: the newest answer in the feed, unless the player closed it; null outside the first run. */
+export function v101FirstRunInlineAnswer<T extends { id: string }>(firstRun: { active?: boolean } | null | undefined, feed: readonly T[] | null | undefined, closedId: string | null, busy: boolean): { answer: T | null; busy: boolean } | null {
+  if (!v101FirstRunChrome(firstRun).active) return null;
+  const newest = Array.isArray(feed) && feed.length > 0 ? feed[feed.length - 1] : null;
+  const answer = newest && newest.id !== closedId ? newest : null;
+  return answer || busy ? { answer, busy: busy === true } : null;
+}
+
+/** The small frame around the inline answer (hook-free; the answer card itself is passed in as children). */
+export function V101FirstRunAnswer({ theme, busy, onClose, children }: { theme: { card: string; buttonSecondary: string }; busy: boolean; onClose: () => void; children?: React.ReactNode }): React.ReactElement {
+  return (
+    <aside role="region" aria-label="Your answer" aria-live="polite" className={`rounded-lg border-2 border-sky-500/60 ${theme.card} px-3 py-2 text-sm space-y-2`} data-testid="v101-first-run-answer">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-bold">💬 Your answer</span>
+        {children ? <button type="button" className={`${theme.buttonSecondary} px-2 py-0.5 rounded text-xs`} data-testid="v101-first-run-answer-close" onClick={onClose}>Close</button> : null}
+      </div>
+      {busy && <div className="text-xs opacity-80" data-testid="v101-first-run-answer-busy">Working it out…</div>}
+      {children}
+    </aside>
+  );
 }
 
 /** True when the control bar may shrink to the "You're playing" chip: control is plainly the player's (manual, no Co-Pilot waiting or holding anything). */
@@ -209378,7 +209412,7 @@ export function runV101FirstRunSelfTests(): V9SelfTestResult[] {
     const panel = FirstRunPanel as unknown as { type: (p: { view: FirstRunView; onSkip: () => void; theme: { card: string; border: string; shadow: string } }) => React.ReactElement };
     const text = words(panel.type({ view, onSkip: () => {}, theme: { card: '', border: '', shadow: '' } }));
     const old = words(panel.type({ view: v100FirstRunPanelView(state, sig), onSkip: () => {}, theme: { card: '', border: '', shadow: '' } }));
-    return (view.matchDays === 29 && /Reach \$2,000 cash/.test(text) && /of your warm-up/.test(text) && /the match itself runs to day 29/.test(text) && /Skip tutorial/.test(text) && !/the match itself runs/.test(old) && /Day 1 of 7/.test(old)) || json({ text, old });
+    return (view.matchDays === 29 && /Reach \$2,000 cash/.test(text) && /of your warm-up/.test(text) && /the match runs 30 days \(the last day played is 29\)/.test(text) && /Skip tutorial/.test(text) && !/the match runs/.test(old) && /Day 1 of 7/.test(old)) || json({ text, old });
   });
   check('v101fr_08_actions_label_says_left_today', 'The header says "3 actions left today" / "1 action left today"; "Unlimited actions" and the cohesion label itself stay as they were', () => {
     const header = resolveV9GameplayCohesion(createV9CohesionFixture({})).header;
@@ -209487,6 +209521,27 @@ export function runV101FirstRunSelfTests(): V9SelfTestResult[] {
   check('v101fr_21_character_line', 'The menu shows the chosen character\'s description and perk in one line (every character has one)', () => {
     const lines = CHARACTERS.map(c => v101CharacterLine(c));
     return (lines.every(l => l.length > 20 && l.endsWith('.')) && /^Tourist: Gets a 20% bonus on challenge winnings\. Has a 10% higher chance/.test(lines[0]) && v101CharacterLine(null) === '') || json(lines);
+  });
+  check('v101fr_22_ask_is_answered_on_play_in_the_first_match', 'In the guided first match an Ask (a real answer) is routed to PLAY and shown inline: the newest answer, closable, with a working line while it is busy; outside the first run the layer switch goes where it asked and nothing is drawn inline', () => {
+    const on = createFirstRunState();
+    const done = applyFirstRunPatch(createFirstRunState(), { kind: 'finish', outcome: 'skipped', day: 2 });
+    const route = [v101RouteLayerRequest('intelligence', on), v101RouteLayerRequest('lab', on), v101RouteLayerRequest('play', on), v101RouteLayerRequest('intelligence', null), v101RouteLayerRequest('lab', done)];
+    const wantRoute = [{ layer: 'play', inline: true }, { layer: 'play', inline: true }, { layer: 'play', inline: false }, { layer: 'intelligence', inline: false }, { layer: 'lab', inline: false }];
+    const first = buildAskEngineIntelligenceAnswer('What should I do?', null);
+    const second = { ...buildAskEngineIntelligenceAnswer('How do I make money?', null), id: `${first.id}-b` };
+    const shown = v101FirstRunInlineAnswer(on, [first, second], null, false);
+    const closed = v101FirstRunInlineAnswer(on, [first, second], second.id, false);
+    const busyOnly = v101FirstRunInlineAnswer(on, [], null, true);
+    const noneNow = [v101FirstRunInlineAnswer(on, [], null, false), v101FirstRunInlineAnswer(on, null, null, false), v101FirstRunInlineAnswer(null, [first], null, true), v101FirstRunInlineAnswer(done, [first], null, false)];
+    const frame = V101FirstRunAnswer({ theme, busy: true, onClose: () => undefined, children: 'ANSWER-BODY' });
+    let closedCalls = 0;
+    const framed = V101FirstRunAnswer({ theme, busy: false, onClose: () => { closedCalls += 1; }, children: 'ANSWER-BODY' });
+    const closeBtn = flat(framed).find(n => n.type === 'button' && /Close/.test(words(n)));
+    closeBtn?.props?.onClick?.();
+    const noBody = flat(V101FirstRunAnswer({ theme, busy: true, onClose: () => undefined })).filter(n => n.type === 'button');
+    return (json(route) === json(wantRoute) && shown?.answer?.id === second.id && closed === null && busyOnly?.answer === null && busyOnly.busy === true
+      && noneNow.every(v => v === null) && /Your answer/.test(words(frame)) && /ANSWER-BODY/.test(words(frame)) && /Working it out/.test(words(frame)) && closedCalls === 1 && noBody.length === 0
+      && /tutorial ends/.test(V101_LAYER_HELD_LINE) && /Skip tutorial/.test(V101_LAYER_HELD_LINE)) || json({ route, shown: shown?.answer?.id, closed, busyOnly, noneNow, closedCalls, noBody: noBody.length });
   });
   return results;
 }
@@ -223324,9 +223379,12 @@ function dispatchGameSettingsChange(
   const wpMjStart = useCallback((start: MatchJournalStart | null) => {
     const resolved = resolveMatchJournalStart(start);
     if (!resolved) return;
-    if (resolved.characterIndex !== null && resolved.characterIndex !== uiState.selectedCharacter) updateUiState({ selectedCharacter: resolved.characterIndex });
-    if (gameState.gameMode !== 'menu') { handleRestartGame(); dispatchGameState({ type: 'SET_GAME_MODE', payload: 'menu' }); }
-    setWpMjPendingStart({ mode: resolved.mode, difficulty: resolved.difficulty, seed: resolved.seed });
+    // V10.1 (SECTION 20BE): a seed start from the journal card replaces the autosaved match like any other start, so it asks first too.
+    v101GuardRef.current(() => {
+      if (resolved.characterIndex !== null && resolved.characterIndex !== uiState.selectedCharacter) updateUiState({ selectedCharacter: resolved.characterIndex });
+      if (gameState.gameMode !== 'menu') { handleRestartGame(); dispatchGameState({ type: 'SET_GAME_MODE', payload: 'menu' }); }
+      setWpMjPendingStart({ mode: resolved.mode, difficulty: resolved.difficulty, seed: resolved.seed });
+    });
   }, [gameState.gameMode, handleRestartGame, uiState.selectedCharacter, updateUiState]);
   useLayoutEffect(() => {
     if (!wpMjPendingStart) return;
@@ -240983,9 +241041,18 @@ function dispatchGameSettingsChange(
   const setExperienceLayer = useCallback((layer: ExperienceLayer) => {
     updateUiState({ experienceLayer: sanitizeExperienceLayer(layer) });
   }, [updateUiState]);
-  // V10.1 (SECTION 20BE): a layer chosen while the tour hides the other tabs is put back to PLAY, so it does not pop up when the tour ends.
+  // V10.1 (SECTION 20BE): a layer left over from before (saved, or chosen earlier) is put back to PLAY while the tour hides the other tabs, so it does not pop up when the tour ends.
+  // A tab the player just asked for (an "Open" / "View plan" button) is not dropped silently: a toast says it opens when the tutorial ends. Questions never get here: they are answered inline (v101RouteLayerRequest).
+  const v101SeenLayerRef = useRef<ExperienceLayer>(sanitizeExperienceLayer(uiState.experienceLayer));
+  const [v101ClosedAnswerId, setV101ClosedAnswerId] = useState<string | null>(null);
   useEffect(() => {
-    if (v101FirstRunChrome(wp8State).forcedLayer && sanitizeExperienceLayer(uiState.experienceLayer) !== 'play') updateUiState({ experienceLayer: 'play' });
+    const layer = sanitizeExperienceLayer(uiState.experienceLayer);
+    const justRequested = v101SeenLayerRef.current !== layer;
+    v101SeenLayerRef.current = layer;
+    if (v101FirstRunChrome(wp8State).forcedLayer && layer !== 'play') {
+      updateUiState({ experienceLayer: 'play' });
+      if (justRequested) addNotification(V101_LAYER_HELD_LINE, 'info', false, 'system');
+    }
   }, [wp8State, uiState.experienceLayer]); // eslint-disable-line react-hooks/exhaustive-deps
   const v9PendingStartRef = useRef(false);
   // V9.6 (SECTION 20AM): state slice 13 — V9 intelligence feed (5 fields in one reducer; setters keep useState semantics).
@@ -241001,6 +241068,12 @@ function dispatchGameSettingsChange(
   const v9IntelQuery = wp7Slice13.v9IntelQuery; const setV9IntelQuery = wp7Slice13Set.v9IntelQuery;
   const v9IntelBusy = wp7Slice13.v9IntelBusy; const setV9IntelBusy = wp7Slice13Set.v9IntelBusy;
   const v9SelfTestResults = wp7Slice13.v9SelfTestResults; const setV9SelfTestResults = wp7Slice13Set.v9SelfTestResults;
+  // V10.1 (SECTION 20BE): a new answer in the guided first match appears on PLAY (above the cards); bring it into view so the click is visibly answered.
+  const v101NewestAnswerId = v9IntelFeed.length > 0 ? v9IntelFeed[v9IntelFeed.length - 1].id : null;
+  useEffect(() => {
+    if (!v101NewestAnswerId || wp8State?.active !== true || typeof document === 'undefined') return;
+    try { (document.querySelector('[data-testid="v101-first-run-answer"]') as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); } catch { /* a browser without scrollIntoView options: the card is still drawn */ }
+  }, [v101NewestAnswerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Take Control: the exact canonical interrupt the HUD always used, plus cancellation of any
   // queued / in-flight Start so no delayed continuation can create a session afterwards.
@@ -244531,14 +244604,14 @@ function dispatchGameSettingsChange(
   const showWorldExplanation = useCallback((eventId: string) => {
     const v = swrViewRef.current;
     const ans = v ? buildWorldExplanationAnswer(eventId, v) : null;
-    if (ans) { pushIntelAnswer(ans); setExperienceLayer('intelligence'); }
-  }, [pushIntelAnswer, setExperienceLayer]);
+    if (ans) { pushIntelAnswer(ans); if (!v101RouteLayerRequest('intelligence', wp8State).inline) setExperienceLayer('intelligence'); /* V10.1 (SECTION 20BE): in the guided first match the answer shows inline on PLAY */ }
+  }, [pushIntelAnswer, setExperienceLayer, wp8State]);
 
   const submitIntelligenceQuery = useCallback(async (raw: string) => {
     const query = String(raw || '').trim();
     if (!query || v9IntelBusy) return;
     setV9IntelQuery('');
-    updateUiState({ experienceLayer: 'intelligence' });
+    if (!v101RouteLayerRequest('intelligence', wp8State).inline) updateUiState({ experienceLayer: 'intelligence' }); // V10.1 (SECTION 20BE): in the guided first match there are no tabs; the answer shows inline on PLAY
     // V9.6 (SECTION 20AH): approach / chain / reputation questions are answered by the Challenge Decision System.
     const wp2Answer = wp2AdvisorRef.current?.(query) || null;
     if (wp2Answer) { pushIntelAnswer(wp2Answer); return; }
@@ -244567,7 +244640,7 @@ function dispatchGameSettingsChange(
     } finally {
       setV9IntelBusy(false);
     }
-  }, [v9IntelBusy, updateUiState, pushIntelAnswer, handleTakeControl, setPlayerControlMode, askAI, persistBackgroundAI, persistRegionalFactions]);
+  }, [v9IntelBusy, updateUiState, pushIntelAnswer, handleTakeControl, setPlayerControlMode, askAI, persistBackgroundAI, persistRegionalFactions, wp8State]);
 
   // One dispatcher for every V9 button (PLAY cards, Intelligence answers). Each kind maps onto an
   // existing canonical path; none of them bypass legality, approvals or Co-Pilot authority.
@@ -260886,6 +260959,16 @@ function dispatchGameSettingsChange(
             <BlockedHelpCard theme={themeStyles} help={glBlocked} onNav={nav => openIntentNav(nav)} onAsk={q => void submitIntelligenceQuery(q)} onDismiss={() => setGlBlocked(null)} onLearnMore={openMechanicsEntry} />
           )}
           {glAtTop && glCoachNode}
+          {/* V10.1 (SECTION 20BE): the guided first match has no tabs, so an answer to an Ask button is shown here, on PLAY, where the player asked. */}
+          {(() => {
+            const inline = v101FirstRunInlineAnswer(wp8State, v9IntelFeed, v101ClosedAnswerId, v9IntelBusy);
+            if (!inline) return null;
+            return (
+              <V101FirstRunAnswer theme={themeStyles} busy={inline.busy} onClose={() => setV101ClosedAnswerId(inline.answer ? inline.answer.id : null)}>
+                {inline.answer && <GameIntelligenceAnswerCard answer={inline.answer} theme={themeStyles} onButton={handleV9Button} currentFingerprint={v9GiFingerprints} onRefresh={q => void submitIntelligenceQuery(q)} />}
+              </V101FirstRunAnswer>
+            );
+          })()}
 
           {attention.state === 'needs_attention' && !v9Cohesion.focus.temporary && (
             <div role="alert" className={`rounded-xl border-2 px-3 py-2 flex flex-wrap items-center gap-2 text-sm border-amber-500/70 ${themeStyles.card}`}>
