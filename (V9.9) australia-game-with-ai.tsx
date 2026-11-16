@@ -212759,6 +212759,11 @@ export function v101MoreMenuDescriptor<T extends { id: string; label: string }>(
 }
 const v101UseIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 export interface V101MorePopoverProps { open: boolean; onToggle: () => void; buttonClassName: string; panelClassName: string; children?: React.ReactNode }
+/** V10.1 (SECTION 20BF): a click inside the More panel closes it when it landed on (or inside) a button, i.e. a choice was made. */
+export function v101MorePanelClickCloses(target: unknown): boolean {
+  const hit = target as { closest?: (selector: string) => unknown } | null;
+  return Boolean(hit && typeof hit.closest === 'function' && hit.closest('button'));
+}
 /** The simplified action bar's "More" button and its panel: the panel is measured on open and never leaves the window; Escape closes it. */
 export function V101MorePopover(props: V101MorePopoverProps): React.ReactElement {
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -212791,7 +212796,7 @@ export function V101MorePopover(props: V101MorePopoverProps): React.ReactElement
         <span>More</span>
       </button>
       {open && (
-        <div ref={panelRef} className={`absolute ${placement?.vertical === 'above' ? 'bottom-full mb-2' : 'mt-2'} ${placement ? '' : 'right-0'} ${props.panelClassName}`} style={panelStyle} data-testid="v101-more-panel" data-side={placement?.side || 'right'} onClick={(e) => { const hit = e.target as { closest?: (selector: string) => unknown } | null; if (hit && typeof hit.closest === 'function' && hit.closest('button')) onToggle(); /* a choice made: the menu gets out of the way of the window it opened */ }}>
+        <div ref={panelRef} className={`absolute ${placement?.vertical === 'above' ? 'bottom-full mb-2' : 'mt-2'} ${placement ? '' : 'right-0'} ${props.panelClassName}`} style={panelStyle} data-testid="v101-more-panel" data-side={placement?.side || 'right'} onClick={(e) => { if (v101MorePanelClickCloses(e.target)) onToggle(); /* a choice made: the menu gets out of the way of the window it opened */ }}>
           {props.children}
         </div>
       )}
@@ -212810,20 +212815,17 @@ const V101_SHORTCUT_NAMES: Readonly<Record<string, string>> = {
 export interface V101ShortcutGateInput {
   /** The guided first match's state (null: no first match, everything is shown). */
   firstRun: FirstRunState | null;
-  negotiationMode: boolean;
-  pendingNegotiations: number;
   /** The window this key opens is already open (its own key still closes it). */
   alreadyOpen: boolean;
 }
 export interface V101ShortcutGateResult { allowed: boolean; message: string }
-/** Whether a shortcut may run now. The buttons hide what the guided first match has not unlocked, and Negotiations does nothing with negotiation mode off; the keys used to open both anyway. */
+/** Whether a shortcut may run now. The buttons hide what the guided first match has not unlocked; the keys used to open those anyway. (The Negotiations button is not hidden with negotiation mode off, so N is not gated on it either.) */
 export function v101ShortcutGate(action: string, input: V101ShortcutGateInput): V101ShortcutGateResult {
   const allowed: V101ShortcutGateResult = { allowed: true, message: '' };
   const buttonId = V101_SHORTCUT_BUTTON_IDS[action];
   if (!buttonId || input.alreadyOpen) return allowed;
   const name = V101_SHORTCUT_NAMES[action] || 'That';
   if (!isFirstRunActionVisible(input.firstRun, buttonId)) return { allowed: false, message: `${name} is not unlocked yet in your first match. It opens up as you play.` };
-  if (action === 'openNegotiations' && !input.negotiationMode && !(input.pendingNegotiations > 0)) return { allowed: false, message: 'Negotiations are switched off for this match. Turn them on in Settings > Competition to use them.' };
   return allowed;
 }
 
@@ -212898,6 +212900,8 @@ export function v101ToastLaneLimit(maxVisible: unknown, available: number): numb
   return n <= 0 ? Math.max(0, available) : Math.min(n, 50);
 }
 /** Extra classes for a lane that can hold more than the default three: it scrolls inside the window instead of running off it. */
+/** The toast lane takes pointer events only when it scrolls (more than three toasts); otherwise it stays click-through. */
+export function v101ToastLanePointerClass(maxVisible: unknown): string { return v101ToastLaneExtraClass(maxVisible) ? 'pointer-events-auto' : 'pointer-events-none'; }
 export function v101ToastLaneExtraClass(maxVisible: unknown): string {
   const n = typeof maxVisible === 'number' && Number.isFinite(maxVisible) ? Math.floor(maxVisible) : 3;
   return n <= 0 || n > 3 ? ' max-h-[calc(100dvh-8rem)] overflow-y-auto' : '';
@@ -213090,12 +213094,19 @@ export function V101TextScaleControl(props: V101TextScaleControlProps): React.Re
 // ---- Suite v101ui ------------------------------------------------------------------------------------------------------------------------------------------
 export function runV101PlayScreenSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
+  // V10.1 (SECTION 20BF): a markup test that could not render (no static renderer in this runner) says so in its detail instead of passing silently.
+  let renderSkipped = false;
   const check = (id: string, name: string, fn: () => true | string) => {
-    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    renderSkipped = false;
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? (renderSkipped ? 'SKIPPED: no static renderer in this runner, the markup was not checked' : '') : String(r) }); }
     catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
   };
   const json = (v: unknown) => JSON.stringify(v);
-  const render = (el: React.ReactElement): string | null => (typeof (globalThis as { __v101RenderStatic?: unknown }).__v101RenderStatic === 'function' ? v101RenderStatic(el) : null);
+  const render = (el: React.ReactElement): string | null => {
+    if (typeof (globalThis as { __v101RenderStatic?: unknown }).__v101RenderStatic === 'function') return v101RenderStatic(el);
+    renderSkipped = true;
+    return null;
+  };
   const stamped = (rulesVersion: number | null): Record<string, unknown> => (rulesVersion === null ? { day: 3 } : { day: 3, rulesVersion });
 
   check('v101ui_01_more_popover_side_table', 'The More panel stays inside the window: right-aligned when it fits, left-aligned when the button is at the left edge (1280 px, wrapped row), clamped on a phone, and it opens upward when there is no room below', () => {
@@ -213143,10 +213154,10 @@ export function runV101PlayScreenSelfTests(): V9SelfTestResult[] {
     return true;
   });
 
-  check('v101ui_04_shortcut_gate_table', 'Every opening shortcut x (shown, still locked in the guided first match, Negotiations off) follows the button: W and the other locked ones refuse with a reason, N refuses with negotiation mode off, a window already open still closes', () => {
+  check('v101ui_04_shortcut_gate_table', 'Every opening shortcut x (shown, still locked in the guided first match) follows the button: W and the other locked ones refuse with a reason, N is not gated on negotiation mode, a window already open still closes', () => {
     const open = createFirstRunState();
     const locked = { ...open, active: true, unlocked: [] as FirstRunState['unlocked'] };
-    const base = (over: Partial<V101ShortcutGateInput> = {}): V101ShortcutGateInput => ({ firstRun: null, negotiationMode: true, pendingNegotiations: 0, alreadyOpen: false, ...over });
+    const base = (over: Partial<V101ShortcutGateInput> = {}): V101ShortcutGateInput => ({ firstRun: null, alreadyOpen: false, ...over });
     for (const action of Object.keys(V101_SHORTCUT_BUTTON_IDS)) {
       if (!v101ShortcutGate(action, base()).allowed) return `${action} refused with nothing locked`;
       const lockedResult = v101ShortcutGate(action, base({ firstRun: locked }));
@@ -213159,11 +213170,9 @@ export function runV101PlayScreenSelfTests(): V9SelfTestResult[] {
     if (!w.allowed) return 'W stays refused after crafting unlocks';
     const day1 = v101ShortcutGate('openWorkshop', base({ firstRun: locked }));
     if (day1.allowed) return 'W opens the Workshop on day 1 of the guided match';
-    const n = v101ShortcutGate('openNegotiations', base({ negotiationMode: false }));
-    if (n.allowed || !/Settings/.test(n.message)) return `N with negotiation mode off: ${json(n)}`;
-    if (!v101ShortcutGate('openNegotiations', base({ negotiationMode: false, pendingNegotiations: 2 })).allowed) return 'N with pending proposals must still open';
-    if (!v101ShortcutGate('openNegotiations', base({ negotiationMode: false, alreadyOpen: true })).allowed) return 'N must close an open Negotiation Center';
-    for (const action of ['endTurn', 'openMap', 'openNotifications', 'openProgress', 'toggleHelp', 'closeModal', 'clearNotifications']) if (!v101ShortcutGate(action, base({ firstRun: locked, negotiationMode: false })).allowed) return `${action} is not a gated shortcut`;
+    if (!v101ShortcutGate('openNegotiations', base()).allowed) return 'N must open the Negotiation Center (its button is shown with negotiation mode off too)';
+    if (!v101ShortcutGate('openNegotiations', base({ alreadyOpen: true })).allowed) return 'N must close an open Negotiation Center';
+    for (const action of ['endTurn', 'openMap', 'openNotifications', 'openProgress', 'toggleHelp', 'closeModal', 'clearNotifications']) if (!v101ShortcutGate(action, base({ firstRun: locked })).allowed) return `${action} is not a gated shortcut`;
     return true;
   });
 
@@ -213372,8 +213381,8 @@ export function runV101PlayScreenSelfTests(): V9SelfTestResult[] {
     for (const version of [null, 1000, 1010]) {
       const state = stamped(version);
       const open = createFirstRunState();
-      for (const action of Object.keys(V101_SHORTCUT_BUTTON_IDS)) if (!v101ShortcutGate(action, { firstRun: null, negotiationMode: true, pendingNegotiations: 0, alreadyOpen: false }).allowed) return `stamp ${String(version)}: ${action} refused`;
-      if (!v101ShortcutGate('openWorkshop', { firstRun: { ...open, active: false }, negotiationMode: true, pendingNegotiations: 0, alreadyOpen: false }).allowed) return 'an ended first match still locks the Workshop';
+      for (const action of Object.keys(V101_SHORTCUT_BUTTON_IDS)) if (!v101ShortcutGate(action, { firstRun: null, alreadyOpen: false }).allowed) return `stamp ${String(version)}: ${action} refused`;
+      if (!v101ShortcutGate('openWorkshop', { firstRun: { ...open, active: false }, alreadyOpen: false }).allowed) return 'an ended first match still locks the Workshop';
       if (isV101Match(state) !== (version === 1010)) return `stamp ${String(version)} is classified wrongly, the fixtures are wrong`;
       if (v101TextScaleRootStyle(state.textScaleMultiplier) !== undefined) return 'no setting must mean no style';
     }
@@ -213412,6 +213421,16 @@ export function runV101PlayScreenSelfTests(): V9SelfTestResult[] {
     if (v101FeedWithoutNotice(feed, { kind: 'do', candidateId: 'trade' }).length !== 4) return 'a plain Do It removed a notice';
     if (feed.length !== 4) return 'the feed was changed in place';
     if (v101FeedWithoutNotice(feed, { kind: 'dn_continue_break', candidateId: 'trade' }).length !== 4) return 'a Continue with no matching notice removed something';
+    return true;
+  });
+
+  check('v101ui_24_wiring_helpers_the_ui_calls', 'The helpers the UI calls at its wiring points behave: a click on (or inside) a button in the More panel closes it and a click on plain text does not; the toast lane takes pointer events only when it scrolls', () => {
+    const button = { closest: (sel: string) => (sel === 'button' ? {} : null) };
+    const text = { closest: () => null };
+    if (!v101MorePanelClickCloses(button)) return 'a choice inside the More panel did not close it';
+    if (v101MorePanelClickCloses(text) || v101MorePanelClickCloses(null) || v101MorePanelClickCloses({})) return 'a click that is not on a button closed the More panel';
+    if (v101ToastLanePointerClass(3) !== 'pointer-events-none' || v101ToastLanePointerClass(undefined) !== 'pointer-events-none') return 'the default toast lane is no longer click-through';
+    if (v101ToastLanePointerClass(10) !== 'pointer-events-auto' || v101ToastLanePointerClass(0) !== 'pointer-events-auto') return 'a scrolling toast lane cannot be scrolled with the mouse';
     return true;
   });
 
@@ -224904,13 +224923,11 @@ function dispatchGameSettingsChange(
 	      });
 	      if (shortcutDecision.preventDefault) e.preventDefault?.();
 	      if (!shortcutDecision.action) return;
-	      // V10.1 (SECTION 20BF): a shortcut opens a feature only when the button for it would be shown: not while the guided first match still hides it (W on day 1) and not for
-	      // Negotiations while negotiation mode is off. A refused key says why in a toast instead of opening a dead window. A window that is already open still closes with its key.
+	      // V10.1 (SECTION 20BF): a shortcut opens a feature only when the button for it would be shown: not while the guided first match still hides it (W on day 1).
+	      // A refused key says why in a toast instead of opening a dead window. A window that is already open still closes with its key.
 	      const v101ShortcutOk = v101ShortcutGate(shortcutDecision.action, {
 	        firstRun: wp8State,
-	        negotiationMode: gameSettings.negotiationMode === true,
-	        pendingNegotiations: Number(gameState.negotiationCenter?.pendingProposalsCount || 0),
-	        alreadyOpen: v99ShortcutOpenFlags(uiState)[V99_SHORTCUT_OPEN_FLAGS[shortcutDecision.action] || ''] === true
+			        alreadyOpen: v99ShortcutOpenFlags(uiState)[V99_SHORTCUT_OPEN_FLAGS[shortcutDecision.action] || ''] === true
 	      });
 	      if (!v101ShortcutOk.allowed) {
 	        addNotification(v101ShortcutOk.message, 'info');
@@ -264023,7 +264040,7 @@ function dispatchGameSettingsChange(
           : 1;
 
     return (
-      <div className={`fixed ${positionClass} space-y-2 ${V99_TOAST_LANE_WIDTH_CLASS} pointer-events-none${v101ToastLaneExtraClass(settings.maxVisible)}`} data-testid="notification-toast-container" role="log" aria-live="polite" aria-relevant="additions">
+      <div className={`fixed ${positionClass} space-y-2 ${V99_TOAST_LANE_WIDTH_CLASS} ${v101ToastLanePointerClass(settings.maxVisible)}${v101ToastLaneExtraClass(settings.maxVisible)}`} data-testid="notification-toast-container" role="log" aria-live="polite" aria-relevant="additions">
         {visibleNotifications.map((notification, v99ToastIndex) => {
           const notifType = NOTIFICATION_TYPES[notification.type];
           // V9.4: configured animation + speed are honoured; routine items only fade, critical is static emphasis,
@@ -271016,12 +271033,12 @@ function dispatchGameSettingsChange(
                             )}
                             {craftBlocker && (
                               <div className="text-[11px] bg-slate-950/70 border border-amber-700/40 rounded p-2 mb-2 space-y-1">
-                                <div className={`font-semibold ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')}`}>{craftBlocker.title}</div>
+                                <div className="font-semibold text-amber-300">{craftBlocker.title}</div>
                                 <div>Missing: {craftBlocker.missing.map(m => m.label).join(', ') || craftBlocker.whyUnavailable}</div>
-                                {craftBlocker.satisfied.length > 0 && <div className={`${v99ThemeAccent(themeStyles, 'successText', 'text-emerald-300')}`}>Already satisfied: {craftBlocker.satisfied.map(s => s.label).join(' • ')}</div>}
+                                {craftBlocker.satisfied.length > 0 && <div className="text-emerald-300">Already satisfied: {craftBlocker.satisfied.map(s => s.label).join(' • ')}</div>}
                                 <div className="flex flex-wrap gap-2">
-                                  {craftBlocker.nextAction && <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')}`} onClick={() => openIntentNav(craftBlocker.nextAction)}>{craftBlocker.nextAction.label}</button>}
-                                  <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')}`} onClick={() => trackIntentGoal({ id: `craft_${recipe.id}`, sourceType: 'crafting', sourceId: recipe.output || recipe.name, title: `Craft ${recipe.output || recipe.name}` })}>Track as Goal</button>
+                                  {craftBlocker.nextAction && <button type="button" className="underline text-sky-300" onClick={() => openIntentNav(craftBlocker.nextAction)}>{craftBlocker.nextAction.label}</button>}
+                                  <button type="button" className="underline text-sky-300" onClick={() => trackIntentGoal({ id: `craft_${recipe.id}`, sourceType: 'crafting', sourceId: recipe.output || recipe.name, title: `Craft ${recipe.output || recipe.name}` })}>Track as Goal</button>
                                 </div>
                               </div>
                             )}
@@ -271140,9 +271157,9 @@ function dispatchGameSettingsChange(
                             <div className="text-sm opacity-75">{REGIONS[regionCode]?.name}</div>
                             {investBlocker && !owned && (
                               <div className="text-[11px] bg-slate-950/70 border border-amber-700/40 rounded p-2 mt-2 space-y-1">
-                                <div className={`font-semibold ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')}`}>{investBlocker.title}</div>
+                                <div className="font-semibold text-amber-300">{investBlocker.title}</div>
                                 <div>{investBlocker.whyUnavailable}</div>
-                                {investBlocker.nextAction && <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')}`} onClick={() => openIntentNav(investBlocker.nextAction)}>{investBlocker.nextAction.label}</button>}
+                                {investBlocker.nextAction && <button type="button" className="underline text-sky-300" onClick={() => openIntentNav(investBlocker.nextAction)}>{investBlocker.nextAction.label}</button>}
                               </div>
                             )}
                             {(() => {
@@ -271263,9 +271280,9 @@ function dispatchGameSettingsChange(
                             {active && <div className={`text-xs ${v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-400')} mt-1`}>Active</div>}
                             {sabotageBlocker && !active && (
                               <div className="text-[11px] bg-slate-950/70 border border-amber-700/40 rounded p-2 mt-2 space-y-1">
-                                <div className={`font-semibold ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')}`}>{sabotageBlocker.title}</div>
+                                <div className="font-semibold text-amber-300">{sabotageBlocker.title}</div>
                                 <div>{sabotageBlocker.whyUnavailable}</div>
-                                {sabotageBlocker.nextAction && <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')}`} onClick={() => openIntentNav(sabotageBlocker.nextAction)}>{sabotageBlocker.nextAction.label}</button>}
+                                {sabotageBlocker.nextAction && <button type="button" className="underline text-sky-300" onClick={() => openIntentNav(sabotageBlocker.nextAction)}>{sabotageBlocker.nextAction.label}</button>}
                               </div>
                             )}
                           </div>
@@ -271430,12 +271447,12 @@ function dispatchGameSettingsChange(
                             </div>
                             {loanBlocker && (
                               <div className="text-[11px] bg-slate-950/70 border border-amber-700/40 rounded p-2 mt-2 space-y-1">
-                                <div className={`font-semibold ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')}`}>{loanBlocker.title}</div>
+                                <div className="font-semibold text-amber-300">{loanBlocker.title}</div>
                                 <div>{loanBlocker.whyUnavailable}</div>
                                 {loanBlocker.missing.length > 0 && <div>Missing: {loanBlocker.missing.map(m => m.label).join(', ')}</div>}
                                 <div className="flex flex-wrap gap-2">
-                                  {loanBlocker.nextAction && <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')}`} onClick={() => openIntentNav(loanBlocker.nextAction)}>{loanBlocker.nextAction.label}</button>}
-                                  <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')}`} onClick={() => trackIntentGoal({ id: `loan_${tier.id}`, sourceType: 'economy', sourceId: 'reserve', title: 'Stabilize cash reserve' })}>Track as Goal</button>
+                                  {loanBlocker.nextAction && <button type="button" className="underline text-sky-300" onClick={() => openIntentNav(loanBlocker.nextAction)}>{loanBlocker.nextAction.label}</button>}
+                                  <button type="button" className="underline text-sky-300" onClick={() => trackIntentGoal({ id: `loan_${tier.id}`, sourceType: 'economy', sourceId: 'reserve', title: 'Stabilize cash reserve' })}>Track as Goal</button>
                                 </div>
                               </div>
                             )}
