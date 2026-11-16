@@ -40603,7 +40603,7 @@ export const ASK_GAME_TOOL_DEPENDENCY_ROUTES: Record<string, string | null> = {
   validateactionrules: 'validate_action',
   getgamesettings: 'inspect_settings',
   searchsettingsregistry: 'search_settings',
-  getplayerstatus: null, // answered from the live state snapshot in the evidence bundle, not from a tool
+  getplayerstatus: null, // answered from the live state snapshot in the evidence bundle, not from a tool // V10.1 (SECTION 20BH)
   getregioninfo: null,
   getmarketprices: null,
   getcontractdetails: null,
@@ -40950,9 +40950,12 @@ export function askGameToolSimulateAction(state: any, actorId: string, action: a
       error: `Actor '${actorId}' not found.`
     };
   }
+  // V10.1 (SECTION 20BH): the planner passes its working state (skipDeepClone / _isWorkingCopy). For a match that is not on the V10.1 rules the
+  // planner keeps the V10.0 preview (gather income, no ghost refusal, the live actor written to); the Ask drawer's preview is read-only and honest everywhere.
+  const plannerClassic = (options?.skipDeepClone === true || state?._isWorkingCopy === true) && !isV101Match(clonedState);
   // V10.1 (SECTION 20BH): the preview changes a copy of the actor. With skipDeepClone the actor is the caller's live object
   // (the planner passes its working state), and the old code wrote the invented gather income into it.
-  const actor = { ...foundActor };
+  const actor = plannerClassic ? foundActor : { ...foundActor };
   // V10.1 (SECTION 20BH): the live fields (currentRegion, actions used today) instead of fields the player does not have, and
   // no made-up "NSW" / "3 AP" / "700 credit" when a value is missing.
   const simRegion = (): string => String(actor.currentRegion || actor.currentLocation || actor.region || '');
@@ -40969,7 +40972,7 @@ export function askGameToolSimulateAction(state: any, actorId: string, action: a
 
   const actionObj = typeof action === 'string' ? { type: action, actionId: action } : (action || {});
   // V10.1 (SECTION 20BH): "gather" and "explore" are not actions this game has; saying a preview works would be a lie.
-  if (v101IsGhostActionType(actionObj.type || actionObj.actionId)) {
+  if (!plannerClassic && v101IsGhostActionType(actionObj.type || actionObj.actionId)) {
     return {
       valid: false,
       actorId,
@@ -41001,9 +41004,9 @@ export function askGameToolSimulateAction(state: any, actorId: string, action: a
     };
   }
 
-  // Apply simulated state mutations to the copy
-  const apCost = typeof legalCheck.actionCost === 'number' ? legalCheck.actionCost : 1; // V10.1 (SECTION 20BH): a free action (a sale) previews as free, not as 1 action
-  actor.actionPoints = Math.max(0, simActionsLeft() - apCost);
+  // Apply simulated state mutations to the copy // V10.1 (SECTION 20BH): the copy (the V10.0 planner path writes the working state's actor, as before)
+  const apCost = plannerClassic ? (legalCheck.actionCost || 1) : (typeof legalCheck.actionCost === 'number' ? legalCheck.actionCost : 1); // V10.1 (SECTION 20BH): a free action (a sale) previews as free, not as 1 action
+  actor.actionPoints = plannerClassic ? Math.max(0, (actor.actionPoints ?? 3) - apCost) : Math.max(0, simActionsLeft() - apCost);
 
   const actionType = actionObj.type || actionObj.actionId || 'action';
   if (actionType === 'travel' && actionObj.destination) {
@@ -41011,8 +41014,12 @@ export function askGameToolSimulateAction(state: any, actorId: string, action: a
     // V10.1 (SECTION 20BH): the real fare for this trip (was a flat invented $50)
     const fare = computeTravelCostCore({ from: preSnapshot.region, to: String(actionObj.destination), characterName: actor.character?.name, mastery: Array.isArray(actor.masteryUnlocks) ? actor.masteryUnlocks : [] });
     actor.money = Math.max(0, (actor.money ?? 0) - fare);
-  } else if (actionType === 'work') {
-    actor.money = (actor.money ?? 0) + 50; // what the engine's "work" action pays (reduceGameAction: wage 50 unless one is given)
+  } else if (plannerClassic && actionType === 'gather') {
+    // V10.1 (SECTION 20BH): kept for the V10.0 and unstamped planner path only, where plans still carry the old gather step and its income estimate
+    actor.money = (actor.money ?? 0) + 150;
+    actor.supplies = (actor.supplies ?? 0) + 10;
+  } else if (!plannerClassic && actionType === 'work') {
+    actor.money = (actor.money ?? 0) + 50; // what the engine's "work" action pays (reduceGameAction: wage 50 unless one is given) // V10.1 (SECTION 20BH)
   }
 
   const postSnapshot: StateSnapshot = {
@@ -81809,7 +81816,9 @@ export function generateCandidatePlans(
   // V10.1 (SECTION 20BH): the pools hold only actions the engine can run (V101_ENGINE_PLAN_ACTIONS). "gather" and "explore" were the first
   // entries of three of them, and the engine ran them as no-ops that spent the action; "work" (Work for Wages) and the sale
   // and contract steps take their place. A sale is only planned when the player is carrying something to sell.
-  const styleActionPools: Record<string, string[]> = v101PlannerPools(actor);
+  // V10.1 (SECTION 20BH): only a match on the V10.1 rules gets the new pools, the 'work' fallback and its $50; a V10.0 or unstamped match keeps the old pools and guesses.
+  const v101Planner = isV101Match(currentState);
+  const styleActionPools: Record<string, string[]> = v101Planner ? v101PlannerPools(actor) : V100_PLANNER_POOLS;
 
   let candidatePlanSeq = 1;
 
@@ -81897,6 +81906,8 @@ export function generateCandidatePlans(
           apCost = simResult.delta.apCost || apCost;
         } else {
           if (actType === 'work') { estRev = V101_WORK_WAGE; riskLevel = 0.05; } // V10.1 (SECTION 20BH): replaces the gather (+$150) and explore (-$50/+$100) guesses
+          else if (!v101Planner && actType === 'gather') { estRev = 150; riskLevel = 0.1; } // V10.1 (SECTION 20BH): the V10.0 guesses, kept for V10.0 and unstamped matches
+          else if (!v101Planner && actType === 'explore') { estCost = 50; estRev = 100; riskLevel = 0.2; }
           else if (actType === 'challenges') { estCost = 100; estRev = 400; riskLevel = 0.4; }
           else if (actType === 'sell_resources') { estRev = 250; riskLevel = 0.05; }
           else if (actType === 'investments') { estCost = 500; estRev = 800; riskLevel = 0.3; }
@@ -81953,21 +81964,21 @@ export function generateCandidatePlans(
           id: `act_${style}_fallback`,
           turnNumber: currentTurn,
           stepIndex: 1,
-          actionType: V101_PLAN_FALLBACK_ACTION, // V10.1 (SECTION 20BH): was 'gather', which the game has no action for
+          actionType: v101Planner ? V101_PLAN_FALLBACK_ACTION : 'gather', // V10.1 (SECTION 20BH): was 'gather', which the game has no action for (kept for V10.0 and unstamped matches)
           estimatedCost: 0,
-          estimatedRevenue: V101_WORK_WAGE,
+          estimatedRevenue: v101Planner ? V101_WORK_WAGE : 100,
           estimatedAPCost: 1,
           riskLevel: 0.1,
           status: 'pending',
-          notes: 'Safe default action: Work for Wages pays a steady $50',
+          notes: v101Planner ? 'Safe default action: Work for Wages pays a steady $50' : 'Safe default action',
         }],
         expectedCashStart: currentCash,
-        expectedCashEnd: currentCash + V101_WORK_WAGE,
-        expectedNetWorthEnd: currentCash + V101_WORK_WAGE,
+        expectedCashEnd: currentCash + (v101Planner ? V101_WORK_WAGE : 100),
+        expectedNetWorthEnd: currentCash + (v101Planner ? V101_WORK_WAGE : 100),
         expectedRiskLevel: 0.1,
-        turnSummary: `Turn ${currentTurn}: Safe default - work for wages, or sell stock or take the best challenge if you have one.`,
+        turnSummary: v101Planner ? `Turn ${currentTurn}: Safe default - work for wages, or sell stock or take the best challenge if you have one.` : `Turn ${currentTurn}: Safe gather action.`,
       });
-      totalProfit += V101_WORK_WAGE;
+      totalProfit += v101Planner ? V101_WORK_WAGE : 100;
       totalAP += 1;
     }
 
@@ -82653,6 +82664,7 @@ export function classifyStrategyPlanDeviation(
     if (
       classifiedType === 'neutral' && (
         actType === 'gather' ||
+        (isV101Match(currentState) && actType === 'work') || // V10.1 (SECTION 20BH): Work for Wages is a plan step now, so the player's own work is compatible
         actType === 'sell_resources' ||
         actType === 'explore' ||
         actType === 'accept_contract' ||
@@ -82661,7 +82673,7 @@ export function classifyStrategyPlanDeviation(
         actType.includes('coop')
       )
     ) {
-      const isEarning = actType === 'gather' || actType === 'sell_resources';
+      const isEarning = actType === 'gather' || actType === 'sell_resources' || actType === 'work'; // V10.1 (SECTION 20BH): 'work' only reaches here in a V10.1 match
       classifiedType = 'compatible';
       explanation = isEarning
         ? `Action '${actType}' generates resources/cash without delaying planned steps, supporting objective '${plan?.objective?.title || 'goal'}'.`
@@ -82768,6 +82780,7 @@ export function attemptMinorPlanRepair(
 
   let repairStrategy: 'step_reorder' | 'step_insert' | 'delay_adjustment' | 'action_swap' = 'delay_adjustment';
   const modifiedActionIds: string[] = [];
+  const v101Repair = isV101Match(currentState); // V10.1 (SECTION 20BH): the Work for Wages repair step is for V10.1 matches only
 
   // STRATEGY A: Step Reordering
   if (activeIdx < allActions.length - 1) {
@@ -82800,16 +82813,16 @@ export function attemptMinorPlanRepair(
     const activeAct = allActions[activeIdx];
     if (activeAct) {
       const insertedAction: StrategyPlanAction = {
-        id: `act_prep_inserted_v${repairedPlan.version || 1}_${activeAct.id}`, // V10.1 (SECTION 20BH): from the plan, not the clock
+        id: v101Repair ? `act_prep_inserted_v${repairedPlan.version || 1}_${activeAct.id}` : `act_prep_inserted_${Date.now()}`, // V10.1 (SECTION 20BH): from the plan, not the clock (V10.0 and unstamped matches keep the clock id)
         turnNumber: activeAct.turnNumber,
         stepIndex: activeAct.stepIndex,
-        actionType: V101_PLAN_FALLBACK_ACTION, // V10.1 (SECTION 20BH): was 'gather' (an action the game does not have)
+        actionType: v101Repair ? V101_PLAN_FALLBACK_ACTION : 'gather', // V10.1 (SECTION 20BH): was 'gather' (an action the game does not have)
         estimatedCost: 0,
-        estimatedRevenue: V101_WORK_WAGE,
+        estimatedRevenue: v101Repair ? V101_WORK_WAGE : 150,
         estimatedAPCost: 1,
         riskLevel: 0.1,
         status: 'pending',
-        notes: 'Minor repair inserted a Work for Wages step to build cash first',
+        notes: v101Repair ? 'Minor repair inserted a Work for Wages step to build cash first' : 'Minor repair inserted resource preparation step',
       };
 
       activeAct.stepIndex += 1;
@@ -83642,9 +83655,19 @@ export function executeStrategyPlannerCoPilotStep(
 
   // V10.1 (SECTION 20BH): a "gather" or "explore" step (an old saved plan can carry one) is refused up front: the game has no such action, and the
   // engine used to run it as a no-op that spent the player's action. Nothing is spent; the step is marked failed so the plan can be repaired.
-  if (v101IsGhostActionType(currentAction.actionType)) {
+  // Only a match on the V10.1 rules refuses it; a V10.0 or unstamped match runs the step exactly as before.
+  const v101Exec = isV101Match(newState);
+  if (v101Exec && v101IsGhostActionType(currentAction.actionType)) {
     currentAction.status = 'failed';
+    // V10.1 (SECTION 20BH): the failed step leaves the plan off track and proposes a repair (the same pending proposal a stale step gets on load), so it is not stuck.
+    progress.failedActionIds = Array.from(new Set([...(progress.failedActionIds || []), currentAction.id]));
+    progress.isOnTrack = false;
     plannerState.currentProgress = progress;
+    try {
+      plannerState.pendingReplanProposal = generateStrategyReplanProposal(activePlan, progress, newState, 'delaying');
+    } catch {
+      // V10.1 (SECTION 20BH): no proposal could be built for this state; the step is still marked failed and the plan shows as delayed
+    }
     newState.strategyPlannerState = plannerState;
     if (newState.gameSettings) {
       newState.gameSettings.strategyPlannerState = plannerState;
@@ -83661,7 +83684,10 @@ export function executeStrategyPlannerCoPilotStep(
   const actionObj = currentAction as any;
   // V10.1 (SECTION 20BH): a plan step uses the action-point names (sell_resources, challenges ...); the engine runs its own (sell, challenge ...), and
   // needs the item or contract to act on. Both come from v101PlanStepIntent (the Co-Pilot's own legal candidates), so the step does what it says.
-  const stepIntent = v101PlanStepIntent(newState, currentAction);
+  // A V10.0 or unstamped match hands the step to the engine untouched.
+  const stepIntent: V101PlanStepIntent = v101Exec
+    ? v101PlanStepIntent(newState, currentAction)
+    : { actionType: currentAction.actionType, parameters: actionObj.parameters || actionObj.payload || {}, targetId: actionObj.targetId || currentAction.targetLocation };
   const stepCoPilotSettings: CoPilotSettings = {
     ...createDefaultCoPilotSettings(),
     ...(newState.coPilotSettings || newState.gameSettings?.coPilotSettings || {}),
@@ -209485,6 +209511,14 @@ export function v101AskAffordabilityTarget(normalizedQuery: string, action: V101
 // ---- Strategy Planner: plans made of real actions ----------------------------------------------------------------------------------
 /** What the engine's "work" action pays (reduceGameAction: a wage of 50 unless one is given). The one honest number in the planner's fallback. */
 export const V101_WORK_WAGE = 50;
+/** The planner's V10.0 pools, unchanged. A match not stamped V10.1 keeps drawing from them (gather and explore included). */
+export const V100_PLANNER_POOLS: Readonly<Record<string, string[]>> = {
+  balanced: ['gather', 'explore', 'contract_accept', 'sell_resources'],
+  safest: ['gather', 'sell_resources', 'explore'],
+  fastest: ['challenges', 'contract_accept', 'gather'],
+  highest_profit: ['sell_resources', 'challenges', 'investments', 'contract_accept'],
+  no_loans: ['gather', 'sell_resources', 'explore', 'contract_accept']
+};
 /** The step a plan falls back on (and repair inserts) when nothing else is possible: it always works and always pays. */
 export const V101_PLAN_FALLBACK_ACTION = 'work';
 
@@ -209838,7 +209872,8 @@ export function runV101AdviceSelfTests(): V9SelfTestResult[] {
 
   // ---- Strategy Planner --------------------------------------------------------------------------------------------------------------------------
   const objective: StrategyObjective = { id: 'obj_v101', type: 'net_worth_target', title: 'Reach $10k Net Worth', description: 'Earn money', targetValue: 10000, priority: 5, isCompleted: false };
-  const plannerState = (inventory?: unknown[]): Obj => ({
+  const plannerState = (inventory?: unknown[], rulesVersion: number | null = V101_RULES_VERSION): Obj => ({ // null = an unstamped match
+    ...(rulesVersion === null ? {} : { rulesVersion }),
     turn: 3, activePlayerId: 'player', humanPlayer: { id: 'player', money: 1500, ...(inventory ? { inventory } : {}) }, players: [{ id: 'player', money: 1500, ...(inventory ? { inventory } : {}) }],
     gameSettings: settings({ strategyPlannerSettings: createDefaultStrategyPlannerSettings() }), strategyPlannerState: createDefaultStrategyPlannerState()
   });
@@ -209882,7 +209917,7 @@ export function runV101AdviceSelfTests(): V9SelfTestResult[] {
 
   check('v101ai_15_simulator_has_no_ghost_income', 'The simulator refuses gather and explore, previews work at the engine\'s real wage, and no longer writes into the caller\'s live player', () => {
     const player: Obj = { id: 'player', money: 1000, supplies: 4, currentRegion: 'NSW', actionsUsedThisTurn: 0 };
-    const state: Obj = { player, gameSettings: settings(), _isWorkingCopy: true };
+    const state: Obj = { rulesVersion: V101_RULES_VERSION, player, gameSettings: settings(), _isWorkingCopy: true };
     const ghost = askGameToolSimulateAction(state, 'player', { type: 'gather' }, { skipDeepClone: true });
     const explore = askGameToolSimulateAction(state, 'player', 'explore', { skipDeepClone: true });
     const work = askGameToolSimulateAction(state, 'player', { type: 'work' }, { skipDeepClone: true });
@@ -209890,22 +209925,26 @@ export function runV101AdviceSelfTests(): V9SelfTestResult[] {
       || json({ ghost: ghost.error, explore: explore.error, work: work.delta, player });
   });
 
-  check('v101ai_16_plan_step_gather_is_refused_and_work_runs', 'An old saved plan with a "gather" step is refused without spending an action; a "work" step really pays and spends the action', () => {
-    const world: Obj = { day: 1, turnCounter: 1, currentActorId: 'player', currentTurn: 'player', humanPlayerId: 'player', selectedMode: 'ai', gameMode: 'game', turnOrder: ['player', 'ai'], resourcePrices: {}, supplyDemand: {}, activeEvents: [], season: 'Off', weather: 'Sunny' };
+  // A one-step plan in a match stamped with the given rules (null = an unstamped, pre-V10.0 match), ready for executeStrategyPlannerCoPilotStep.
+  const planStepMatch = (actionType: string, rulesVersion: number | null): Obj => {
+    const world: Obj = { day: 1, turnCounter: 1, currentActorId: 'player', currentTurn: 'player', humanPlayerId: 'player', selectedMode: 'ai', gameMode: 'game', turnOrder: ['player', 'ai'], resourcePrices: {}, supplyDemand: {}, activeEvents: [], season: 'Off', weather: 'Sunny', ...(rulesVersion === null ? {} : { rulesVersion }) };
     const player: Obj = { id: 'player', name: 'Tester', kind: 'human', isHuman: true, isAi: false, money: 1000, actionsUsedThisTurn: 0, currentRegion: 'QLD', inventory: [], loans: [], equipment: [], character: { name: 'Tourist' }, masteryUnlocks: [], level: 1 };
     const rival: Obj = { id: 'ai', name: 'Rival', kind: 'ai', isHuman: false, isAi: true, money: 1100, actionsUsedThisTurn: 0, currentRegion: 'NSW', inventory: [], loans: [], equipment: [] };
-    const make = (actionType: string): Obj => {
-      const base: Obj = { ...world, player, aiPlayer: rival, actorsById: { player, ai: rival }, gameSettings: settings({ strategyPlannerSettings: createDefaultStrategyPlannerSettings(), coPilotAuthorityMode: 'full_co_pilot' }) };
-      const set = generateCandidatePlans(objective, base, createDefaultStrategyPlannerSettings());
-      const active = activateStrategyPlan(set, set.plans[0].id, base) as Obj;
-      const plan = o(o(active.strategyPlannerState).activePlan) as unknown as StrategyPlan;
-      plan.turns = [{ turnNumber: 1, actions: [{ id: 'step1', turnNumber: 1, stepIndex: 1, actionType, estimatedCost: 0, estimatedRevenue: 0, estimatedAPCost: 1, riskLevel: 0.1, status: 'pending' }], expectedCashStart: 1000, expectedCashEnd: 1000, expectedNetWorthEnd: 1000, expectedRiskLevel: 0.1, turnSummary: 'test' }];
-      return active;
-    };
-    const ghostRun = executeStrategyPlannerCoPilotStep(make('gather'), { mode: 'full_co_pilot', autoApproveCheckpoint: true });
+    const base: Obj = { ...world, player, aiPlayer: rival, actorsById: { player, ai: rival }, gameSettings: settings({ strategyPlannerSettings: createDefaultStrategyPlannerSettings(), coPilotAuthorityMode: 'full_co_pilot' }) };
+    const set = generateCandidatePlans(objective, base, createDefaultStrategyPlannerSettings());
+    const active = activateStrategyPlan(set, set.plans[0].id, base) as Obj;
+    const plan = o(o(active.strategyPlannerState).activePlan) as unknown as StrategyPlan;
+    plan.turns = [{ turnNumber: 1, actions: [{ id: 'step1', turnNumber: 1, stepIndex: 1, actionType, estimatedCost: 0, estimatedRevenue: 0, estimatedAPCost: 1, riskLevel: 0.1, status: 'pending' }], expectedCashStart: 1000, expectedCashEnd: 1000, expectedNetWorthEnd: 1000, expectedRiskLevel: 0.1, turnSummary: 'test' }];
+    return active;
+  };
+
+  check('v101ai_16_plan_step_gather_is_refused_and_work_runs', 'In a V10.1 match an old saved plan with a "gather" step is refused without spending an action and the plan proposes a repair; a "work" step really pays and spends the action', () => {
+    const ghostRun = executeStrategyPlannerCoPilotStep(planStepMatch('gather', V101_RULES_VERSION), { mode: 'full_co_pilot', autoApproveCheckpoint: true });
     const ghostPlayer = o(o(ghostRun.newState).player);
+    const ghostPlanner = o(o(ghostRun.newState).strategyPlannerState);
     if (ghostRun.executed || !/not an action this game has/.test(String(ghostRun.checkpointReason)) || ghostPlayer.actionsUsedThisTurn !== 0 || ghostPlayer.money !== 1000) return json({ executed: ghostRun.executed, why: ghostRun.checkpointReason, used: ghostPlayer.actionsUsedThisTurn });
-    const workRun = executeStrategyPlannerCoPilotStep(make('work'), { mode: 'full_co_pilot', autoApproveCheckpoint: true });
+    if (o(ghostPlanner.currentProgress).isOnTrack !== false || !ghostPlanner.pendingReplanProposal) return json({ onTrack: o(ghostPlanner.currentProgress).isOnTrack, proposal: !!ghostPlanner.pendingReplanProposal });
+    const workRun = executeStrategyPlannerCoPilotStep(planStepMatch('work', V101_RULES_VERSION), { mode: 'full_co_pilot', autoApproveCheckpoint: true });
     const workPlayer = o(o(workRun.newState).player);
     return (workRun.executed === true && workPlayer.money === 1000 + V101_WORK_WAGE && workPlayer.actionsUsedThisTurn === 1) || json({ executed: workRun.executed, why: workRun.checkpointReason, money: workPlayer.money, used: workPlayer.actionsUsedThisTurn, err: workRun.executionResult?.error });
   });
@@ -209975,6 +210014,43 @@ export function runV101AdviceSelfTests(): V9SelfTestResult[] {
     if (!fresh || !old || !none) return 'the travel card was not ranked';
     return ((fresh.objectiveAlignment ?? 99) <= 16 && !fresh.whyPoints.some(w => /advances your current goal/.test(w)) && (old.objectiveAlignment ?? 0) >= 24 && none.objectiveAlignment === old.objectiveAlignment && old.whyPoints.some(w => /advances your current goal/.test(w)))
       || json({ fresh: fresh.objectiveAlignment, old: old.objectiveAlignment, none: none.objectiveAlignment });
+  });
+
+  check('v101ai_23_planner_v100_and_unstamped_play_as_before', 'A V10.0-stamped and an unstamped match still draw gather and explore into plans, fall back on gather, and run a "gather" step through the engine as before (not refused, no repair proposal); sell_resources, challenges and contract_accept steps reach the engine under their own names', () => {
+    const problems: string[] = [];
+    [V100_RULES_VERSION, null].forEach(version => {
+      const tag = version === null ? 'unstamped' : 'V10.0';
+      const set = generateCandidatePlans(objective, plannerState([], version), createDefaultStrategyPlannerSettings());
+      const types = set.plans.flatMap(p => p.turns.flatMap(t => t.actions.map(a => a.actionType)));
+      if (!types.includes('gather') || types.includes('work')) problems.push(`${tag} plans: ${[...new Set(types)].join(',')}`);
+      const pools = JSON.stringify(V100_PLANNER_POOLS);
+      if (pools.indexOf('gather') < 0 || pools.indexOf('explore') < 0) problems.push('old pools changed');
+      const run = executeStrategyPlannerCoPilotStep(planStepMatch('gather', version), { mode: 'full_co_pilot', autoApproveCheckpoint: true });
+      const planner = o(o(run.newState).strategyPlannerState);
+      if (/not an action this game has/.test(String(run.checkpointReason)) || planner.pendingReplanProposal) problems.push(`${tag} gather step was refused`);
+      const sim = askGameToolSimulateAction({ ...(version === null ? {} : { rulesVersion: version }), player: { id: 'player', money: 1000, supplies: 0, actionsUsedThisTurn: 0, currentRegion: 'NSW' }, gameSettings: settings(), _isWorkingCopy: true }, 'player', { type: 'gather' }, { skipDeepClone: true });
+      if (sim.valid && sim.delta.moneyChange !== 150) problems.push(`${tag} gather preview ${sim.delta.moneyChange}`);
+    });
+    const raw = ['sell_resources', 'challenges', 'contract_accept', 'gather'].map(t => v101PlanStepIntent(plannerState(['Coral'], V101_RULES_VERSION), { actionType: t }).actionType);
+    const direct = ['sell_resources', 'challenges', 'contract_accept'].every(t => !v101IsGhostActionType(t));
+    return (problems.length === 0 && direct && raw[0] !== 'sell_resources') || json({ problems, raw });
+  });
+
+  check('v101ai_24_planner_v101_pools_and_repair_work', 'A V10.1 match plans only engine actions, falls back on work at $50, and its minor repair inserts a work step with an id that does not use the clock; a V10.0 match keeps the gather repair step; the classifier treats the player\'s own work as compatible only in V10.1', () => {
+    const plan = (state: Obj) => generateCandidatePlans(objective, state, createDefaultStrategyPlannerSettings()).plans[0];
+    const repairOf = (rulesVersion: number | null) => {
+      const state = plannerState([], rulesVersion);
+      const p = plan(state);
+      // a single-step turn so reordering cannot take the repair and the insert strategy runs
+      p.turns = [{ ...p.turns[0], actions: [p.turns[0].actions[0]] }];
+      return attemptMinorPlanRepair(p, 'delaying', state, evaluatePlanProgress(p, state)) as unknown as { repairedPlan: StrategyPlan };
+    };
+    const v101 = repairOf(V101_RULES_VERSION); const v101Again = repairOf(V101_RULES_VERSION); const v100 = repairOf(V100_RULES_VERSION);
+    const inserted = (r: { repairedPlan: StrategyPlan }) => r.repairedPlan.turns.flatMap(t => t.actions).find(a => String(a.id).startsWith('act_prep_inserted'));
+    const a = inserted(v101); const b = inserted(v101Again); const c = inserted(v100);
+    const classify = (rulesVersion: number | null) => String(classifyStrategyPlanDeviation(plan(plannerState([], rulesVersion)), { type: 'work' }, plannerState([], rulesVersion)));
+    return (!!a && !!b && !!c && a.actionType === V101_PLAN_FALLBACK_ACTION && a.estimatedRevenue === V101_WORK_WAGE && a.id === b.id && c.actionType === 'gather' && c.estimatedRevenue === 150
+      && classify(V101_RULES_VERSION) === 'compatible' && classify(V100_RULES_VERSION) !== 'compatible') || json({ a, c, v101c: classify(V101_RULES_VERSION), v100c: classify(V100_RULES_VERSION) });
   });
 
   check('v101ai_22_nothing_new_is_saved', 'The package adds no match state: no V10.1 state key belongs to it, and the Ask hand-over (the Play card\'s move) lives on the question\'s own copy of the state', () => {
