@@ -221766,6 +221766,8 @@ function dispatchGameSettingsChange(
       showAiStats: false
     });
 
+    // V10.1 (SECTION 20BJ): the story-decision popup lives in the match state, so the rescue closes it there too (an undecided decision comes back at the next day's check).
+    if (isV101Match(gameState) && gameState.narrativePopup?.isOpen) dispatchGameState({ type: 'SET_NARRATIVE_POPUP', payload: { ...gameState.narrativePopup, isOpen: false } });
     const res = globalUISurfaceManager.executeFullUiRescue({ preserveApproval: isApprovalActive && preserveApproval });
 
     const defaultDock = createDefaultDockSettings();
@@ -221779,7 +221781,7 @@ function dispatchGameSettingsChange(
     if (rescueSettings.notifyOnRescueExecution) {
       addNotification(`🆘 Full UI Rescue Executed: ${res.modalsClosed} modal(s) closed, ${res.widgetsRepositioned} widget(s) repositioned.${res.approvalPreserved ? ' Active approval preserved on screen.' : ''}`, 'warning');
     }
-  }, [gameSettings, uiState, confirmationDialog, pendingApprovalRequests, addNotification, closeConfirmation, resolveApprovalRequest, resolveTreasuryApprovalRequest, updateGameSetting, updateUiState]);
+  }, [gameSettings, uiState, confirmationDialog, pendingApprovalRequests, addNotification, closeConfirmation, resolveApprovalRequest, resolveTreasuryApprovalRequest, updateGameSetting, updateUiState, gameState.rulesVersion, gameState.narrativePopup]);
 
 
   const analyzeTeamLiquidity = useCallback((teamId: string, actorMap?: Record<string, ActorState>): TeamLiquidityAnalysis => {
