@@ -209042,6 +209042,17 @@ export function v101MatchRuleLocked(gameState: unknown, key: string): boolean {
   return (gameState as { gameMode?: unknown }).gameMode === 'game' && isV101Match(gameState);
 }
 
+/**
+ * V10.1 (SECTION 20BD): may the Victory Goal / Game Length choices held back during a match take effect now? Only once the player is
+ * back on the menu or start screen. The end screen reads the live settings to name the winner, the deciding figure and the length, so
+ * applying a queued goal there would show the finished match under rules it was not played by; the next match start applies them too.
+ */
+export function v101RuleEditsMayApply(gameState: unknown): boolean {
+  if (!gameState || typeof gameState !== 'object') return false;
+  const mode = (gameState as { gameMode?: unknown }).gameMode;
+  return mode === 'menu' || mode === 'start_screen';
+}
+
 /** The one-line reason a locked control shows, or null when the key is editable. */
 export function v101RuleLockReason(gameState: unknown, key: string): string | null {
   return v101MatchRuleLocked(gameState, key) ? V101_RULE_LOCK_REASON : null;
@@ -209542,6 +209553,23 @@ export function runV101MatchRulesSelfTests(): V9SelfTestResult[] {
     return (lost(team, 1010).includes('(cash under $50 at 3 day-ends in a row)') && lost(team, 1000).includes('(cash after loans under $50 at 3 day-ends in a row)') && lost(team, null).includes('(cash after loans under $50')
       && lost('ai', null).includes('(cash under $50 at 3 day-ends in a row)') && lost('ai', 1000).includes('(cash under $50 at 3 day-ends in a row)')) || json([lost(team, 1010), lost(team, null), lost('ai', null)]);
   });
+  check('v101ru_25_queued_goal_waits_past_the_end_screen', 'A Victory Goal or Game Length queued during a match is NOT applied on the end screen (which reads the live goal to present the finished match); it applies on the menu or start screen, or at the next match start', () => {
+    const start = { ...base(), winCondition: 'money' as WinMetric, totalDays: 30 };
+    const held = v101GuardRuleEdits(start, { ...start, winCondition: 'netWorth', totalDays: 12 }, true);
+    // The play screen's effect: runs v101ApplyRuleEdits only when the lock is off AND v101RuleEditsMayApply says so.
+    const seen: Record<string, [string, number]> = {};
+    let settings = held;
+    ([['game', true], ['end', false], ['menu', false], ['start_screen', false]] as Array<[string, boolean]>).forEach(([mode, locked]) => {
+      if (!locked && v101RuleEditsMayApply({ gameMode: mode, rulesVersion: 1010 })) settings = v101ApplyRuleEdits(settings);
+      seen[mode] = [settings.winCondition, settings.totalDays];
+    });
+    const endOnly = ['end', 'game', 'loading', 'tutorial'].map(mode => v101RuleEditsMayApply({ gameMode: mode, rulesVersion: 1010 }));
+    const junk = [null, undefined, 'x', 7].map(v => v101RuleEditsMayApply(v));
+    // The end screen decides and words the result from the live settings: they must still be the match's own at 'end'.
+    return (seen.game[0] === 'money' && seen.end[0] === 'money' && seen.end[1] === 30 && seen.menu[0] === 'netWorth' && seen.menu[1] === 12
+      && endOnly.every(v => v === false) && junk.every(v => v === false) && v101RuleEditsMayApply({ gameMode: 'menu' }) && v101RuleEditsMayApply({ gameMode: 'start_screen' })
+      && v101PendingRuleEdits(held).length === 2 && v101ApplyRuleEdits(held).winCondition === 'netWorth') || json({ seen, endOnly });
+  });
   return results;
 }
 // <<V101-SLOT RULES end>>
@@ -209743,11 +209771,13 @@ function AustraliaGame() {
   // (profile-scoped keys only — never a match rule); with nothing stored this is createDefaultGameSettings() itself.
   const [v99ProfileBoot] = useState<ProfileSettingsBoot>(() => bootProfileSettings(createDefaultGameSettings(), v99BrowserStorage(), readCampaignSlot(campaignStorage())));
   const [gameSettings, setGameSettings] = useState<GameSettingsState>(() => v99ProfileBoot.settings);
-  // V10.1 (SECTION 20BD): when the match ends (or the player leaves it), the Victory Goal / Game Length choices made while it was
-  // locked take effect, so the menu shows what the next match will use. Nothing to do (same object back) when none are waiting.
+  // V10.1 (SECTION 20BD): when the player is back on the menu or start screen, the Victory Goal / Game Length choices made while the
+  // match was locked take effect, so the menu shows what the next match will use. They do NOT apply on the end screen (it still reads
+  // the live goal and length to present the finished match), and the next match start applies them too. Same object back when none wait.
+  const v101EditsMayApply = !v101RulesLocked && v101RuleEditsMayApply(gameState);
   useEffect(() => {
-    if (!v101RulesLocked) setGameSettings(prev => v101ApplyRuleEdits(prev));
-  }, [v101RulesLocked]);
+    if (v101EditsMayApply) setGameSettings(prev => v101ApplyRuleEdits(prev));
+  }, [v101EditsMayApply]);
   const [tuningArchive, setTuningArchive] = useState<TuningArchive>(() => createEmptyTuningArchive());
   const tuningArchiveRef = useRef<TuningArchive>(tuningArchive);
   // V9.6 (SECTION 20AM): state slice 1 — AI tuning lab (12 fields in one reducer; setters keep useState semantics).
@@ -219480,7 +219510,7 @@ function dispatchGameSettingsChange(
         const v101Mine = wpMfOverrides?.settings ? [] : v101Waiting;
         setGameSettings(prev => v101ApplyRuleEdits(v101DropRuleEdits(prev), v101Mine));
       }
-      if (v101FlushSource && (v101FlushSource as any).deferredTransactions?.length) {
+      if (v101FlushSource && v101FlushSource.deferredTransactions?.length) { // V10.1 (SECTION 20BD): typed access, no cast
         flushDeferredTransactionsOnBoundary(v101FlushSource, 'next_match', (newSet) => {
           setGameSettings(v101Waiting.length && !wpMfOverrides?.settings ? v101ApplyRuleEdits(newSet, v101Waiting) : newSet);
         });
@@ -219881,7 +219911,7 @@ function dispatchGameSettingsChange(
     const v101Inflation = v101ScenarioInflationPct(scenario.id, scenarioSettings);
     if (v101Inflation > 0) {
       dispatchPlayer({ type: 'MERGE_STATE', payload: { priceInflationPct: v101Inflation } });
-      updateAiPlayerState((prev: any) => ({ ...prev, priceInflationPct: v101Inflation }));
+      updateAiPlayerState({ priceInflationPct: v101Inflation }); // V10.1 (SECTION 20BD): the object form merges into the latest state, no cast
       addNotification(`📈 ${scenario.title}: shop and investment prices run ${Math.round(v101Inflation * 100)}% higher for both sides.`, 'warning', true, 'system');
     }
     if (scenario.startingRegions && scenario.startingRegions.length > 0) {
@@ -231760,7 +231790,7 @@ function dispatchGameSettingsChange(
       });
     }
     return true;
-  }, [addNotification, appendTeammatePerformanceSample, deductMoney, gameSettings.sabotageEnabled, gameState.selectedMode, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState, dispatchAuthoritativeGameActivityLedgerEvent, commitMatchMemory]);
+  }, [addNotification, appendTeammatePerformanceSample, deductMoney, gameSettings.sabotageEnabled, gameState.selectedMode, gameState.turnCounter, gameState.rulesVersion, gameState.turnOrder, getActorDisplayName, getActorState, updateActorState, dispatchAuthoritativeGameActivityLedgerEvent, commitMatchMemory]); // V10.1 (SECTION 20BD): v101SabotageDuration reads the rules stamp and the turn order
   useActorSabotageRef.current = useActorSabotage;
 
   const useActorSpecialAbility = useCallback((actorId: string, abilityName?: string) => {
@@ -256621,6 +256651,7 @@ function dispatchGameSettingsChange(
                 ...prev,
                 ...sanitizeSettingsPatch(presetSettings, { keepUnknownKeys: true }).settings
               }));
+              if (v101RulesLocked && v101EditsTouchLockedRules(gameSettings, presetSettings)) addNotification(`Game Length and Victory Goal from the preset wait for your next match. ${V101_RULE_LOCK_REASON}`, 'info', true, 'system'); // V10.1 (SECTION 20BD): say so instead of dropping them silently
               setShowPresetManagerModal(false);
             }}
             themeStyles={themeStyles}
