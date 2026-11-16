@@ -36564,7 +36564,7 @@ export function playerReducer(state: any, action: any) {
         character: char,
         stats: { ...char.startingStats },
         specialAbilityUses: char.specialAbility.usesLeft,
-        name: action.payload.name || "Player"
+        name: v101NormalizePlayerName(action.payload.name) // V10.1 (SECTION 20BE): "   " or " Bob " became a blank / padded name in the HUD while the rest of the game said "Player"
       };
     case 'EVALUATE_ACTIVITY_LEDGER_EXPECTATIONS':
       return state;
@@ -102527,11 +102527,22 @@ export interface PlayerControlStatusBarProps {
   onOpenControl?: () => void;
   onReviewApproval?: () => void;
   lastDeltas?: { cashDelta?: number; netWorthDelta?: number; apDelta?: number } | null;
+  /** V10.1 (SECTION 20BE): during the guided first match a manual, human-controlled player sees only the one-line "You are playing" chip. */
+  firstRunCompact?: boolean;
 }
 
 /** The persistent "who controls my player" indicator. Exactly one headline — never contradictory. */
-const PlayerControlStatusBarView: React.FC<PlayerControlStatusBarProps> = ({ control, theme, onTakeControl, onStart, onResume, onOpenControl, onReviewApproval, lastDeltas }) => {
+const PlayerControlStatusBarView: React.FC<PlayerControlStatusBarProps> = ({ control, theme, onTakeControl, onStart, onResume, onOpenControl, onReviewApproval, lastDeltas, firstRunCompact }) => {
   const tone = V9_TONE_CLASSES[control.tone] || V9_TONE_CLASSES.neutral;
+  // V10.1 (SECTION 20BE): the first screen is the tour's, not the Co-Pilot's. The full bar comes back the moment control is not plainly the player's.
+  if (firstRunCompact === true && v101ControlBarIsCompact(control)) {
+    return (
+      <div role="status" aria-live="polite" data-testid="v9-control-status" data-control-phase={control.phase} data-first-run-compact="true" className={`${theme.card} border-2 ${tone.ring} rounded-xl px-3 py-2 flex items-center gap-2`}>
+        <span className="text-lg leading-none" aria-hidden="true">{control.icon}</span>
+        <span className={`px-2 py-0.5 rounded-md text-[11px] font-extrabold tracking-wider ${tone.badge}`}>{control.headline}</span>
+      </div>
+    );
+  }
   const facts: string[] = [];
   if (control.objective && control.copilotHoldsControl) facts.push(`Objective: ${control.objective}`);
   if (control.actionProgress && control.copilotHoldsControl) facts.push(`Action ${control.actionProgress.current} / ${control.actionProgress.total}`);
@@ -128672,7 +128683,7 @@ const V9MatchHeaderView: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() =>
         <V99FinalDayChip show={h.finalDay === true} />
         <span key={h.turnLabel} className={`${quietTurnLabel ? 'sr-only' : 'font-extrabold v94-enter'}${quietControl ? ' [&+span]:sr-only' : ''}`} aria-hidden={quietTurnLabel ? true : undefined} data-testid="v9-turn-owner">{h.turnLabel}</span>
         <span key={h.controlLabel} className={`v94-pop px-2 py-0.5 rounded-full text-xs font-extrabold ${V9_CONTROL_TONE[h.controlTone]}`} data-testid="v9-control-owner" role="status">{h.controlLabel}</span>
-        {h.apLabel && <FeelValue value={apZero ? <span className={`font-bold ${theme.warningText || 'text-amber-300'}`}>⚡ 0 actions left</span> : h.apLabel} valueKey={h.apLabel} delta={apDelta} testId="v94-ap" />}
+        {h.apLabel && <FeelValue value={apZero ? <span className={`font-bold ${theme.warningText || 'text-amber-300'}`}>⚡ 0 actions left</span> : v101ApHeaderText(h.apLabel) /* V10.1 (SECTION 20BE): "3 actions" now says they are what is left today */} valueKey={h.apLabel} delta={apDelta} testId="v94-ap" />}
         <FeelValue value={<span className="font-bold">{h.cashLabel}</span>} valueKey={h.cashLabel} delta={cashDelta} testId="v94-cash" />
         <button type="button" className={`underline decoration-dotted ${endgame ? 'font-bold rounded px-1 border border-amber-500/60' : ''}`} onClick={onStanding} title="Match standing" data-testid="v94-win">{endgame ? '⏳ ' : ''}{h.winLabel}</button>
         {h.transitLabel && <span className="text-cyan-300" data-testid="v9-transit">{h.transitLabel}</span>}
@@ -130190,6 +130201,8 @@ export interface LearningContext {
   decisionActive: boolean; criticalActive: boolean; copilotControlling: boolean; playerBusy: boolean;
   worldChain: string | null; regionShift: string | null; stakeholder: string | null; diplomacyOpportunity: string | null;
   lostRegion: string | null; overrideOfAdvice: boolean; blocked: { kind: string; text: string } | null;
+  /** V10.1 (SECTION 20BE): the "matches are not saved automatically" lesson is due (v101SafetyNudgeDue). */
+  v101SafetyNudge?: boolean;
   /** V9.3 content (visible only): a waiting strategic decision, a live opportunity, a national/rare event. */
   contentDilemma?: string | null; contentOpportunity?: string | null; contentEvent?: string | null;
   /** V10.0 national networks (public): a visible bottleneck or critical dependency, as one sentence. */
@@ -130251,7 +130264,7 @@ export const LEARNING_CONCEPTS: LearningConceptDefinition[] = [
     lesson: () => ({ headline: 'End Turn', lines: ['You are out of Actions. End Turn passes play to your rival, and your Actions refresh when your turn returns.'], target: 'end_turn', surface: 'coach' }) },
   { id: 'travel', title: 'Travel', category: 'regions', tier: 'core', priority: 4, minLevel: 2, requires: [], directoryId: 'regions', askPrompt: 'Where should I travel?', related: ['regions'],
     relevant: c => (c.isHumanTurn && (c.recommendedIsTravel || c.turn >= 2) ? (c.recommendedIsTravel ? 'the recommended move is travel' : 'you have not travelled yet') : null),
-    lesson: c => ({ headline: 'Travel', lines: [`You are in ${c.currentRegionName}. Travelling uses an Action and some cash, and each region has its own challenges, resources and opportunities.`], action: { label: 'Open Map', nav: navAction('travel', 'Open Map') }, target: 'map', surface: 'card' }) },
+    lesson: c => ({ headline: 'Travel', lines: [`You are in ${c.currentRegionName}. Travelling uses an Action and some cash, and each region has its own challenges, resources and opportunities.`, 'Each arrival collects one local resource - sell it for cash.' /* V10.1 (SECTION 20BE): the core loop, said once more where travel is taught */], action: { label: 'Open Map', nav: navAction('travel', 'Open Map') }, target: 'map', surface: 'card' }) },
   { id: 'challenges', title: 'Challenges', category: 'economy', tier: 'core', priority: 4, minLevel: 2, requires: [], directoryId: 'challenges', askPrompt: 'Which challenge should I try?', related: ['cash'],
     relevant: c => (c.isHumanTurn && c.cash > 0 ? `challenges are available in ${c.currentRegionName}` : null),
     lesson: c => ({ headline: 'Challenges', lines: [`${c.currentRegionName}'s challenges pay a multiple of your wager when you succeed — and cost the wager when you don't.`, 'Bigger wagers mean bigger swings.'], action: { label: 'Show region challenges', nav: navAction('challenges', 'Show challenges') }, surface: 'card' }) },
@@ -130264,6 +130277,11 @@ export const LEARNING_CONCEPTS: LearningConceptDefinition[] = [
   { id: 'ask_game', title: 'Ask the game', category: 'basics', tier: 'core', priority: 5, minLevel: 2, requires: ['current_focus'], directoryId: 'focus', askPrompt: 'How do I make money?', related: [],
     relevant: c => (c.turn >= 2 ? 'teach the universal help early' : null),
     lesson: () => ({ headline: 'You can ask the game', lines: ['Ask questions in plain language — the answers come from your live match.'], asks: ['What should I do?', 'How do I make money?', 'How do I control a region?'], surface: 'inline' }) },
+  // V10.1 (SECTION 20BE): the one lesson about saving. Matches are not saved automatically; this appears once, from day 3 of a real match,
+  // while Autosave & Resume is off. Its card (V101SafetyNudgeCard) has its own buttons; "Not now" / "Don't ask again" are kept in the browser.
+  { id: 'save_safety' /* = V101_SAFETY_LESSON_ID (declared in SECTION 20BE, after this table is built) */, title: 'Keep your match safe', category: 'basics', tier: 'secondary', priority: 4, minLevel: 2, requires: [], directoryId: 'saving', askPrompt: 'How do I save my match?', related: [],
+    relevant: c => (c.isHumanTurn && c.v101SafetyNudge === true ? 'matches are not saved automatically and Autosave & Resume is off' : null),
+    lesson: () => ({ headline: V101_SAFETY_NUDGE_COPY.headline, lines: [V101_SAFETY_NUDGE_COPY.body], surface: 'card' }) },
   { id: 'cash_vs_networth', title: 'Cash vs Net Worth', category: 'economy', tier: 'core', priority: 5, minLevel: 3, requires: [], directoryId: 'win', askPrompt: 'What is the difference between cash and net worth?', related: ['win_condition'],
     relevant: c => (c.netWorth - c.cash >= 1000 ? `${glMoney(c.netWorth - c.cash)} of your value is held in assets` : null),
     lesson: c => ({ headline: 'Cash vs Net Worth', lines: [`Cash (${glMoney(c.cash)}) is money available now. Net Worth (${glMoney(c.netWorth)}) also counts what you own.`, c.winMetric === 'money' ? 'This match counts cash — assets only help once sold.' : 'Assets count toward this match, but you cannot spend them directly.'], surface: 'inline' }) },
@@ -130479,6 +130497,13 @@ export function selectNextLearningMoment(ctx: LearningContext, learning: PlayerL
     const d = LEARNING_CONCEPT_BY_ID[learning.forcedLessonId];
     return { moment: mk(d, 'you asked to see this lesson again', true), level, mode, eligible: [{ id: d.id, reason: 'requested' }], suppressed, budget };
   }
+  // V10.1 (SECTION 20BE): the "matches are not saved automatically" lesson is the one lesson that may take the place of a lesson still on screen: a
+  // player who never presses "Got it" on Current Focus would otherwise never see it. It still waits for the welcome / tour, a decision, a busy window,
+  // a guidance level of 2 or more and its own dismissal ("Not now" / "Don't ask again" are its own switches, so "Don't show tips like this" on another lesson does not silence it); it is never forced on anyone who turned guidance off.
+  if (ctx.v101SafetyNudge === true && ctx.isHumanTurn && level >= 2 && learning.welcome !== 'pending' && learning.basicsStep === null && !ctx.decisionActive && !ctx.criticalActive && !ctx.playerBusy) {
+    const safety = LEARNING_CONCEPT_BY_ID.save_safety;
+    if (safety && !learning.concepts.save_safety?.dismissed) return { moment: mk(safety, 'matches are not saved automatically and Autosave & Resume is off', false), level, mode, eligible: [{ id: safety.id, reason: 'save lesson due' }], suppressed, budget };
+  }
   // The lesson already on screen stays until dismissed or no longer relevant (no stacking, no flicker).
   const active = learning.activeLessonId ? LEARNING_CONCEPT_BY_ID[learning.activeLessonId] : null;
   if (active && level >= active.minLevel && !learning.concepts[active.id]?.dismissed) {
@@ -130550,7 +130575,7 @@ export function buildBlockedActionHelp(kind: string, blocker: string, ctx: { cas
 /** One-line result after the FIRST use of a concept (after-action learning, real values). */
 export function buildFirstUseConfirmation(conceptId: string, ctx: LearningContext, detail: string): LearningLesson | null {
   switch (conceptId) {
-    case 'travel': return { headline: `You arrived in ${ctx.currentRegionName}`, lines: ['Being in a region unlocks its local challenges, resources and opportunities.'], surface: 'after_action' };
+    case 'travel': return { headline: `You arrived in ${ctx.currentRegionName}`, lines: ['Being in a region unlocks its local challenges, resources and opportunities.', 'Arriving collects one local resource when your inventory has room - sell it for cash.' /* V10.1 (SECTION 20BE) */], surface: 'after_action' };
     case 'regional_control': return { headline: `You staked in ${ctx.currentRegionName}`, lines: [`Cash is now ${glMoney(ctx.cash)}. ${ctx.controllerHere === 'you' ? `You control ${ctx.currentRegionName} while your stake is the largest.` : 'Your stake is not yet the largest here.'}`, 'The tradeoff: that cash is tied up and not available for other moves.'], surface: 'after_action' };
     case 'market': return { headline: 'Sold', lines: [`${detail}. Cash is now ${glMoney(ctx.cash)}.`, 'Prices move daily — timing a sale is part of the game.'], surface: 'after_action' };
     case 'contracts': return { headline: /completed/.test(detail) ? 'Contract complete' : 'Contract accepted', lines: [/completed/.test(detail) ? `Reward credited — cash is now ${glMoney(ctx.cash)}.` : 'The deadline now counts down. Deliver what it needs in the target region.'], surface: 'after_action' };
@@ -130579,7 +130604,9 @@ export const MECHANICS_DIRECTORY_ENTRIES: MechanicsDirectoryEntry[] = [
   { id: 'team', icon: '🤝', title: 'Team Mode', body: 'Teammates share a goal and play their own turns. Shared resources and team rules (governance) may require approval for some spending.', settingsTab: 'aiTeams', settingsLabel: 'Configure Team Brain' },
   { id: 'copilot', icon: '🧭', title: 'Co-Pilot, Guardian & Assistance', body: 'Guide mode explains and recommends; it never acts for you. The Co-Pilot only plays when you choose it, and you can Take Control at any time. Guardian stops only the serious mistakes you configured — many legal moves are still your call.', settingsTab: 'aiTeams', settingsLabel: 'Co-Pilot settings' },
   { id: 'situations', icon: '🗺', title: 'Situations: Decisions, Events & Opportunities', body: 'Each match draws a small, different set of situations from the world\'s actual condition: contract offers that expire, strategic decisions with several valid answers, national and rare events that shift prices or travel for a few days, multi-stage crises that reward preparation, and opportunities that point at actions you already have. Budgets and cooldowns keep them rare enough to matter.' },
-  { id: 'adaptive', icon: '⚖️', title: 'Fairness & Adaptive AI', body: 'Under Strictly Equal and Smarter Decisions Only, the AI plays with exactly your numbers — harder AI plans better, it does not get richer. Catch-up effects apply only if you opt into adaptive handicaps.', settingsTab: 'aiTeams', settingsLabel: 'Configure Adaptive AI' }
+  { id: 'adaptive', icon: '⚖️', title: 'Fairness & Adaptive AI', body: 'Under Strictly Equal and Smarter Decisions Only, the AI plays with exactly your numbers — harder AI plans better, it does not get richer. Catch-up effects apply only if you opt into adaptive handicaps.', settingsTab: 'aiTeams', settingsLabel: 'Configure Adaptive AI' },
+  // V10.1 (SECTION 20BE): the one lesson about saving needed somewhere to point.
+  { id: 'saving', icon: '💾', title: 'Saving & Autosave', body: 'Matches are not saved automatically. Save / Load (More menu) downloads a save file you can load later from the main menu. Autosave & Resume (Settings, off by default) keeps a copy of your match in this browser as you play and puts a "Resume match" card on the main menu; starting another match or loading a file replaces that copy, and the game asks first. "Warn before closing the tab" is a separate switch.' },
 ];
 
 export const MechanicsDirectoryEntries: React.FC<{ theme: any; focusId: string | null; onConfigure: (tab: SettingsHubTabId) => void; onAsk?: (q: string) => void }> = ({ theme, focusId, onConfigure }) => {
@@ -181536,8 +181563,9 @@ export const EXPERIENCE_MODE_OPTIONS: readonly ExperienceModeOption[] = [
     label: 'Explorer',
     icon: '🧭',
     tagline: 'Travel, challenges and rivalry. Nothing else on screen.',
-    description: 'Cross Australia region by region: take on challenges, trade, craft, shop, borrow, sabotage and outscore the rival AI alone or in a team. The national economy simulation (industries, supply chains, infrastructure networks, megaprojects, public finance, households and the rest) stays completely out of your way — no panels, no inspectors, no national notifications, and no per-turn processing. Recommended for a first match.',
-    includes: ['Challenges, travel and trade', 'Crafting, shop, loans and sabotage', 'Characters and mastery', 'Rival AI, diplomacy and teams']
+    // V10.1 (SECTION 20BE): the description and the includes list below name the shop, sabotage and diplomacy as optional switches (all three are off in a default match), not as part of the match.
+    description: 'Cross Australia region by region: take on challenges, trade, craft, borrow and outscore the rival AI alone or in a team (the equipment shop, sabotage and diplomacy are optional switches in Settings, off until you turn them on). The national economy simulation (industries, supply chains, infrastructure networks, megaprojects, public finance, households and the rest) stays completely out of your way — no panels, no inspectors, no national notifications, and no per-turn processing. Recommended for a first match.',
+    includes: ['Challenges, travel and trade', 'Crafting and loans (shop, sabotage and diplomacy: optional, in Settings)', 'Characters and mastery', 'Rival AI and teams']
   },
   {
     id: 'nation',
@@ -181545,7 +181573,7 @@ export const EXPERIENCE_MODE_OPTIONS: readonly ExperienceModeOption[] = [
     icon: '🇦🇺',
     tagline: 'Run the country. Challenges become a means to an end.',
     description: 'Keep every challenge, trade and rivalry mechanic, but put the national systems first: freight, energy, water and digital networks, industries and supply chains, megaprojects, innovation, resilience, national priorities, regional competition, workforce, governance, public finance and households. The HUD, your current objective and the event feed foreground national conditions.',
-    includes: ['Everything in Explorer', 'All national systems (V10.0–V10.13)', 'National strips above the decision card', 'National objective and event feed first']
+    includes: ['Everything in Explorer', 'All national systems (industries, supply chains, infrastructure, public finance...)', 'National strips above the decision card', 'National objective and event feed first']
   },
   {
     id: 'full',
@@ -186707,6 +186735,8 @@ interface KeyboardShortcutsHelpModalProps {
   surfaceState: any;
   keyboardShortcuts: typeof KEYBOARD_SHORTCUTS;
   gameSettings: any;
+  /** V10.1 (SECTION 20BE): opens the full rules (Mechanics Directory) from the "How to play" section. */
+  onOpenRules?: () => void;
 }
 
 const KeyboardShortcutsHelpModalView: React.FC<KeyboardShortcutsHelpModalProps> = ({
@@ -186716,6 +186746,7 @@ const KeyboardShortcutsHelpModalView: React.FC<KeyboardShortcutsHelpModalProps> 
   surfaceState,
   keyboardShortcuts,
   gameSettings,
+  onOpenRules,
 }) => {
   const modalRef = React.useRef<HTMLDivElement>(null);
 
@@ -186805,7 +186836,7 @@ const KeyboardShortcutsHelpModalView: React.FC<KeyboardShortcutsHelpModalProps> 
           <div className="flex items-center gap-2">
             <span className="text-xl sm:text-2xl" aria-hidden="true">⌨️</span>
             <h3 id="keyboard-shortcuts-title" className="text-xl sm:text-2xl font-bold">
-              Keyboard Shortcuts
+              Help &amp; Keyboard Shortcuts
             </h3>
           </div>
           <button
@@ -186820,6 +186851,9 @@ const KeyboardShortcutsHelpModalView: React.FC<KeyboardShortcutsHelpModalProps> 
         
         {/* Scrollable Body */}
         <div className="flex-1 overflow-y-auto overscroll-contain min-h-0 p-4 sm:p-6">
+          {/* V10.1 (SECTION 20BE): Help was shortcuts and a list of nouns; "How to play" comes first, the shortcuts stay below. */}
+          <V101HowToPlay lines={v101HowToPlayLines({ winCondition: gameSettings?.winCondition, actionsPerDay: gameSettings?.actionLimitsEnabled === false ? null : Number(gameSettings?.playerActionsPerDay) || null, autosaveOn: gameSettings?.matchRecoveryEnabled === true })} onOpenRules={onOpenRules} themeBorder={themeStyles.border} />
+          <h4 className="font-bold text-sm uppercase tracking-wide opacity-75 mb-2">Keyboard shortcuts</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {Object.entries(keyboardShortcuts)
               .filter(([key]) => key !== 'ctrl+shift+c')
@@ -186896,7 +186930,8 @@ export interface FirstRunSignals { day: number; money: number; inventoryCount: n
 export const FIRST_RUN_START_CONCEPTS: readonly FirstRunConcept[] = ['travel', 'challenge', 'sell'];
 export const FIRST_RUN_UNLOCK_ORDER: readonly FirstRunConcept[] = ['trade', 'crafting', 'shop', 'loans', 'sabotage', 'diplomacy', 'teams'];
 export const FIRST_RUN_ALL_CONCEPTS: readonly FirstRunConcept[] = [...FIRST_RUN_START_CONCEPTS, ...FIRST_RUN_UNLOCK_ORDER];
-export const FIRST_RUN_GOAL = { money: 2000, challenges: 3, byDay: 7, text: 'Earn $2,000 and complete 3 challenges by day 7' } as const;
+// V10.1 (SECTION 20BE): the goal is met by HOLDING $2,000 cash (money >= 2000, from a $1,000 start), not by earning $2,000: the words now say so.
+export const FIRST_RUN_GOAL = { money: 2000, challenges: 3, byDay: 7, text: 'Reach $2,000 cash and win 3 challenges by day 7' } as const;
 export const FIRST_RUN_CHARACTER_NAME = 'Tourist';
 export const FIRST_RUN_START_REGION = 'NSW';
 export const FIRST_RUN_DIFFICULTY = 'easy';
@@ -186904,16 +186939,17 @@ export const FIRST_RUN_LABELS: Readonly<Record<FirstRunConcept, string>> = {
   travel: 'Travel', challenge: 'Challenges', sell: 'Sell', trade: 'Trade', crafting: 'Crafting', shop: 'Shop', loans: 'Loans', sabotage: 'Sabotage', diplomacy: 'AI diplomacy', teams: 'Teams'
 };
 export const FIRST_RUN_EXPLANATIONS: Readonly<Record<FirstRunConcept, string>> = {
-  travel: 'Travel moves you to another state or territory; neighbours are cheapest.',
+  // V10.1 (SECTION 20BE): the core loop, said where the player is: arriving collects one local resource, Sell turns it into cash (<= 140 characters, no newline).
+  travel: 'Travel moves you to another state or territory (neighbours are cheapest). Each arrival collects one local resource to sell.',
   challenge: 'Challenges are wagers: win and you earn a multiple of your bet, lose and you lose it.',
   sell: 'Sell turns the resources you collect into cash at today’s prices.',
   trade: 'Trade: buy resources where they are cheap and sell where they are dear — the Resource Market shows today’s prices.',
   crafting: 'Crafting: the Workshop combines raw resources into goods worth more than their parts.',
   shop: 'Shop: equipment gives lasting bonuses to travel, challenges and experience (NSW and VIC have shops).',
-  loans: 'Loans: borrow cash now and pay interest every day — repay early to keep it cheap.',
+  loans: `Loans: borrow $${LOAN_AMOUNT} now at ${Math.round(LOAN_INTEREST_RATE * 100)}% interest a day ($${Math.floor(LOAN_AMOUNT * LOAN_INTEREST_RATE)} a day) — repay quickly.`, // V10.1 (SECTION 20BE): the real rate
   sabotage: 'Sabotage slows your rival down, but it can backfire, and the rival remembers.',
   diplomacy: 'AI diplomacy: your rival may offer deals — read every term before you answer.',
-  teams: 'Teams: in Team mode you play beside an AI ally against a rival squad (New Game → Team mode).'
+  teams: 'Teams: in Team mode you play beside an AI ally against a rival squad (open More → Leave match, then pick a Team mode).' // V10.1 (SECTION 20BE): there is no "New Game" button
 };
 /** When each locked concept becomes relevant — and the day it unlocks regardless, so the tour always finishes. */
 const FIRST_RUN_RELEVANCE: Readonly<Record<FirstRunConcept, { when: (s: FirstRunSignals) => boolean; byDay: number }>> = {
@@ -187072,6 +187108,8 @@ export interface FirstRunView {
   note?: string | null;
   /** V10.0 (SECTION 20AY, F3): set once the goal is met while the tour carries on (v100FirstRunGoalMetLine). */
   goalMetLine?: string | null;
+  /** V10.1 (SECTION 20BE): the last day the real match plays, so the warm-up's "day 7" is not read as the match length. */
+  matchDays?: number | null;
 }
 // V9.9 (SECTION 20AR): `availability` names the concepts that are switched off in this match. They get no chip, are
 // not the "new" concept and are not announced as next; one honest line lists them instead. Omitted = all available.
@@ -187097,7 +187135,7 @@ export const FirstRunPanel = React.memo(function FirstRunPanel({ view, onSkip, t
           <h2 id="first-run-h" className="font-bold text-base">🎓 Your first match — {view.goalText}</h2>
           {view.goalMetLine
             ? <div className="text-xs font-semibold text-emerald-500" data-testid="first-run-goal-met">{view.goalMetLine}</div>
-            : <div className="text-xs opacity-80">Day {view.day} of {view.byDay} · new tools unlock as they become useful, one at a time.</div>}
+            : <div className="text-xs opacity-80">Day {view.day} of {view.byDay} of your warm-up{view.matchDays ? ` · the match runs ${view.matchDays + 1} days (the last day played is ${view.matchDays})` : ''} · new tools unlock as they become useful, one at a time. {/* V10.1 (SECTION 20BE): the header says "Day 1 / 30"; the panel now says both numbers (30 days, last day played 29) so they no longer contradict each other */}</div>}
         </div>
         <button type="button" onClick={onSkip} className="px-5 py-3 rounded-lg font-bold text-base bg-sky-600 hover:bg-sky-500 text-white shadow" data-testid="first-run-skip">Skip tutorial — open the full game</button>
       </div>
@@ -207936,8 +207974,8 @@ export function v100FirstRunGoalMetLine(state: FirstRunState | null, nextLabel: 
 }
 
 /** The tutorial panel's view: buildFirstRunView plus the goal-met line (only ever set in a V10.0 match, where the tour can outlive the goal). */
-export function v100FirstRunPanelView(state: FirstRunState, signals: FirstRunSignals, availability?: Partial<Record<FirstRunConcept, boolean>> | null): FirstRunView {
-  const view = buildFirstRunView(state, signals, availability);
+export function v100FirstRunPanelView(state: FirstRunState, signals: FirstRunSignals, availability?: Partial<Record<FirstRunConcept, boolean>> | null, matchDays?: number | null): FirstRunView {
+  const view: FirstRunView = { ...buildFirstRunView(state, signals, availability), matchDays: typeof matchDays === 'number' && matchDays > 0 ? matchDays : null }; // V10.1 (SECTION 20BE): the real match length rides along
   const line = v100FirstRunGoalMetLine(state, view.nextLabel);
   return line ? { ...view, goalMetLine: line } : view;
 }
@@ -212071,9 +212109,503 @@ export function runV101MatchRulesSelfTests(): V9SelfTestResult[] {
 // SECTION 20BE: V10.1 FIRST RUN & SAVE SAFETY — A FIRST MINUTE THAT TEACHES, A MATCH THAT IS NOT LOST SILENTLY
 // ============================================================================
 // <<V101-SLOT FIRST begin>>
-// (work package FIRST: replace everything between the two markers; keep the markers and the exported suite function below.)
+// Work package FIRST (SECTION 20BE): a first minute that teaches, a match that is not lost silently.
+//
+// What a V10.1 review of the first run found, and what this section holds. Every fix here is TEXT, GATING or a question
+// asked before something is replaced — none changes how a match plays — so they apply to every match, whatever its rules
+// stamp (no isV101Match gate; a V10.0 or older match plays move for move as before). The in-place edits are marked
+// `// V10.1 (SECTION 20BE): …`; the pure, testable parts live here.
+//
+//  1  Save safety. Autosave & Resume and the leave-site warning stay OFF by default. One Guided Learning lesson ("save_safety",
+//     SECTION 20N's table) appears once, from day 3 of a real match, while Autosave is off and the guided first match is not
+//     running; its primary button turns Autosave & Resume on through the Settings' own setter, "Not now" / "Don't ask again"
+//     are kept in this browser (aussie.v101.safetyNudge). Starting a match, a scenario or loading a file while Autosave is on
+//     and a readable autosaved match is stored now asks first (it used to delete that match 300 ms later). The Replay Studio
+//     card says why it is empty and opens the Record Replays setting.
+//  2  The first minute. While the guided first match is active the PLAY | INTELLIGENCE | LAB tab bar is not drawn (one tab is
+//     not a tab bar), the page is on PLAY whatever was saved, and the Co-Pilot bar is the one-line "You're playing" chip.
+//     The tour step is the one voice: the tip card, the content card and the welcome / unlock toasts wait while it speaks. The
+//     tutorial's goal and the match's length are said once ("Reach $2,000 cash ... your warm-up · the match itself runs to
+//     day 29"); the coach's "Skip the tour" is "Hide these tips" (it hides four tips; "Skip tutorial" ends the tutorial). The core
+//     loop is said where the player is (Travel line, Travel window, the travel lesson); copy that was wrong is fixed.
+//  3  Menu and Help. Every mode button says what it is (AI Opponent: "Start here"; Medium: "Good first choice"); Scenario cards
+//     open with Enter / Space; Help opens with a five-line "How to play" and keeps the shortcuts below it; a blank or padded
+//     name becomes "Player" everywhere.
+// Deferred (see the report): persistence-learning-prefs-not-kept (profile allowlist, save scopes and a dozen pinned tests; the
+// lesson keeps its own flag), firstrun-launch-gate-fragile, firstrun-tour-stalls-on-disabled-tools (V10.0 tour pacing).
+// Suite v101fr (runV101FirstRunSelfTests).
+// ============================================================================
+
+// ---- Names ---------------------------------------------------------------------------------------------------------------
+/** The longest name the menu's field takes. */
+export const V101_PLAYER_NAME_MAX = 32;
+
+/** A player name for the match: control characters and runs of spaces become one space, padding goes, 32 characters at most, "Player" when nothing is left. */
+export function v101NormalizePlayerName(raw: unknown): string {
+  const text = typeof raw === 'string' ? raw : typeof raw === 'number' && Number.isFinite(raw) ? String(raw) : '';
+  const clean = text.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, V101_PLAYER_NAME_MAX).trim();
+  return clean || 'Player';
+}
+
+// ---- Small honest lines -----------------------------------------------------------------------------------------------------
+/** Under the Travel window's title: the core loop, said where the player chooses where to go. */
+export const V101_TRAVEL_LOOP_LINE = 'Each arrival collects one local resource - sell it for cash.';
+/** In the Region Control card while the guided first run hides the deposit controls (it used to tell the player to stake money). */
+export const V101_REGION_CONTROL_FIRST_RUN_LINE = 'Deposits open up when the tutorial ends.';
+
+/** The header's action count, said as what it is: "3 actions" → "3 actions left today". "Unlimited actions" and anything else stays. */
+export function v101ApHeaderText(label: string): string {
+  const m = /^(\d+) actions?$/.exec(String(label || ''));
+  if (!m) return String(label || '');
+  const n = Number(m[1]);
+  return `${n} action${n === 1 ? '' : 's'} left today`;
+}
+
+/** The special-ability chip's tooltip: what the ability does and how many uses are left (the reason it is disabled, when it is, follows). */
+export function v101AbilityChipTitle(ability: { name?: unknown; description?: unknown } | null | undefined, usesLeft: number, disabledReason?: string | null): string {
+  const name = typeof ability?.name === 'string' && ability.name ? ability.name : 'Special ability';
+  const what = typeof ability?.description === 'string' ? ability.description.trim().replace(/\.$/, '') : '';
+  const uses = Math.max(0, Math.floor(Number(usesLeft) || 0));
+  const head = `${name}${what ? `: ${what}` : ''}. ${uses} use${uses === 1 ? '' : 's'} left today.`;
+  return disabledReason ? `${head} (${disabledReason})` : head;
+}
+
+// ---- The first minute: chrome and voices -------------------------------------------------------------------------------------------
+/** What the page chrome shows while the guided first match is active (and what it shows otherwise: everything, as before). */
+export interface V101FirstRunChrome { active: boolean; showLayerNav: boolean; compactControl: boolean; forcedLayer: ExperienceLayer | null }
+
+export function v101FirstRunChrome(firstRun: { active?: boolean } | null | undefined): V101FirstRunChrome {
+  const active = firstRun?.active === true;
+  return { active, showLayerNav: !active, compactControl: active, forcedLayer: active ? 'play' : null };
+}
+
+/** The layer the page shows: PLAY while the guided first match is active (a saved or earlier INTELLIGENCE / LAB choice is put back to PLAY by the page; see v101RouteLayerRequest), else the chosen one. */
+export function v101EffectiveExperienceLayer(layer: ExperienceLayer, firstRun: { active?: boolean } | null | undefined): ExperienceLayer {
+  return v101FirstRunChrome(firstRun).forcedLayer ?? layer;
+}
+
+/**
+ * Where a request for another layer goes. Outside the guided first match it goes where it asked. Inside it there are no tabs, so the page stays on PLAY and
+ * an answer (an Ask button, a "why did this change") is shown inline on PLAY instead (inline = true): the click is never answered with nothing.
+ */
+export function v101RouteLayerRequest(requested: ExperienceLayer, firstRun: { active?: boolean } | null | undefined): { layer: ExperienceLayer; inline: boolean } {
+  const forced = v101FirstRunChrome(firstRun).forcedLayer;
+  return forced && requested !== forced ? { layer: forced, inline: true } : { layer: requested, inline: false };
+}
+
+/** The toast for a request to open a tab that is hidden during the guided first match (an "Open"/"View plan" button; a question is answered inline instead). */
+export const V101_LAYER_HELD_LINE = 'That view opens when the tutorial ends. Use "Skip tutorial" to open it now.';
+
+/** The inline answer shown on PLAY during the guided first match: the newest answer in the feed, unless the player closed it; null outside the first run. */
+export function v101FirstRunInlineAnswer<T extends { id: string }>(firstRun: { active?: boolean } | null | undefined, feed: readonly T[] | null | undefined, closedId: string | null, busy: boolean): { answer: T | null; busy: boolean } | null {
+  if (!v101FirstRunChrome(firstRun).active) return null;
+  const newest = Array.isArray(feed) && feed.length > 0 ? feed[feed.length - 1] : null;
+  const answer = newest && newest.id !== closedId ? newest : null;
+  return answer || busy ? { answer, busy: busy === true } : null;
+}
+
+/** The small frame around the inline answer (hook-free; the answer card itself is passed in as children). */
+export function V101FirstRunAnswer({ theme, busy, onClose, children }: { theme: { card: string; buttonSecondary: string }; busy: boolean; onClose: () => void; children?: React.ReactNode }): React.ReactElement {
+  return (
+    <aside role="region" aria-label="Your answer" aria-live="polite" className={`rounded-lg border-2 border-sky-500/60 ${theme.card} px-3 py-2 text-sm space-y-2`} data-testid="v101-first-run-answer">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-bold">💬 Your answer</span>
+        {children ? <button type="button" className={`${theme.buttonSecondary} px-2 py-0.5 rounded text-xs`} data-testid="v101-first-run-answer-close" onClick={onClose}>Close</button> : null}
+      </div>
+      {busy && <div className="text-xs opacity-80" data-testid="v101-first-run-answer-busy">Working it out…</div>}
+      {children}
+    </aside>
+  );
+}
+
+/** True when the control bar may shrink to the "You're playing" chip: control is plainly the player's (manual, no Co-Pilot waiting or holding anything). */
+export function v101ControlBarIsCompact(control: Pick<PlayerControlState, 'mode' | 'owner' | 'phase' | 'copilotHoldsControl' | 'canResume'>): boolean {
+  return control.mode === 'manual' && control.owner === 'human' && control.phase === 'manual' && !control.copilotHoldsControl && !control.canResume;
+}
+
+/** Which hints wait while a tour step is on screen in the guided first match: one voice at a time (the tour step wins). */
+export interface V101FirstRunVoices { oneVoice: boolean; holdTip: boolean; holdContent: boolean; holdToasts: boolean }
+
+export function v101FirstRunVoices(firstRun: { active?: boolean } | null | undefined, tourStepShown: boolean): V101FirstRunVoices {
+  const oneVoice = firstRun?.active === true && tourStepShown === true;
+  return { oneVoice, holdTip: oneVoice, holdContent: oneVoice, holdToasts: oneVoice };
+}
+
+/** The welcome and "unlocked" announcements of the guided first run (the two kinds of toast the tour step speaks over). */
+export function v101IsFirstRunAnnouncement(n: { message?: unknown } | null | undefined): boolean {
+  return typeof n?.message === 'string' && /^(🎓|🆕)/.test(n.message);
+}
+
+// ---- Menu: what each mode is --------------------------------------------------------------------------------------------------------
+export type V101MenuMode = 'single' | 'ai' | 'grand_tour' | 'team_human_ai_vs_ai_ai' | 'team_ai_vs_ai' | 'scenario';
+export const V101_MENU_MODES: readonly V101MenuMode[] = ['single', 'ai', 'grand_tour', 'team_human_ai_vs_ai_ai', 'team_ai_vs_ai', 'scenario'];
+/** One plain line per main-menu mode, and the one a newcomer should start with. */
+export const V101_MODE_BLURBS: Readonly<Record<V101MenuMode, { hint: string; startHere: boolean }>> = {
+  single: { hint: 'Play alone with no rival and chase your own best score. Starts at once.', startHere: false },
+  ai: { hint: 'You against one AI rival. You pick how strong it is next - Medium is a good first choice.', startHere: true },
+  grand_tour: { hint: 'Race one AI rival to collect a passport stamp from every state.', startHere: false },
+  team_human_ai_vs_ai_ai: { hint: 'You and an AI ally against two AI rivals.', startHere: false },
+  team_ai_vs_ai: { hint: 'Watch two AI teams play each other. You do not play.', startHere: false },
+  scenario: { hint: 'A preset challenge with set objectives and a fixed seed.', startHere: false }
+};
+/** The rival strength the menu tags for a first match. */
+export const V101_FIRST_MATCH_DIFFICULTY = 'medium';
+export const V101_GOOD_FIRST_CHOICE_LABEL = 'Good first choice';
+
+/** The line under a mode button (and its "Start here" tag). Hook-free. */
+export function V101ModeBlurb({ mode }: { mode: V101MenuMode }): React.ReactElement {
+  const blurb = V101_MODE_BLURBS[mode];
+  return (
+    <span className="block text-xs font-normal opacity-90 mt-1" data-testid={`mode-blurb-${mode}`}>
+      {blurb.startHere && <span className="mr-2 px-2 py-0.5 rounded-full bg-white/25 font-bold uppercase tracking-wide" data-testid="v101-start-here">Start here</span>}
+      {blurb.hint}
+    </span>
+  );
+}
+
+/** One line about the chosen character: what the card's bare ability name means, and its perk. */
+export function v101CharacterLine(c: { name?: unknown; description?: unknown; perk?: unknown } | null | undefined): string {
+  const part = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\.$/, '') : '');
+  const bits = [part(c?.description), part(c?.perk)].filter(Boolean);
+  return bits.length ? `${typeof c?.name === 'string' ? c.name : 'Your character'}: ${bits.join('. ')}.` : '';
+}
+
+/** True when a key press on a scenario card should launch it: Enter or Space, pressed on the card itself (not on a button inside it). */
+export function v101IsCardActivation(key: string, targetIsCard: boolean): boolean {
+  return targetIsCard && (key === 'Enter' || key === ' ' || key === 'Spacebar');
+}
+
+// ---- Help: how to play ----------------------------------------------------------------------------------------------------------------------
+const V101_WIN_PHRASE: Readonly<Record<string, string>> = { money: 'the most cash', netWorth: 'the highest net worth', regions: 'the most regions', challenges: 'the most challenge points' };
+
+/** The five lines at the top of Help. `winCondition` and `actionsPerDay` (null = no daily limit) come from the match's settings. */
+export function v101HowToPlayLines(o: { winCondition?: unknown; actionsPerDay?: number | null; autosaveOn?: boolean }): string[] {
+  const goal = V101_WIN_PHRASE[String(o.winCondition)] || V101_WIN_PHRASE.money;
+  const perDay = typeof o.actionsPerDay === 'number' && o.actionsPerDay > 0 ? Math.floor(o.actionsPerDay) : null;
+  return [
+    'Travel collects one local resource when you arrive; Sell turns the resources you carry into cash.',
+    'Challenges are wagers: win and you earn a multiple of your bet, lose and you lose it.',
+    perDay !== null
+      ? `Each day you get ${perDay} action${perDay === 1 ? '' : 's'} (the header shows what is left). When they are spent, press End Turn: they refresh next day.`
+      : 'This match has no daily action limit. Press End Turn when you are done for the day.',
+    `How you win: when the last day ends, the winner is whoever has ${goal}. The standing in the header shows who is ahead.`,
+    o.autosaveOn === true
+      ? 'Saving: Save / Load (the More menu) downloads a file. Autosave & Resume is on, so a copy is also kept in this browser.'
+      : 'Saving: matches are not saved automatically. Save / Load (the More menu) downloads a file; turn on Autosave & Resume in Settings to keep a copy in this browser.'
+  ];
+}
+
+/** The "How to play" section of the Help window (hook-free). */
+export function V101HowToPlay({ lines, onOpenRules, themeBorder }: { lines: readonly string[]; onOpenRules?: () => void; themeBorder?: string }): React.ReactElement {
+  return (
+    <section className={`mb-5 rounded-lg border ${themeBorder || ''} p-3`} aria-labelledby="v101-how-to-play-h" data-testid="v101-how-to-play">
+      <h4 id="v101-how-to-play-h" className="font-bold text-sm uppercase tracking-wide opacity-75 mb-2">How to play</h4>
+      <ol className="list-decimal pl-5 space-y-1 text-sm">{lines.map(line => <li key={line}>{line}</li>)}</ol>
+      {onOpenRules && <button type="button" onClick={onOpenRules} className="underline text-sm mt-2" data-testid="v101-open-rules">Open the full rules</button>}
+    </section>
+  );
+}
+
+// ---- Replay Studio: the empty card ----------------------------------------------------------------------------------------------------------
+export const V101_REPLAY_OFF_NOTE = 'Record Replays is off, so no match is being recorded and there is nothing to watch yet. Turn it on in Settings, then play a match; or import a replay file.';
+
+/** The Save / Load dialog's Replay Studio card needs a way to the Record Replays setting: it is off and there is nothing to open. */
+export function v101ReplayStudioNeedsSetting(o: { recordingOn: boolean; hasRecording: boolean; hasLoadedReplay: boolean }): boolean {
+  return !o.recordingOn && !o.hasRecording && !o.hasLoadedReplay;
+}
+
+// ---- Starting a match over an autosaved one --------------------------------------------------------------------------------------------------
+export interface V101ReplaceGuard { needed: boolean; day: number | null; dayLabel: string; title: string; message: string; confirmText: string }
+
+/** Whether starting a match (or loading a file) would replace a readable autosaved one, and the words to ask it in. `card` is the menu's Resume card (null when none is stored). */
+export function v101ReplaceAutosaveGuard(input: { autosaveOn: boolean; card: { usable: boolean; headline?: string } | null | undefined }): V101ReplaceGuard {
+  const needed = input.autosaveOn === true && input.card?.usable === true;
+  const m = /^Day (\d+)/.exec(String(input.card?.headline || ''));
+  const day = m ? Number(m[1]) : null;
+  const dayLabel = day !== null ? `Day ${day}` : 'saved earlier';
+  return {
+    needed, day, dayLabel,
+    title: 'Replace your autosaved match?',
+    message: `This replaces your autosaved match (${dayLabel}) and it cannot be brought back. Cancel and choose "Resume match" to carry on with it instead.`,
+    confirmText: 'Start new match'
+  };
+}
+
+// ---- The "matches are not saved automatically" lesson -----------------------------------------------------------------------------------
+export const V101_SAFETY_LESSON_ID = 'save_safety';
+export const V101_SAFETY_STORAGE_KEY = 'aussie.v101.safetyNudge';
+/** The lesson is first due on this day of a real match. */
+export const V101_SAFETY_FIRST_DAY = 3;
+/** After "Not now" the lesson comes back in a later visit this many times at most (it never comes back in the same match). */
+export const V101_SAFETY_MAX_LATER = 2;
+export const V101_SAFETY_NUDGE_COPY = {
+  headline: 'Matches are not saved automatically',
+  body: 'Turn on Autosave & Resume so a closed tab does not cost you this match.',
+  enable: 'Turn on Autosave & Resume',
+  notNow: 'Not now',
+  never: "Don't ask again"
+} as const;
+
+export type V101SafetyStatus = 'none' | 'later' | 'never' | 'enabled';
+export type V101SafetyAnswer = 'later' | 'never' | 'enabled';
+export interface V101SafetyNudgeRecord { version: 1; status: V101SafetyStatus; later: number }
+
+export function v101SanitizeSafetyNudge(raw: unknown): V101SafetyNudgeRecord {
+  const r = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  const status: V101SafetyStatus = r.status === 'later' || r.status === 'never' || r.status === 'enabled' ? r.status : 'none';
+  const later = typeof r.later === 'number' && Number.isFinite(r.later) ? Math.max(0, Math.min(99, Math.floor(r.later))) : 0;
+  return { version: 1, status, later };
+}
+/** What this browser remembers about the lesson. Blocked or broken storage reads as "never asked". Never throws. */
+export function v101ReadSafetyNudge(storage: V99StorageLike | null): V101SafetyNudgeRecord {
+  return v101SanitizeSafetyNudge(v99ReadJson(storage, V101_SAFETY_STORAGE_KEY));
+}
+/** Remembers an answer. False when the browser would not store it (the answer then lasts until the page closes). Never throws. */
+export function v101WriteSafetyNudge(storage: V99StorageLike | null, record: V101SafetyNudgeRecord): boolean {
+  return v99WriteJson(storage, V101_SAFETY_STORAGE_KEY, v101SanitizeSafetyNudge(record));
+}
+export function v101NextSafetyRecord(record: V101SafetyNudgeRecord, answer: V101SafetyAnswer): V101SafetyNudgeRecord {
+  const base = v101SanitizeSafetyNudge(record);
+  if (answer === 'later') return { version: 1, status: 'later', later: Math.min(99, base.later + 1) };
+  return { version: 1, status: answer, later: base.later };
+}
+
+/**
+ * Whether the lesson is due: Autosave & Resume is off, it is day 3 or later, the guided first match is not running (it
+ * holds autosave back and has a tour of its own), and this browser has not been told "don't ask again" or "turned on" —
+ * after "Not now" it may come back in a later visit, twice at most.
+ */
+export function v101SafetyNudgeDue(i: { day: number; recoveryOn: boolean; firstRunBlocks: boolean; record: V101SafetyNudgeRecord }): boolean {
+  if (i.recoveryOn || i.firstRunBlocks) return false;
+  if (!(Number(i.day) >= V101_SAFETY_FIRST_DAY)) return false;
+  const r = v101SanitizeSafetyNudge(i.record);
+  return r.status === 'none' || (r.status === 'later' && r.later < V101_SAFETY_MAX_LATER);
+}
+
+/** The lesson's card: plain words and three buttons. Not modal, never traps focus. Hook-free. */
+export function V101SafetyNudgeCard({ theme, onEnable, onNotNow, onNever }: { theme: { card: string; button: string; buttonSecondary: string }; onEnable: () => void; onNotNow: () => void; onNever: () => void }): React.ReactElement {
+  return (
+    <aside role="note" aria-label={`Guided learning: ${V101_SAFETY_NUDGE_COPY.headline}`} className={`rounded-lg border-2 border-sky-500/60 ${theme.card} px-3 py-2 text-sm mt-2`} data-testid="v101-safety-nudge" data-surface="card">
+      <div className="flex items-start gap-2">
+        <span aria-hidden="true">💾</span>
+        <div className="flex-1 min-w-0">
+          <div className="font-bold">{V101_SAFETY_NUDGE_COPY.headline}</div>
+          <p className="text-xs opacity-90">{V101_SAFETY_NUDGE_COPY.body}</p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs">
+            <button type="button" className={`${theme.button} text-white px-3 py-1 rounded font-semibold`} onClick={onEnable} data-testid="v101-safety-enable">{V101_SAFETY_NUDGE_COPY.enable}</button>
+            <button type="button" className="underline opacity-80" onClick={onNotNow} data-testid="v101-safety-not-now">{V101_SAFETY_NUDGE_COPY.notNow}</button>
+            <button type="button" className="underline opacity-60" onClick={onNever} data-testid="v101-safety-never">{V101_SAFETY_NUDGE_COPY.never}</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+// ---- Self-tests (suite v101fr) ---------------------------------------------------------------------------------------------------------------------
+type V101Node = { type?: unknown; props?: { children?: unknown; onClick?: () => void; className?: string; [k: string]: unknown } };
 export function runV101FirstRunSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  // Walks a React element tree (components here are hook-free, so they can be called like functions).
+  const flat = (node: unknown): V101Node[] => {
+    if (Array.isArray(node)) return node.flatMap(flat);
+    if (!node || typeof node !== 'object') return [];
+    const n = node as V101Node;
+    return [n, ...flat(n.props ? n.props.children : null)];
+  };
+  const words = (node: unknown): string => (Array.isArray(node) ? node.map(words).join('') : typeof node === 'string' || typeof node === 'number' ? String(node) : node && typeof node === 'object' ? words((node as V101Node).props ? (node as V101Node).props!.children : null) : '');
+  const theme = { card: 'c', button: 'b', buttonSecondary: 'bs' };
+  const idle = (o: Partial<{ day: number; recoveryOn: boolean; firstRunBlocks: boolean; record: V101SafetyNudgeRecord }> = {}) => ({ day: 3, recoveryOn: false, firstRunBlocks: false, record: v101SanitizeSafetyNudge(null), ...o });
+  const manualControl = (o: Partial<PlayerControlState> = {}): PlayerControlState => derivePlayerControlState({ gameSettings: createDefaultGameSettings(), gameState: { gameMode: 'game', selectedMode: 'ai' }, takeoverSession: null, isHumanTurn: true, ...o } as PlayerControlStateInput);
+
+  check('v101fr_01_name_normaliser', 'A blank, whitespace-only or padded name becomes "Player"/the trimmed name, 32 characters at most, control characters are spaces; the match reducer uses the same rule', () => {
+    const table: Array<[unknown, string]> = [['   ', 'Player'], ['', 'Player'], [undefined, 'Player'], [null, 'Player'], [' Bob ', 'Bob'], ['A\tB\nC', 'A B C'], ['x'.repeat(40), 'x'.repeat(32)], [`${' '.repeat(5)}${'y'.repeat(40)}`, 'y'.repeat(32)], [{}, 'Player'], [7, '7']];
+    const wrong = table.filter(([raw, want]) => v101NormalizePlayerName(raw) !== want);
+    const fromReducer = ['   ', ' Bob ', ''].map(name => (playerReducer({}, { type: 'RESET_PLAYER', payload: { characterIndex: 0, name } }) as { name: string }).name);
+    return (wrong.length === 0 && json(fromReducer) === json(['Player', 'Bob', 'Player'])) || json({ wrong, fromReducer });
+  });
+  check('v101fr_02_first_run_copy_is_exact', 'The first-run goal says "Reach $2,000 cash", every one-line explanation is <= 140 characters with no newline, Loans names the real rate, Teams names no "New Game" button', () => {
+    const bad = FIRST_RUN_ALL_CONCEPTS.filter(c => { const t = FIRST_RUN_EXPLANATIONS[c]; return !t || /\n/.test(t) || t.length > 140; });
+    const loans = FIRST_RUN_EXPLANATIONS.loans;
+    const rate = `${Math.round(LOAN_INTEREST_RATE * 100)}%`;
+    const perDay = `$${Math.floor(LOAN_AMOUNT * LOAN_INTEREST_RATE)}`;
+    return (FIRST_RUN_GOAL.text === 'Reach $2,000 cash and win 3 challenges by day 7' && !/Earn \$2,000/.test(FIRST_RUN_GOAL.text) && bad.length === 0
+      && loans.includes(rate) && loans.includes(perDay) && loans.includes(`$${LOAN_AMOUNT}`) && !/New Game/.test(FIRST_RUN_EXPLANATIONS.teams) && /Leave match/.test(FIRST_RUN_EXPLANATIONS.teams)) || json({ bad, loans, goal: FIRST_RUN_GOAL.text });
+  });
+  check('v101fr_03_core_loop_said_where_the_player_is', 'The core loop is said once, where the player is: the travel line (<= 140), the Travel window line and the travel lesson all say an arrival collects one local resource to sell', () => {
+    const t = FIRST_RUN_EXPLANATIONS.travel;
+    const lesson = json(LEARNING_CONCEPT_BY_ID.travel.lesson(createLearningContextFixture()));
+    return (/arrival collects one local resource/.test(t) && t.length <= 140 && V101_TRAVEL_LOOP_LINE === 'Each arrival collects one local resource - sell it for cash.' && /Each arrival collects one local resource/.test(lesson)
+      && /cash/.test(FIRST_RUN_EXPLANATIONS.sell)) || json({ t, lesson });
+  });
+  check('v101fr_04_chrome_gate', 'While the guided first match is active the tab bar is omitted, the page is on PLAY whatever was saved and the control bar is compact; with no first run (a V10.0 or older match, a loaded save) nothing is hidden', () => {
+    const on = v101FirstRunChrome(createFirstRunState());
+    const finished = v101FirstRunChrome(applyFirstRunPatch(createFirstRunState(), { kind: 'finish', outcome: 'skipped', day: 2 }));
+    const none = v101FirstRunChrome(null);
+    return (on.active && !on.showLayerNav && on.compactControl && on.forcedLayer === 'play' && !finished.active && finished.showLayerNav && !finished.compactControl && finished.forcedLayer === null && none.showLayerNav && !none.compactControl
+      && v101EffectiveExperienceLayer('lab', createFirstRunState()) === 'play' && v101EffectiveExperienceLayer('intelligence', createFirstRunState()) === 'play' && v101EffectiveExperienceLayer('lab', null) === 'lab' && v101EffectiveExperienceLayer('intelligence', finished as unknown as { active: boolean }) === 'intelligence')
+      || json({ on, finished, none });
+  });
+  check('v101fr_05_control_bar_compacts_only_when_manual', 'The real control bar shrinks to the one-line chip for the manual human player (no AI label, no Change control) and stays whole when Co-Pilot is in play', () => {
+    const control = manualControl();
+    const bar = PlayerControlStatusBar as unknown as { type: (p: PlayerControlStatusBarProps) => React.ReactElement };
+    const draw = (c: PlayerControlState, compact: boolean) => { const outer = bar.type({ control: c, theme: resolveThemeStyles('dark', true), onTakeControl: () => {}, onStart: () => {}, onResume: () => {}, onOpenControl: () => {}, firstRunCompact: compact }); const inner = outer.type as unknown as (p: unknown) => React.ReactElement; return inner(outer.props); };
+    const compact = draw(control, true), full = draw(control, false);
+    const compactText = words(compact), fullText = words(full);
+    const advisor = manualControl({ gameSettings: { ...createDefaultGameSettings(), smartSettingsProfile: { ...createDefaultGameSettings().smartSettingsProfile, coPilotMode: 'assistant' } } } as unknown as Partial<PlayerControlStateInput>);
+    return (v101ControlBarIsCompact(control) && compactText.includes(control.headline) && !/AI:/.test(compactText) && !/Change control/.test(compactText)
+      && /AI:/.test(fullText) && /Change control/.test(fullText) && (advisor.mode === 'manual' || !v101ControlBarIsCompact(advisor))
+      && !v101ControlBarIsCompact({ ...control, mode: 'assistant' }) && !v101ControlBarIsCompact({ ...control, owner: 'copilot' }) && !v101ControlBarIsCompact({ ...control, canResume: true }) && !v101ControlBarIsCompact({ ...control, copilotHoldsControl: true })) || json({ compactText, fullText });
+  });
+  check('v101fr_06_one_voice', 'One voice at a time: while a tour step is up in the guided first match the tip, content card and welcome / unlock toasts wait; with no tour step, or outside the first run, nothing is held', () => {
+    const on = v101FirstRunVoices(createFirstRunState(), true), noStep = v101FirstRunVoices(createFirstRunState(), false), outside = v101FirstRunVoices(null, true);
+    const toasts = [{ message: '🎓 Welcome! Your first match' }, { message: '🆕 Trade unlocked — sell what you carry' }, { message: 'Found Coal!' }, { message: 'Traveled to Victoria for $200' }, null, { message: 7 }];
+    return (on.oneVoice && on.holdTip && on.holdContent && on.holdToasts && !noStep.holdTip && !noStep.holdToasts && !outside.oneVoice && !outside.holdContent
+      && json(toasts.map(t => v101IsFirstRunAnnouncement(t as { message?: unknown } | null))) === json([true, true, false, false, false, false])) || json({ on, noStep, outside });
+  });
+  check('v101fr_07_panel_says_one_goal_and_the_match_length', 'The tutorial panel (real component) says it is a warm-up and names the match length; the coach button reads "Hide these tips" in the first run, and ending the tutorial is what the other button does', () => {
+    const state = createFirstRunState();
+    const sig: FirstRunSignals = { day: 1, money: 1000, inventoryCount: 0, challengesWon: 0, rivalAhead: false, diplomacyOffer: false, inShopRegion: false };
+    const view = v100FirstRunPanelView(state, sig, null, matchLengthInDays(30));
+    const panel = FirstRunPanel as unknown as { type: (p: { view: FirstRunView; onSkip: () => void; theme: { card: string; border: string; shadow: string } }) => React.ReactElement };
+    const text = words(panel.type({ view, onSkip: () => {}, theme: { card: '', border: '', shadow: '' } }));
+    const old = words(panel.type({ view: v100FirstRunPanelView(state, sig), onSkip: () => {}, theme: { card: '', border: '', shadow: '' } }));
+    return (view.matchDays === 29 && /Reach \$2,000 cash/.test(text) && /of your warm-up/.test(text) && /the match runs 30 days \(the last day played is 29\)/.test(text) && /Skip tutorial/.test(text) && !/the match runs/.test(old) && /Day 1 of 7/.test(old)) || json({ text, old });
+  });
+  check('v101fr_08_actions_label_says_left_today', 'The header says "3 actions left today" / "1 action left today"; "Unlimited actions" and the cohesion label itself stay as they were', () => {
+    const header = resolveV9GameplayCohesion(createV9CohesionFixture({})).header;
+    return (v101ApHeaderText('3 actions') === '3 actions left today' && v101ApHeaderText('1 action') === '1 action left today' && v101ApHeaderText('0 actions') === '0 actions left today' && v101ApHeaderText('Unlimited actions') === 'Unlimited actions' && v101ApHeaderText('') === ''
+      && /^(\d+ actions?|Unlimited actions)$/.test(header.apLabel)) || json({ ap: header.apLabel });
+  });
+  check('v101fr_09_ability_chip_explains_itself', 'The special-ability chip has a tooltip that says what the ability does and how many uses are left, enabled or not', () => {
+    const tourist = CHARACTERS.find(c => c.name === 'Tourist')!;
+    const on = v101AbilityChipTitle(tourist.specialAbility, 1, null), off = v101AbilityChipTitle(tourist.specialAbility, 0, 'No uses left');
+    return (on.startsWith('Tourist Luck: ') && /retry a failed challenge/.test(on) && /1 use left today\.$/.test(on) && /0 uses left today\./.test(off) && /\(No uses left\)$/.test(off) && v101AbilityChipTitle(null, 2) === 'Special ability. 2 uses left today.') || json({ on, off });
+  });
+  check('v101fr_10_safety_nudge_due', 'The save lesson is due from day 3, only while Autosave is off and the guided first match is not running, never after "turned on" / "Don\'t ask again", and at most twice after "Not now"', () => {
+    const later = (n: number): V101SafetyNudgeRecord => ({ version: 1, status: 'later', later: n });
+    const table: Array<[string, boolean, boolean]> = [
+      ['day 3', v101SafetyNudgeDue(idle()), true], ['day 2', v101SafetyNudgeDue(idle({ day: 2 })), false], ['day 1', v101SafetyNudgeDue(idle({ day: 1 })), false], ['day 20', v101SafetyNudgeDue(idle({ day: 20 })), true],
+      ['autosave on', v101SafetyNudgeDue(idle({ recoveryOn: true })), false], ['first run', v101SafetyNudgeDue(idle({ firstRunBlocks: true })), false],
+      ['never', v101SafetyNudgeDue(idle({ record: { version: 1, status: 'never', later: 0 } })), false], ['enabled', v101SafetyNudgeDue(idle({ record: { version: 1, status: 'enabled', later: 0 } })), false],
+      ['later once', v101SafetyNudgeDue(idle({ record: later(1) })), true], ['later twice', v101SafetyNudgeDue(idle({ record: later(2) })), false], ['junk day', v101SafetyNudgeDue(idle({ day: Number.NaN })), false]
+    ];
+    const wrong = table.filter(([, got, want]) => got !== want).map(([n]) => n);
+    return wrong.length === 0 || json(wrong);
+  });
+  check('v101fr_11_safety_answers_are_remembered', 'The three answers are written to aussie.v101.safetyNudge and read back; junk, a blocked browser and a throwing store read as "never asked" and never throw', () => {
+    const mem = createV99MemoryStorage();
+    const a = v101NextSafetyRecord(v101SanitizeSafetyNudge(null), 'later'), b = v101NextSafetyRecord(a, 'later'), c = v101NextSafetyRecord(b, 'never'), d = v101NextSafetyRecord(c, 'enabled');
+    const wrote = v101WriteSafetyNudge(mem, b);
+    const back = v101ReadSafetyNudge(mem);
+    const junk = v101ReadSafetyNudge(createV99MemoryStorage({ [V101_SAFETY_STORAGE_KEY]: '{"status":"maybe","later":"x"}' })), garbage = v101ReadSafetyNudge(createV99MemoryStorage({ [V101_SAFETY_STORAGE_KEY]: 'not json' }));
+    const boom: V99StorageLike = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); }, removeItem: () => { throw new Error('blocked'); } };
+    return (V101_SAFETY_STORAGE_KEY === 'aussie.v101.safetyNudge' && a.later === 1 && b.later === 2 && b.status === 'later' && c.status === 'never' && d.status === 'enabled' && wrote && json(back) === json(b)
+      && json(junk) === json({ version: 1, status: 'none', later: 0 }) && garbage.status === 'none' && v101ReadSafetyNudge(boom).status === 'none' && v101ReadSafetyNudge(null).status === 'none' && v101WriteSafetyNudge(boom, a) === false && v101WriteSafetyNudge(null, a) === false) || json({ a, b, back });
+  });
+  check('v101fr_12_lesson_is_in_the_real_selector', 'The save lesson is one more lesson in the real Guided Learning table: the real selector picks it when it is due, not otherwise, not after it is dismissed, and never when guidance is off', () => {
+    const everythingElse = Object.fromEntries(LEARNING_CONCEPTS.filter(c => c.id !== V101_SAFETY_LESSON_ID).map(c => [c.id, { status: 'understood' }]));
+    const learning = (o: Partial<PlayerLearningState> = {}): PlayerLearningState => sanitizeLearningState({ welcome: 'started', concepts: everythingElse, ...o });
+    const guided = { playerIntentOnboardingEnabled: true, smartSettingsProfile: { guidance: 'guided' } };
+    const pick = (ctx: Partial<LearningContext>, st: PlayerLearningState, settings: unknown = guided, presentation = 'guided') => selectNextLearningMoment(createLearningContextFixture(ctx), st, settings, presentation).moment?.conceptId ?? null;
+    const dismissed = applyLearningEvent(learning(), { kind: 'dismiss', conceptId: V101_SAFETY_LESSON_ID, turn: 3 });
+    // Another lesson is still on screen (a player who never presses "Got it"): the save lesson takes its place; the welcome card and the tour still come first.
+    const onScreen = applyLearningEvent(sanitizeLearningState({ welcome: 'started', concepts: { ...everythingElse, current_focus: { status: 'introduced' } }, activeLessonId: 'current_focus' }), { kind: 'shown', conceptId: 'current_focus', turn: 2 });
+    const classOff = sanitizeLearningState({ welcome: 'started', concepts: everythingElse, dismissedClasses: ['basics', 'economy'] });
+    const lesson = LEARNING_CONCEPT_BY_ID[V101_SAFETY_LESSON_ID];
+    return (lesson !== undefined && lesson.priority > 2 && pick({ v101SafetyNudge: true, day: 3, turn: 3 }, learning()) === V101_SAFETY_LESSON_ID && pick({ v101SafetyNudge: false }, learning()) === null && pick({}, learning()) === null
+      && pick({ v101SafetyNudge: true }, dismissed) === null && pick({ v101SafetyNudge: true, isHumanTurn: false }, learning()) === null
+      && pick({ v101SafetyNudge: true }, learning(), { ...guided, playerIntentOnboardingEnabled: false }) === null && pick({ v101SafetyNudge: true }, learning({ skipGuidance: true })) === null
+      && pick({ v101SafetyNudge: true, day: 4, turn: 4 }, onScreen) === V101_SAFETY_LESSON_ID && pick({ v101SafetyNudge: false, turn: 4 }, onScreen) === 'current_focus'
+      && pick({ v101SafetyNudge: true }, classOff) === V101_SAFETY_LESSON_ID && pick({ v101SafetyNudge: true }, sanitizeLearningState({ welcome: 'pending', concepts: everythingElse })) === null
+      && pick({ v101SafetyNudge: true }, learning({ basicsStep: 1 })) === null && pick({ v101SafetyNudge: true, decisionActive: true }, onScreen) === 'current_focus' && pick({ v101SafetyNudge: true }, learning(), guided, 'expert') === null
+      && /not saved automatically/.test(lesson.lesson(createLearningContextFixture()).headline) && /Autosave & Resume so a closed tab does not cost you this match/.test(lesson.lesson(createLearningContextFixture()).lines.join(' '))) || json({ picked: pick({ v101SafetyNudge: true }, learning()) });
+  });
+  check('v101fr_13_safety_card_buttons', 'The save lesson card (real component) says it in plain words and its three buttons call Turn on / Not now / Don\'t ask again', () => {
+    const calls: string[] = [];
+    const tree = V101SafetyNudgeCard({ theme, onEnable: () => calls.push('on'), onNotNow: () => calls.push('later'), onNever: () => calls.push('never') });
+    const buttons = flat(tree).filter(n => n.type === 'button');
+    buttons.forEach(b => b.props?.onClick?.());
+    const text = words(tree);
+    return (buttons.length === 3 && json(calls) === json(['on', 'later', 'never']) && /Matches are not saved automatically/.test(text) && /Turn on Autosave & Resume/.test(text) && /Not now/.test(text) && /Don't ask again/.test(text)) || json({ calls, text });
+  });
+  check('v101fr_14_replace_autosave_guard', 'Starting a match or loading a file asks first only when Autosave is on and a readable autosaved match is stored; the question names its day and says it replaces it', () => {
+    const card = { usable: true, headline: 'Day 7 of 30 · $1,950 · AI Opponent' };
+    const asks = v101ReplaceAutosaveGuard({ autosaveOn: true, card });
+    const off = v101ReplaceAutosaveGuard({ autosaveOn: false, card }), none = v101ReplaceAutosaveGuard({ autosaveOn: true, card: null }), unreadable = v101ReplaceAutosaveGuard({ autosaveOn: true, card: { usable: false, headline: 'An autosaved match is stored in this browser, but it cannot be read.' } });
+    const noDay = v101ReplaceAutosaveGuard({ autosaveOn: true, card: { usable: true, headline: '' } });
+    return (asks.needed && asks.day === 7 && /replaces your autosaved match \(Day 7\)/.test(asks.message) && /Resume match/.test(asks.message) && asks.confirmText === 'Start new match' && !off.needed && !none.needed && !unreadable.needed && noDay.needed && noDay.day === null && /saved earlier/.test(noDay.message)) || json({ asks, off, none, unreadable });
+  });
+  check('v101fr_15_how_to_play_first_in_help', 'Help starts with five "How to play" lines that name the loop, wagers, actions per day, the real win goal and where saving lives; the full-rules link works', () => {
+    const lines = v101HowToPlayLines({ winCondition: 'netWorth', actionsPerDay: 3, autosaveOn: false });
+    let opened = 0;
+    const tree = V101HowToPlay({ lines, onOpenRules: () => { opened += 1; } });
+    const link = flat(tree).filter(n => n.type === 'button');
+    link.forEach(b => b.props?.onClick?.());
+    const text = words(tree);
+    const on = v101HowToPlayLines({ winCondition: 'money', actionsPerDay: null, autosaveOn: true });
+    const items = flat(tree).filter(n => n.type === 'li');
+    return (lines.length === 5 && items.length === 5 && /Travel collects one local resource/.test(lines[0]) && /Sell turns/.test(lines[0]) && /wagers/.test(lines[1]) && /3 actions/.test(lines[2]) && /End Turn/.test(lines[2]) && /highest net worth/.test(lines[3]) && /not saved automatically/.test(lines[4])
+      && /^How to play/.test(text) && link.length === 1 && opened === 1 && on.length === 5 && /most cash/.test(on[3]) && /no daily action limit/.test(on[2]) && /Autosave & Resume is on/.test(on[4])) || json({ lines, opened, text });
+  });
+  check('v101fr_16_every_mode_says_what_it_is', 'Every main-menu mode has a one-line description (real component); AI Opponent is "Start here", Medium is "Good first choice", and no mode was removed', () => {
+    const drawn = V101_MENU_MODES.map(m => words(V101ModeBlurb({ mode: m })));
+    const startHere = V101_MENU_MODES.filter(m => V101_MODE_BLURBS[m].startHere);
+    return (V101_MENU_MODES.length === 6 && drawn.every(t => t.length > 20) && json(startHere) === json(['ai']) && /Start here/.test(drawn[1]) && !/Start here/.test(drawn[0]) && /no rival/i.test(drawn[0]) && /do not play/.test(drawn[4]) && /passport/.test(drawn[2])
+      && V101_FIRST_MATCH_DIFFICULTY === 'medium' && Object.keys(AI_DIFFICULTY_PROFILES).includes(V101_FIRST_MATCH_DIFFICULTY) && V101_GOOD_FIRST_CHOICE_LABEL === 'Good first choice') || json(drawn);
+  });
+  check('v101fr_17_scenario_cards_by_keyboard', 'A scenario card opens with Enter or Space pressed on the card itself, not by other keys and not by a key pressed on a button inside it', () => {
+    const got = [['Enter', true], [' ', true], ['Spacebar', true], ['Tab', true], ['a', true], ['Enter', false], [' ', false]].map(([k, t]) => v101IsCardActivation(k as string, t as boolean));
+    return json(got) === json([true, true, true, false, false, false, false]) || json(got);
+  });
+  check('v101fr_18_replay_studio_has_a_way_to_the_setting', 'The Replay Studio card offers the Record Replays setting only when recording is off and there is nothing to open', () => {
+    const got = [v101ReplayStudioNeedsSetting({ recordingOn: false, hasRecording: false, hasLoadedReplay: false }), v101ReplayStudioNeedsSetting({ recordingOn: true, hasRecording: false, hasLoadedReplay: false }),
+      v101ReplayStudioNeedsSetting({ recordingOn: false, hasRecording: true, hasLoadedReplay: false }), v101ReplayStudioNeedsSetting({ recordingOn: false, hasRecording: false, hasLoadedReplay: true })];
+    return (json(got) === json([true, false, false, false]) && /Record Replays is off/.test(V101_REPLAY_OFF_NOTE) && /Settings/.test(V101_REPLAY_OFF_NOTE)) || json(got);
+  });
+  check('v101fr_19_explorer_card_promises_only_what_is_on', 'The Explorer card no longer promises the shop, sabotage and diplomacy as if they were on: it says they are optional switches in Settings (their defaults are off)', () => {
+    const explorer = EXPERIENCE_MODE_OPTIONS.find(o => o.id === 'explorer')!;
+    const nation = EXPERIENCE_MODE_OPTIONS.find(o => o.id === 'nation')!;
+    const defaults = createDefaultGameSettings();
+    return (defaults.equipmentShopEnabled === false && defaults.sabotageEnabled === false && defaults.negotiationMode === false && /optional switches in Settings/.test(explorer.description) && !/trade, craft, shop, borrow, sabotage/.test(explorer.description)
+      && !explorer.includes.some(l => /^Crafting, shop, loans and sabotage/.test(l)) && !nation.includes.some(l => /V10\.0–V10\.13/.test(l))) || json({ d: explorer.description });
+  });
+  check('v101fr_20_old_behaviour_is_unchanged', 'Regression guard for V10.0 and older matches: Autosave and the leave-site warning are still off by default, the Save / Load dialog still shows no autosave line while it is off, no first run means nothing is hidden, and a V10.0 stamp is not a V10.1 match', () => {
+    const d = createDefaultGameSettings();
+    return (d.matchRecoveryEnabled === false && d.warnBeforeUnloadEnabled === false && unloadGuardPlan(true, { matchRecoveryEnabled: false, warnBeforeUnloadEnabled: false }) === 'none' && autosaveLineShown({ state: 'off' }) === false
+      && isFirstRunVisible(null, 'advanced') && isFirstRunVisible(null, 'sell') && !isV101Match({ rulesVersion: V100_RULES_VERSION }) && !isV101Match({})
+      && !v101SafetyNudgeDue(idle({ recoveryOn: true })) && v101FirstRunChrome(undefined).showLayerNav && !v101FirstRunVoices(null, true).oneVoice && V101_SAFETY_LESSON_ID === 'save_safety') || 'a default or an old behaviour changed';
+  });
+  check('v101fr_21_character_line', 'The menu shows the chosen character\'s description and perk in one line (every character has one)', () => {
+    const lines = CHARACTERS.map(c => v101CharacterLine(c));
+    return (lines.every(l => l.length > 20 && l.endsWith('.')) && /^Tourist: Gets a 20% bonus on challenge winnings\. Has a 10% higher chance/.test(lines[0]) && v101CharacterLine(null) === '') || json(lines);
+  });
+  check('v101fr_22_ask_is_answered_on_play_in_the_first_match', 'In the guided first match an Ask (a real answer) is routed to PLAY and shown inline: the newest answer, closable, with a working line while it is busy; outside the first run the layer switch goes where it asked and nothing is drawn inline', () => {
+    const on = createFirstRunState();
+    const done = applyFirstRunPatch(createFirstRunState(), { kind: 'finish', outcome: 'skipped', day: 2 });
+    const route = [v101RouteLayerRequest('intelligence', on), v101RouteLayerRequest('lab', on), v101RouteLayerRequest('play', on), v101RouteLayerRequest('intelligence', null), v101RouteLayerRequest('lab', done)];
+    const wantRoute = [{ layer: 'play', inline: true }, { layer: 'play', inline: true }, { layer: 'play', inline: false }, { layer: 'intelligence', inline: false }, { layer: 'lab', inline: false }];
+    const first = buildAskEngineIntelligenceAnswer('What should I do?', null);
+    const second = { ...buildAskEngineIntelligenceAnswer('How do I make money?', null), id: `${first.id}-b` };
+    const shown = v101FirstRunInlineAnswer(on, [first, second], null, false);
+    const closed = v101FirstRunInlineAnswer(on, [first, second], second.id, false);
+    const busyOnly = v101FirstRunInlineAnswer(on, [], null, true);
+    const noneNow = [v101FirstRunInlineAnswer(on, [], null, false), v101FirstRunInlineAnswer(on, null, null, false), v101FirstRunInlineAnswer(null, [first], null, true), v101FirstRunInlineAnswer(done, [first], null, false)];
+    const frame = V101FirstRunAnswer({ theme, busy: true, onClose: () => undefined, children: 'ANSWER-BODY' });
+    let closedCalls = 0;
+    const framed = V101FirstRunAnswer({ theme, busy: false, onClose: () => { closedCalls += 1; }, children: 'ANSWER-BODY' });
+    const closeBtn = flat(framed).find(n => n.type === 'button' && /Close/.test(words(n)));
+    closeBtn?.props?.onClick?.();
+    const noBody = flat(V101FirstRunAnswer({ theme, busy: true, onClose: () => undefined })).filter(n => n.type === 'button');
+    return (json(route) === json(wantRoute) && shown?.answer?.id === second.id && closed === null && busyOnly?.answer === null && busyOnly.busy === true
+      && noneNow.every(v => v === null) && /Your answer/.test(words(frame)) && /ANSWER-BODY/.test(words(frame)) && /Working it out/.test(words(frame)) && closedCalls === 1 && noBody.length === 0
+      && /tutorial ends/.test(V101_LAYER_HELD_LINE) && /Skip tutorial/.test(V101_LAYER_HELD_LINE)) || json({ route, shown: shown?.answer?.id, closed, busyOnly, noneNow, closedCalls, noBody: noBody.length });
+  });
   return results;
 }
 // <<V101-SLOT FIRST end>>
@@ -224123,7 +224655,7 @@ function dispatchGameSettingsChange(
     // V9.6 (SECTION 20AL): the match-shape deal seed comes from the same stream as the AI characters. V9.9 (SECTION
     // 20AS): that stream is this match's own TeamDraft stream (no in-match system draws from it; no draw while the flag is off).
     const wp6DealSeed = wpMfSettings.matchShapeEnabled === true ? Math.floor(drawGameplayRandom('TeamDraft') * 2147483646) + 1 : 0;
-    const playerName = (uiState.playerName || "Player").trim() || "Player";
+    const playerName = v101NormalizePlayerName(uiState.playerName); // V10.1 (SECTION 20BE): one normaliser for every place the name is used
     const isSimulationMode = mode === 'team_ai_vs_ai';
     const playerActor = createActorSnapshot({
       id: 'player',
@@ -224590,13 +225122,13 @@ function dispatchGameSettingsChange(
       type: 'RESET_PLAYER',
       payload: { 
         characterIndex: uiState.selectedCharacter, 
-        name: uiState.playerName 
+        name: v101NormalizePlayerName(uiState.playerName) // V10.1 (SECTION 20BE)
       }
     });
 
     const resetPlayer = createActorSnapshot({
       id: 'player',
-      name: (uiState.playerName || 'Player').trim() || 'Player',
+      name: v101NormalizePlayerName(uiState.playerName), // V10.1 (SECTION 20BE)
       teamId: TEAM_PLAYER_ID,
       kind: 'human',
       role: 'leader',
@@ -225409,17 +225941,22 @@ function dispatchGameSettingsChange(
     if (patch) updateUiState(patch);
   }, [gameState.gameMode, uiState.showSettings, uiState.showLiveControlCenter, uiState.showHumanAutomationDashboard, uiState.showGameActivityLedgerDashboard]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // V10.1 (SECTION 20BE): starting a match or loading a file replaces the autosaved match shown on the menu's Resume card (the first autosave of the new match removes the old copies). This asks first; set below, once the card is known.
+  const v101GuardRef = useRef<(go: () => void) => void>(go => go());
   const confirmLoadGame = useCallback((v99TurnOnCampaignMode: boolean = false) => {
     if (!loadPreview.data) {
       closeLoadPreview();
       return;
     }
-    const wp98Loaded = applyLoadedState(loadPreview.data);
+    const loadData = loadPreview.data;
+    v101GuardRef.current(() => {
+    const wp98Loaded = applyLoadedState(loadData);
     // V9.8 (SECTION 20AP): a campaign bundle brings its campaign back (only while campaign mode is on).
     // V9.9 (SECTION 20AT): … or when the player chose "Load with its campaign" in the preview.
-    if (wp98Loaded) wp98AdoptLoadedCampaign(loadPreview.data, v99TurnOnCampaignMode === true);
+    if (wp98Loaded) wp98AdoptLoadedCampaign(loadData, v99TurnOnCampaignMode === true);
     // V9.6 (SECTION 20AN): saves are downloaded files, so a loaded save is how a returning player is recognised.
     if (!readFirstRunRecord(firstRunStorage())) writeFirstRunRecord(firstRunStorage(), 'returning', Date.now());
+    });
   }, [applyLoadedState, closeLoadPreview, loadPreview, wp98AdoptLoadedCampaign]);
 
   // V9.9 (SECTION 20AT): the error screen's safety net. The latest save bundle of the running match is kept outside
@@ -225485,6 +226022,13 @@ function dispatchGameSettingsChange(
     stampLoadMessages: (day: number) => setNotifications(previous => stampLoadNotifications(previous, day)),
     flushRef: v99mrFlushRef,
   });
+  // V10.1 (SECTION 20BE): the guard behind every "start a new match / load a file" button: with Autosave & Resume on and a readable autosaved match stored, ask before replacing it.
+  const v101GuardedStart = (go: () => void): void => {
+    const guard = v101ReplaceAutosaveGuard({ autosaveOn: gameSettings.matchRecoveryEnabled === true, card: v99mr.card });
+    if (!guard.needed) { go(); return; }
+    showConfirmation('campaignNew', guard.title, guard.message, guard.confirmText, go);
+  };
+  v101GuardRef.current = v101GuardedStart;
 
   const calculateTravelCost = useCallback((fromRegion: any,toRegion: any) => {
     // V9.1: the canonical formula lives in computeTravelCostCore (shared with balance simulation).
@@ -228045,11 +228589,14 @@ function dispatchGameSettingsChange(
   const wpMjStart = useCallback((start: MatchJournalStart | null) => {
     const resolved = resolveMatchJournalStart(start);
     if (!resolved) return;
-    // V10.1 (SECTION 20BJ): a Daily with fixed rules remembers the player's own character once, so the menu can put it back.
-    if (resolved.dailyRules && resolved.characterIndex !== null && v101DailyCharacterRef.current === null) v101DailyCharacterRef.current = uiState.selectedCharacter;
-    if (resolved.characterIndex !== null && resolved.characterIndex !== uiState.selectedCharacter) updateUiState({ selectedCharacter: resolved.characterIndex });
-    if (gameState.gameMode !== 'menu') { handleRestartGame(); dispatchGameState({ type: 'SET_GAME_MODE', payload: 'menu' }); }
-    setWpMjPendingStart({ mode: resolved.mode, difficulty: resolved.difficulty, seed: resolved.seed, ...(resolved.dailyRules ? { dailyRules: resolved.dailyRules } : {}) });
+    // V10.1 (SECTION 20BE): a seed start from the journal card replaces the autosaved match like any other start, so it asks first too.
+    v101GuardRef.current(() => {
+      // V10.1 (SECTION 20BJ): a Daily with fixed rules remembers the player's own character once, so the menu can put it back.
+      if (resolved.dailyRules && resolved.characterIndex !== null && v101DailyCharacterRef.current === null) v101DailyCharacterRef.current = uiState.selectedCharacter;
+      if (resolved.characterIndex !== null && resolved.characterIndex !== uiState.selectedCharacter) updateUiState({ selectedCharacter: resolved.characterIndex });
+      if (gameState.gameMode !== 'menu') { handleRestartGame(); dispatchGameState({ type: 'SET_GAME_MODE', payload: 'menu' }); }
+      setWpMjPendingStart({ mode: resolved.mode, difficulty: resolved.difficulty, seed: resolved.seed, ...(resolved.dailyRules ? { dailyRules: resolved.dailyRules } : {}) });
+    });
   }, [gameState.gameMode, handleRestartGame, uiState.selectedCharacter, updateUiState]);
   useLayoutEffect(() => {
     if (!wpMjPendingStart) return;
@@ -245777,10 +246324,24 @@ function dispatchGameSettingsChange(
   // through handleStartCoPilot / interruptCoPilotTakeover, actions execute through
   // executeIntentRecommendation, answers come from the Ask-the-Game engine.
   // ===========================================================================
-  const experienceLayer = sanitizeExperienceLayer(uiState.experienceLayer);
+  // V10.1 (SECTION 20BE): while the guided first match is active the page shows the PLAY layer only, even when a saved or earlier choice says otherwise.
+  const experienceLayer = v101EffectiveExperienceLayer(sanitizeExperienceLayer(uiState.experienceLayer), wp8State);
   const setExperienceLayer = useCallback((layer: ExperienceLayer) => {
     updateUiState({ experienceLayer: sanitizeExperienceLayer(layer) });
   }, [updateUiState]);
+  // V10.1 (SECTION 20BE): a layer left over from before (saved, or chosen earlier) is put back to PLAY while the tour hides the other tabs, so it does not pop up when the tour ends.
+  // A tab the player just asked for (an "Open" / "View plan" button) is not dropped silently: a toast says it opens when the tutorial ends. Questions never get here: they are answered inline (v101RouteLayerRequest).
+  const v101SeenLayerRef = useRef<ExperienceLayer>(sanitizeExperienceLayer(uiState.experienceLayer));
+  const [v101ClosedAnswerId, setV101ClosedAnswerId] = useState<string | null>(null);
+  useEffect(() => {
+    const layer = sanitizeExperienceLayer(uiState.experienceLayer);
+    const justRequested = v101SeenLayerRef.current !== layer;
+    v101SeenLayerRef.current = layer;
+    if (v101FirstRunChrome(wp8State).forcedLayer && layer !== 'play') {
+      updateUiState({ experienceLayer: 'play' });
+      if (justRequested) addNotification(V101_LAYER_HELD_LINE, 'info', false, 'system');
+    }
+  }, [wp8State, uiState.experienceLayer]); // eslint-disable-line react-hooks/exhaustive-deps
   const v9PendingStartRef = useRef(false);
   // V9.6 (SECTION 20AM): state slice 13 — V9 intelligence feed (5 fields in one reducer; setters keep useState semantics).
   const [wp7Slice13, wp7Slice13Set] = useStateSlice<{ v9StartNonce: number; v9IntelFeed: GameIntelligenceAnswer[]; v9IntelQuery: string; v9IntelBusy: boolean; v9SelfTestResults: V9SelfTestResult[] | null }>(() => ({
@@ -245795,6 +246356,12 @@ function dispatchGameSettingsChange(
   const v9IntelQuery = wp7Slice13.v9IntelQuery; const setV9IntelQuery = wp7Slice13Set.v9IntelQuery;
   const v9IntelBusy = wp7Slice13.v9IntelBusy; const setV9IntelBusy = wp7Slice13Set.v9IntelBusy;
   const v9SelfTestResults = wp7Slice13.v9SelfTestResults; const setV9SelfTestResults = wp7Slice13Set.v9SelfTestResults;
+  // V10.1 (SECTION 20BE): a new answer in the guided first match appears on PLAY (above the cards); bring it into view so the click is visibly answered.
+  const v101NewestAnswerId = v9IntelFeed.length > 0 ? v9IntelFeed[v9IntelFeed.length - 1].id : null;
+  useEffect(() => {
+    if (!v101NewestAnswerId || wp8State?.active !== true || typeof document === 'undefined') return;
+    try { (document.querySelector('[data-testid="v101-first-run-answer"]') as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); } catch { /* a browser without scrollIntoView options: the card is still drawn */ }
+  }, [v101NewestAnswerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Take Control: the exact canonical interrupt the HUD always used, plus cancellation of any
   // queued / in-flight Start so no delayed continuation can create a session afterwards.
@@ -249108,7 +249675,9 @@ function dispatchGameSettingsChange(
     // V9.9 (SECTION 20AR): the closing line names only the tools this match has.
     const wpMfFinish = firstRunFinishNotice(outcome, { money: wp8Signals.money, challengesWon: wp8Signals.challengesWon }, teamsLine, v99FirstRunFinishText(v99FirstRunAvailability(gameSettings)));
     addNotification(wpMfFinish.message, wpMfFinish.type, true, 'system');
-  }, [addNotification, gameState.day, setGameSettings, wp8Signals.challengesWon, wp8Signals.money, wp8State, gameSettings]);
+    // V10.1 (SECTION 20BE): the four-step tour card never ended by itself (it was still on screen on day 17 after the tutorial finished): ending the tutorial ends its tips.
+    glDispatch([{ kind: 'basics_step', step: null, turn: glTurn }]);
+  }, [addNotification, gameState.day, setGameSettings, wp8Signals.challengesWon, wp8Signals.money, wp8State, gameSettings, glDispatch, glTurn]);
   const wp8StartFirstRun = useCallback(() => {
     const characterIndex = firstRunCharacterIndex(CHARACTERS);
     updateUiState({ selectedCharacter: characterIndex });
@@ -249166,6 +249735,8 @@ function dispatchGameSettingsChange(
     if (!SIMPLE_SETTINGS_KEYS.includes(key) && !isSimpleCompanionSettingKey(key) && !isV99SettingKeyName(key) && !isV100SettingKeyName(key)) return; // V10.0 (SECTION 20AY): + the "New in V10.0" card // V9.9 (SECTION 20AS): + the rival's actions per day; W4A (f1-03): + the "New in V9.9" card
     trackedSetGameSettings('direct_player_change', '⚙️ Simple settings', prev => ({ ...prev, ...({ [key]: value } as unknown as Partial<GameSettingsState>) }));
   }, [requestExperienceModeChange, trackedSetGameSettings, wp8SetGuidedFirstRun]);
+  // V10.1 (SECTION 20BE): what this browser remembers about the "matches are not saved" lesson (Not now / Don't ask again / turned on).
+  const [v101SafetyRecord, setV101SafetyRecord] = useState<V101SafetyNudgeRecord>(() => v101ReadSafetyNudge(v99BrowserStorage()));
   const glCtx = useMemo<LearningContext>(() => {
     const pid = String(player?.id || 'player');
     const region = String(player?.currentRegion || 'NSW');
@@ -249195,6 +249766,7 @@ function dispatchGameSettingsChange(
       recommendedIsTravel: Boolean(rec && /travel/i.test(rec.actionType)), usefulCount: v9Cohesion.useful.length, recommendedCostShare: rec?.costEstimate && cash > 0 ? rec.costEstimate / cash : 0,
       strategyPhases: v9CohesionInputs.strategy?.phases || [], strategyPhaseIndex: v9CohesionInputs.strategy?.phaseIndex || 0, strategyActive: Boolean(v9CohesionInputs.strategy),
       winLabel: v9CohesionInputs.win.label, winMetric: String(gameSettings.winCondition), leading, daysLeft: Math.max(0, Number(gameSettings.totalDays || 30) - Number(gameState.day || 1)),
+      v101SafetyNudge: v101SafetyNudgeDue({ day: Number(gameState.day || 1), recoveryOn: gameSettings.matchRecoveryEnabled === true, firstRunBlocks: v100FirstRunBlocksRecovery(wp8State) || wp8State?.active === true, record: v101SafetyRecord }), // V10.1 (SECTION 20BE)
       rivalName: getActorDisplayName(isTeamMode ? 'ai' : 'ai') || 'your rival', teamMode: isTeamMode, teamMission: v9CohesionInputs.team?.mission || null, teamRole: v9CohesionInputs.team?.you || null,
       contractsEnabled: Boolean(gameSettings.regionalContractsEnabled), contractAvailableTitle: reachable?.title || null, contractActiveTitle: active?.title || null,
       infrastructureEnabled: v101InfrastructureAdviceOn(gameSettings, regionCtx?.suggestion), /* V10.1 (SECTION 20BI): the Infrastructure lesson is not taught while the match has infrastructure switched off */ infrastructureHint: regionCtx?.suggestion && needLine ? `${REGIONS[region]?.name || region} has a ${needLine.value.toLowerCase()} need. ${regionCtx.suggestion}.` : null, investmentsEnabled: Boolean(gameSettings.investmentsEnabled),
@@ -249264,7 +249836,7 @@ function dispatchGameSettingsChange(
         return d ? `Most of ${REGIONS[d.consumerRegionId]?.name || d.consumerRegionId}'s available ${SUPPLY_LABEL[d.supply].toLowerCase()} currently comes from ${REGIONS[d.providerRegionId]?.name || d.providerRegionId}.` : null;
       })()
     };
-  }, [nsState, scState, inState, mpEnabled, mpPersisted, mpWorld, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, npView, egEnabled, egState, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
+  }, [nsState, scState, inState, mpEnabled, mpPersisted, mpWorld, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, npView, egEnabled, egState, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents, wp8State, v101SafetyRecord]);
   const glSelection = useMemo(() => (isLiveIntentMatch ? selectNextLearningMoment(glCtx, glLearning, gameSettings, glPresentation) : { moment: null, level: 0, mode: 'off' as LearningMode, eligible: [], suppressed: [{ id: '*', reason: 'no live match' }], budget: { thisTurn: 0, window: 0, max: LEARNING_LIMITS.perTurn } }), [glCtx, glLearning, gameSettings, glPresentation, isLiveIntentMatch]);
   // A new live match starts a fresh hint session (budget + active lesson reset; mastery persists).
   const glWasLiveRef = useRef(false);
@@ -249366,14 +249938,14 @@ function dispatchGameSettingsChange(
   const showWorldExplanation = useCallback((eventId: string) => {
     const v = swrViewRef.current;
     const ans = v ? buildWorldExplanationAnswer(eventId, v) : null;
-    if (ans) { pushIntelAnswer(ans); setExperienceLayer('intelligence'); }
-  }, [pushIntelAnswer, setExperienceLayer]);
+    if (ans) { pushIntelAnswer(ans); if (!v101RouteLayerRequest('intelligence', wp8State).inline) setExperienceLayer('intelligence'); /* V10.1 (SECTION 20BE): in the guided first match the answer shows inline on PLAY */ }
+  }, [pushIntelAnswer, setExperienceLayer, wp8State]);
 
   const submitIntelligenceQuery = useCallback(async (raw: string) => {
     const query = String(raw || '').trim();
     if (!query || v9IntelBusy) return;
     setV9IntelQuery('');
-    updateUiState({ experienceLayer: 'intelligence' });
+    if (!v101RouteLayerRequest('intelligence', wp8State).inline) updateUiState({ experienceLayer: 'intelligence' }); // V10.1 (SECTION 20BE): in the guided first match there are no tabs; the answer shows inline on PLAY
     // V9.6 (SECTION 20AH): approach / chain / reputation questions are answered by the Challenge Decision System.
     const wp2Answer = wp2AdvisorRef.current?.(query) || null;
     if (wp2Answer) { pushIntelAnswer(wp2Answer); return; }
@@ -249402,7 +249974,7 @@ function dispatchGameSettingsChange(
     } finally {
       setV9IntelBusy(false);
     }
-  }, [v9IntelBusy, updateUiState, pushIntelAnswer, handleTakeControl, setPlayerControlMode, askAI, persistBackgroundAI, persistRegionalFactions]);
+  }, [v9IntelBusy, updateUiState, pushIntelAnswer, handleTakeControl, setPlayerControlMode, askAI, persistBackgroundAI, persistRegionalFactions, wp8State]);
 
   // One dispatcher for every V9 button (PLAY cards, Intelligence answers). Each kind maps onto an
   // existing canonical path; none of them bypass legality, approvals or Co-Pilot authority.
@@ -261446,6 +262018,13 @@ function dispatchGameSettingsChange(
                     <button onClick={() => downloadReplayFile(replayRecordingRef.current!)} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-sm font-semibold`}>Export Current Replay</button>
                   )}
                 </div>
+                {/* V10.1 (SECTION 20BE): with Record Replays off and nothing loaded the button above only said "Enable Record Replays" and gave no way there. */}
+                {v101ReplayStudioNeedsSetting({ recordingOn: gameSettings.aiReplayRecordingEnabled === true, hasRecording: Boolean(replayRecordingRef.current), hasLoadedReplay: Boolean(loadedReplayFile) }) && (
+                  <div className="mt-3 text-sm" data-testid="v101-replay-setting-note">
+                    <p className="opacity-80">{V101_REPLAY_OFF_NOTE}</p>
+                    <button type="button" onClick={() => { updateUiState({ showSaveLoadModal: false }); navigateToSettings('replayDiag', 'advancedSystems.replaySafety'); }} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-sm font-semibold mt-2`} data-testid="v101-open-record-replays">Open the Record Replays setting</button>
+                  </div>
+                )}
               </div>
               {/* Save Game Section — V9.9 (SECTION 20AT): not shown on the main menu, where there is no match to save. */}
               {gameState.gameMode !== 'menu' && (
@@ -262531,6 +263110,8 @@ function dispatchGameSettingsChange(
     // no longer includes every persistent toast unless classicStickyToasts is on.
     const classicSticky = gameSettings.classicStickyToasts === true;
     let filtered = filterToastLane(notifications).filter(n => settings.typeFilters[n.notificationType || 'system']);
+    // V10.1 (SECTION 20BE): while a tour step is on screen in the guided first match the welcome / unlock announcements wait in the History (the tour step is the one voice).
+    if (v101FirstRunVoices(wp8State, glLearning.basicsStep !== null && glSelection.mode !== 'off').holdToasts) filtered = filtered.filter(n => !v101IsFirstRunAnnouncement(n));
     // V9.9 (SECTION 20AT): restored-from-save and end-screen-quiet notifications are history, not toasts
     // (classicStickyToasts keeps the V9.8 behaviour of showing a loaded save's toasts again).
     filtered = filtered.filter(n => (classicSticky || isLiveToast(n)) && !(v99QuietToastIds !== null && v99QuietToastIds.has(n.id)));
@@ -262778,6 +263359,12 @@ function dispatchGameSettingsChange(
             {gameState.gameMode === 'game' && (
               <div className="mt-4 p-3 rounded-lg bg-red-500 bg-opacity-20 text-sm text-red-200">
                 Loading will overwrite your current game progress. Continue?
+              </div>
+            )}
+            {/* V10.1 (SECTION 20BE): on the menu a load also replaces the autosaved match the Resume card offers; say so here as well as in the question that follows. */}
+            {gameState.gameMode !== 'game' && v101ReplaceAutosaveGuard({ autosaveOn: gameSettings.matchRecoveryEnabled === true, card: v99mr.card }).needed && (
+              <div className="mt-4 p-3 rounded-lg bg-red-500 bg-opacity-20 text-sm text-red-200" data-testid="v101-load-replaces-autosave">
+                Loading replaces your autosaved match ({v101ReplaceAutosaveGuard({ autosaveOn: true, card: v99mr.card }).dayLabel}).
               </div>
             )}
           </div>
@@ -263977,6 +264564,10 @@ function dispatchGameSettingsChange(
                 </button>
               ))}
             </div>
+            {/* V10.1 (SECTION 20BE): the cards show only the ability's name; the chosen character's description and perk are one line here. */}
+            {CHARACTERS[uiState.selectedCharacter] && (
+              <p className={`text-xs ${themeStyles.textMuted} mt-3`} data-testid="v101-character-line">{v101CharacterLine(CHARACTERS[uiState.selectedCharacter])}</p>
+            )}
           </div>
 
           {/* Player Name Input */}
@@ -264021,7 +264612,7 @@ function dispatchGameSettingsChange(
           {/* Game Mode Selection */}
           <div className="space-y-3">
             <button
-              onClick={() => initializeGameMode('single')}
+              onClick={() => v101GuardedStart(() => initializeGameMode('single')) /* V10.1 (SECTION 20BE): asks before it replaces an autosaved match */}
               className={`relative w-full py-4 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-[1.02] ${
                 isDark
                   ? 'bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white shadow-lg shadow-blue-500/30'
@@ -264036,6 +264627,7 @@ function dispatchGameSettingsChange(
                 </div>
               )}
               🎮 Single Player Mode
+              <V101ModeBlurb mode="single" />{/* V10.1 (SECTION 20BE): every mode says what it is */}
             </button>
 
             <button
@@ -264054,6 +264646,7 @@ function dispatchGameSettingsChange(
                 </div>
               )}
               🤖 AI Opponent Mode
+              <V101ModeBlurb mode="ai" />{/* V10.1 (SECTION 20BE): every mode says what it is */}
             </button>
 
             <button
@@ -264072,6 +264665,7 @@ function dispatchGameSettingsChange(
                 </div>
               )}
               🏁 Grand Tour Rival Race
+              <V101ModeBlurb mode="grand_tour" />{/* V10.1 (SECTION 20BE): every mode says what it is */}
             </button>
 
             <button
@@ -264090,6 +264684,7 @@ function dispatchGameSettingsChange(
                 </div>
               )}
               🤝 Team Mode: Human + AI vs AI + AI
+              <V101ModeBlurb mode="team_human_ai_vs_ai_ai" />{/* V10.1 (SECTION 20BE): every mode says what it is */}
             </button>
 
             <button
@@ -264108,6 +264703,7 @@ function dispatchGameSettingsChange(
                 </div>
               )}
               ⚙️ Team Mode: AI + AI vs AI + AI
+              <V101ModeBlurb mode="team_ai_vs_ai" />{/* V10.1 (SECTION 20BE): every mode says what it is */}
             </button>
 
             <button
@@ -264126,6 +264722,7 @@ function dispatchGameSettingsChange(
                 </div>
               )}
               📜 Scenario Mode
+              <V101ModeBlurb mode="scenario" />{/* V10.1 (SECTION 20BE): every mode says what it is */}
             </button>
 
             {/* V9.8 (SECTION 20AP): New / Continue Campaign — rendered only while campaign mode is on. */}
@@ -264201,12 +264798,12 @@ function dispatchGameSettingsChange(
                   return (
                     <button
                       key={key}
-                      onClick={() => initializeGameMode(uiState.pendingMode as GameModeSelection, key as keyof typeof AI_DIFFICULTY_PROFILES)}
+                      onClick={() => v101GuardedStart(() => initializeGameMode(uiState.pendingMode as GameModeSelection, key as keyof typeof AI_DIFFICULTY_PROFILES)) /* V10.1 (SECTION 20BE) */}
                       className={`w-full text-left rounded-xl p-4 transition-all duration-300 transform hover:scale-[1.01] border-2 bg-gradient-to-r ${colors.bg} ${colors.border} hover:shadow-lg ${colors.glow}`}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <div className={`font-bold text-base mb-1 ${themeStyles.text}`}>{profile.name}</div>
+                          <div className={`font-bold text-base mb-1 ${themeStyles.text}`}>{profile.name}{V101_FIRST_MATCH_DIFFICULTY === key && <span className="ml-2 px-2 py-0.5 text-[11px] font-bold rounded-full border border-sky-500/50 bg-sky-500/15 text-sky-300" data-testid="v101-good-first-choice">{V101_GOOD_FIRST_CHOICE_LABEL}</span> /* V10.1 (SECTION 20BE): a newcomer's pick */}</div>
                           <p className={`text-xs ${themeStyles.textSecondary} mb-2`}>{profile.description}</p>
                           <div className={`grid grid-cols-2 gap-2 text-xs ${themeStyles.textMuted}`}>
                             <div className="flex items-center gap-1">
@@ -264252,7 +264849,7 @@ function dispatchGameSettingsChange(
 
           {/* Footer */}
           <div className={`mt-4 text-xs ${themeStyles.textDisabled}`}>
-            Press <kbd className={`px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`}>?</kbd> for keyboard shortcuts
+            Press <kbd className={`px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`}>?</kbd> for how to play and keyboard shortcuts{/* V10.1 (SECTION 20BE): Help now opens with "How to play" */}
           </div>
 
           {/* V9.9 (SECTION 20AW): the Match Journal card — record, last results, bests and the seed starts (only while the journal is on). */}
@@ -264299,7 +264896,12 @@ function dispatchGameSettingsChange(
                 return (
                   <div
                     key={scenario.id}
-                    onClick={() => startScenario(scenario)}
+                    onClick={() => v101GuardedStart(() => startScenario(scenario))}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Launch scenario: ${scenario.title}`}
+                    data-testid="v101-scenario-card"
+                    onKeyDown={e => { if (v101IsCardActivation(e.key, e.target === e.currentTarget)) { e.preventDefault(); v101GuardedStart(() => startScenario(scenario)); } } /* V10.1 (SECTION 20BE): the card was a click on a div; Enter / Space now launch it */}
                     className={`cursor-pointer rounded-xl p-5 border-2 transition-all duration-300 transform hover:scale-[1.02] flex flex-col justify-between ${
                       isDark ? 'bg-gray-800/80 border-gray-700 hover:border-indigo-500' : 'bg-white border-gray-200 hover:border-indigo-400 shadow-md'
                     }`}
@@ -264363,7 +264965,7 @@ function dispatchGameSettingsChange(
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        startScenario(scenario);
+                        v101GuardedStart(() => startScenario(scenario)); // V10.1 (SECTION 20BE)
                       }}
                       className="w-full mt-5 py-2.5 rounded-lg font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-md transition-all"
                     >
@@ -264447,12 +265049,12 @@ function dispatchGameSettingsChange(
               return (
                 <button
                   key={key}
-                  onClick={() => initializeGameMode(pendingMode, key as keyof typeof AI_DIFFICULTY_PROFILES)}
+                  onClick={() => v101GuardedStart(() => initializeGameMode(pendingMode, key as keyof typeof AI_DIFFICULTY_PROFILES)) /* V10.1 (SECTION 20BE) */}
                   className={`w-full text-left rounded-xl p-5 transition-all duration-300 transform hover:scale-[1.02] border-2 bg-gradient-to-r ${colors.bg} ${colors.border} hover:shadow-lg ${colors.glow}`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <div className={`font-bold text-xl mb-1 ${themeStyles.text}`}>{profile.name}</div>
+                      <div className={`font-bold text-xl mb-1 ${themeStyles.text}`}>{profile.name}{V101_FIRST_MATCH_DIFFICULTY === key && <span className="ml-2 px-2 py-0.5 text-[11px] font-bold rounded-full border border-sky-500/50 bg-sky-500/15 text-sky-300" data-testid="v101-good-first-choice">{V101_GOOD_FIRST_CHOICE_LABEL}</span> /* V10.1 (SECTION 20BE) */}</div>
                       <p className={`text-sm ${themeStyles.textSecondary} mb-3`}>{profile.description}</p>
                       <div className={`grid grid-cols-2 gap-2 text-xs ${themeStyles.textMuted}`}>
                         <div className="flex items-center gap-1">
@@ -264999,7 +265601,8 @@ function dispatchGameSettingsChange(
           <button
             onClick={activateSpecialAbility}
             disabled={!isPlayerTurn || player.specialAbilityUses <= 0 || activeSpecialAbility !== null}
-            title={getDisabledReasonForAction('specialAbility', !isPlayerTurn || player.specialAbilityUses <= 0 || activeSpecialAbility !== null) || undefined}
+            title={v101AbilityChipTitle(player?.character?.specialAbility, Number(player.specialAbilityUses) || 0, getDisabledReasonForAction('specialAbility', !isPlayerTurn || player.specialAbilityUses <= 0 || activeSpecialAbility !== null)) /* V10.1 (SECTION 20BE): the chip says what the ability does, enabled or not */}
+            aria-label={v101AbilityChipTitle(player?.character?.specialAbility, Number(player.specialAbilityUses) || 0, null)}
             className={`${activeSpecialAbility ? 'bg-gradient-to-r from-purple-600 to-blue-600' : themeStyles.accent} text-white rounded-lg flex items-center ${actionButtonSize} ${actionButtonGap} disabled:opacity-50 relative`}
           >
             <span>✨</span>
@@ -265479,8 +266082,11 @@ function dispatchGameSettingsChange(
       }
     };
 
+    // V10.1 (SECTION 20BE): while the guided first match is active the chrome matches what the tour teaches: one tab is a pointless tab bar, and the Co-Pilot status bar shrinks to "You're playing".
+    const v101Chrome = v101FirstRunChrome(wp8State);
     const renderV9Header = () => (
       <div className="mb-4 flex flex-col lg:flex-row lg:items-stretch gap-2" data-testid="v9-header">
+        {v101Chrome.showLayerNav && (
         <div className="shrink-0 self-start">
           <ExperienceLayerNav
             active={experienceLayer}
@@ -265489,10 +266095,12 @@ function dispatchGameSettingsChange(
             badges={wp7Kit.value('layerBadges', [isLiveIntentMatch && attention.state === 'critical'], () => ({ intelligence: isLiveIntentMatch && attention.state === 'critical' ? '!' : null }))}
           />
         </div>
+        )}
         <div className="flex-1 min-w-0">
           <PlayerControlStatusBar
             control={playerControlState}
             theme={themeStyles}
+            firstRunCompact={v101Chrome.compactControl}
             onTakeControl={handleTakeControl}
             onStart={handleV9ControlStart}
             onResume={handleResumeCoPilot}
@@ -265548,6 +266156,19 @@ function dispatchGameSettingsChange(
       onLearnMore: id => openMechanicsEntry(id)
     });
 
+    // V10.1 (SECTION 20BE): the answers to the "matches are not saved automatically" lesson. Each is remembered in this browser (aussie.v101.safetyNudge) and closes the lesson for this match.
+    const v101SafetyAnswer = (answer: V101SafetyAnswer) => {
+      const next = v101NextSafetyRecord(v101SafetyRecord, answer);
+      v101WriteSafetyNudge(v99BrowserStorage(), next);
+      setV101SafetyRecord(next);
+      glDispatch([{ kind: 'dismiss', conceptId: V101_SAFETY_LESSON_ID, turn: glTurn }]);
+    };
+    const v101SafetyEnable = () => {
+      trackedSetGameSettings("direct_player_change", "✨ New in V9.9", prev => ({ ...prev, matchRecoveryEnabled: true })); // the very setter the Settings and the Save / Load line use
+      v101SafetyAnswer('enabled');
+      addNotification('Autosave & Resume is on: a copy of this match is kept in this browser.', 'success', false, 'system');
+    };
+
     // V9.3: one content situation at a time in PLAY (Part 87 priority; a V9 decision takes precedence).
     const contentHandlers: ContentMomentHandlers = {
       onChoose: id => { const c = contentState?.activeDilemma?.choices.find(x => x.id === id); const err = chooseContentDilemma(id); if (!err && c?.nav) openIntentNav(navAction(c.nav, c.label)); },
@@ -265563,6 +266184,8 @@ function dispatchGameSettingsChange(
       const glShowWelcome = isLiveIntentMatch && glLearning.welcome === 'pending' && glSelection.mode !== 'off';
       const glBasics = glLearning.basicsStep !== null && glSelection.mode !== 'off' ? GUIDED_BASICS_STEPS[glLearning.basicsStep] || null : null;
       const glMoment = !glShowWelcome && !glBasics && !glBlocked ? glSelection.moment : null;
+      // V10.1 (SECTION 20BE): the guided first match stacked the tutorial card, the tour step, a tip, a content card and toasts above the one action to take. While a tour step is on screen it is the one voice; the tip and content cards wait (nothing is dropped: they show once the step is done).
+      const v101Voices = v101FirstRunVoices(wp8State, glBasics !== null);
       const glBasicsNode = glBasics ? (
         <aside role="note" aria-label={`Basics: ${glBasics.headline}`} className={`rounded-lg border-2 border-sky-500/60 ${themeStyles.card} px-3 py-2 text-sm mt-2`} data-testid="gl-basics-step" data-target={glBasics.target}>
           <div className="font-bold">💡 {glBasics.headline}</div>
@@ -265571,12 +266194,15 @@ function dispatchGameSettingsChange(
             {glLearning.basicsStep! < GUIDED_BASICS_STEPS.length - 1
               ? <button type="button" className={`${themeStyles.buttonSecondary} px-2 py-0.5 rounded`} data-testid="gl-basics-next" onClick={() => glDispatch([{ kind: 'basics_step', step: glLearning.basicsStep! + 1, turn: glTurn }])}>Next</button>
               : <button type="button" className={`${themeStyles.buttonSecondary} px-2 py-0.5 rounded`} data-testid="gl-basics-done" onClick={() => glDispatch([{ kind: 'basics_step', step: null, turn: glTurn }])}>Start playing</button>}
-            <button type="button" className="underline opacity-80" onClick={() => glDispatch([{ kind: 'basics_step', step: null, turn: glTurn }])}>Skip the tour</button>
+            <button type="button" className="underline opacity-80" onClick={() => glDispatch([{ kind: 'basics_step', step: null, turn: glTurn }])} data-testid="gl-basics-hide">{wp8State?.active ? 'Hide these tips' : 'Skip the tour'}</button>{/* V10.1 (SECTION 20BE): in the guided first match "Skip the tour" only hid these four tips while "Skip tutorial" ended the tutorial: two Skips, two meanings. This one says what it does. */}
           </div>
         </aside>
       ) : null;
       const glLessonNode = glMoment ? (
-        <LearningCard theme={themeStyles} lesson={glMoment.lesson} directoryId={glMoment.directoryId} h={glCardHandlers(glMoment)} />
+        glMoment.conceptId === V101_SAFETY_LESSON_ID
+          // V10.1 (SECTION 20BE): the "matches are not saved automatically" lesson has its own three buttons.
+          ? <V101SafetyNudgeCard theme={themeStyles} onEnable={v101SafetyEnable} onNotNow={() => v101SafetyAnswer('later')} onNever={() => v101SafetyAnswer('never')} />
+          : <LearningCard theme={themeStyles} lesson={glMoment.lesson} directoryId={glMoment.directoryId} h={glCardHandlers(glMoment)} />
       ) : null;
       const glCoachTarget: LearningCoachTarget | null = glBasics ? glBasics.target : glMoment ? (glMoment.lesson.target || null) : null;
       const glCoachNode = glBasicsNode || glLessonNode;
@@ -265646,7 +266272,7 @@ function dispatchGameSettingsChange(
           )}
           {/* V9.9 (SECTION 20AX): "Since your last turn" — one card for what happened while the player waited (Turn Digest; off = not drawn). */}
           {v99td.digest && <OptionalSurfaceBoundary surface="Turn digest"><V99TurnDigestCard digest={v99td.digest} theme={themeStyles} collapsed={v99td.collapsed} historyCount={v99DigestHistoryCount(v99td.digest, notifications)} onToggle={v99td.onToggle} onDismiss={v99td.onDismiss} onShowAll={() => updateUiState({ showNotifications: true })} laneSide={v99DigestLaneSide(gameSettings.notificationSettings?.position, v99ClassicLayout, gameSettings.classicStickyToasts === true)} /></OptionalSurfaceBoundary>}
-          {wp8State?.active && <V99ToastLaneBelow active={!v99ClassicLayout}>{/* V9.9 (SECTION 20AU, W4A — f1-06): no toast over the goal counters or "Skip tutorial" */}<OptionalSurfaceBoundary surface="Guided first run"><FirstRunPanel view={v100FirstRunPanelView(wp8State, wp8Signals, v99FirstRunAvailability(gameSettings))} onSkip={wp7Kit.fn('firstRunSkip', () => wp8Finish('skipped'))} theme={themeStyles} /></OptionalSurfaceBoundary></V99ToastLaneBelow>}
+          {wp8State?.active && <V99ToastLaneBelow active={!v99ClassicLayout}>{/* V9.9 (SECTION 20AU, W4A — f1-06): no toast over the goal counters or "Skip tutorial" */}<OptionalSurfaceBoundary surface="Guided first run"><FirstRunPanel view={v100FirstRunPanelView(wp8State, wp8Signals, v99FirstRunAvailability(gameSettings), matchLengthInDays(Number(gameSettings.totalDays || 0)))} onSkip={wp7Kit.fn('firstRunSkip', () => wp8Finish('skipped'))} theme={themeStyles} /></OptionalSurfaceBoundary></V99ToastLaneBelow>}
           {/* V10.1 (SECTION 20BC): what the rival did and why (Rival Recap on, a solo rival mode, the player's turn; off = not drawn). */}
           {v101RecapTurn && <OptionalSurfaceBoundary surface="Rival recap"><V101RivalRecapCard turn={v101RecapTurn} rivalName={String(aiPlayer?.name || 'The rival')} theme={themeStyles} onDismiss={v101DismissRecap} /></OptionalSurfaceBoundary>}
           {/* V10.0 (SECTION 20AZ): the open Rival Race (Rival Races on, AI Opponent mode; off = not drawn). */}
@@ -265667,6 +266293,16 @@ function dispatchGameSettingsChange(
             <BlockedHelpCard theme={themeStyles} help={glBlocked} onNav={nav => openIntentNav(nav)} onAsk={q => void submitIntelligenceQuery(q)} onDismiss={() => setGlBlocked(null)} onLearnMore={openMechanicsEntry} />
           )}
           {glAtTop && glCoachNode}
+          {/* V10.1 (SECTION 20BE): the guided first match has no tabs, so an answer to an Ask button is shown here, on PLAY, where the player asked. */}
+          {(() => {
+            const inline = v101FirstRunInlineAnswer(wp8State, v9IntelFeed, v101ClosedAnswerId, v9IntelBusy);
+            if (!inline) return null;
+            return (
+              <V101FirstRunAnswer theme={themeStyles} busy={inline.busy} onClose={() => setV101ClosedAnswerId(inline.answer ? inline.answer.id : null)}>
+                {inline.answer && <GameIntelligenceAnswerCard answer={inline.answer} theme={themeStyles} onButton={handleV9Button} currentFingerprint={v9GiFingerprints} onRefresh={q => void submitIntelligenceQuery(q)} />}
+              </V101FirstRunAnswer>
+            );
+          })()}
 
           {attention.state === 'needs_attention' && !v9Cohesion.focus.temporary && (
             <div role="alert" className={`rounded-xl border-2 px-3 py-2 flex flex-wrap items-center gap-2 text-sm border-amber-500/70 ${themeStyles.card}`}>
@@ -265688,7 +266324,7 @@ function dispatchGameSettingsChange(
             </div>
           )}
 
-          {glAfter && !glBlocked && (
+          {glAfter && !glBlocked && !v101Voices.holdTip /* V10.1 (SECTION 20BE): one voice at a time: the tour step wins over the "You arrived in X" tip */ && (
             <LearningCard theme={themeStyles} lesson={glAfter.lesson} directoryId={LEARNING_CONCEPT_BY_ID[glAfter.conceptId]?.directoryId || null} h={{ ...glCardHandlers(null, () => setGlAfter(null)), onDismissClass: undefined }} testId="gl-after" compact />
           )}
 
@@ -265708,7 +266344,7 @@ function dispatchGameSettingsChange(
 
           {nationalPlacement === 'below' && nationalPlayNodes}
 
-          {contentMoment && <ContentMomentCard theme={themeStyles} moment={contentMoment} money={Number(player.money || 0)} h={contentHandlers} canAct={v9HumanCanAct} lastDay={matchLengthInDays(Number(gameSettings.totalDays || 0))} />}
+          {contentMoment && !v101Voices.holdContent /* V10.1 (SECTION 20BE): held while the tour step speaks */ && <ContentMomentCard theme={themeStyles} moment={contentMoment} money={Number(player.money || 0)} h={contentHandlers} canAct={v9HumanCanAct} lastDay={matchLengthInDays(Number(gameSettings.totalDays || 0))} />}
 
           <div className="text-xs">
             <button type="button" className="underline opacity-80" aria-expanded={v9PlayDetailsOpen} data-testid="v9-play-details-toggle" onClick={() => setV9PlayDetailsOpen(o => !o)}>
@@ -267415,13 +268051,16 @@ function dispatchGameSettingsChange(
 	                  )}
 	                </div>
 	                <div className="text-xs opacity-75">
-                    {gameSettings.negotiationMode
+                    {/* V10.1 (SECTION 20BE): while the guided first run hides the deposit controls the card does not tell the player to use them. */}
+                    {!isFirstRunVisible(wp8State, 'advanced')
+                      ? V101_REGION_CONTROL_FIRST_RUN_LINE
+                      : gameSettings.negotiationMode
                       ? 'Negotiation Mode active: deposit bidding is frozen. Control transfers only via completed proposals.'
                       : 'Deposits are cumulative and spent. Highest total controls the region.'}
 	                </div>
 	                <div className="space-y-1 text-sm">
 	                  {currentRegionControlInfo.entries.length === 0 ? (
-	                    <div className="opacity-60">{v99EmptyRegionStakeText(currentRegionControlInfo.minimumPlayerDeposit)}</div>
+	                    <div className="opacity-60">{isFirstRunVisible(wp8State, 'advanced') ? v99EmptyRegionStakeText(currentRegionControlInfo.minimumPlayerDeposit) : 'No deposits yet.' /* V10.1 (SECTION 20BE): no "stake $X" while the deposit controls are hidden */}</div>
 	                  ) : (
 	                    currentRegionControlInfo.entries.map(entry => (
 	                      <div key={`${player.currentRegion}-${entry.playerId}`} className="flex justify-between">
@@ -267431,7 +268070,7 @@ function dispatchGameSettingsChange(
 	                    ))
 	                  )}
 	                </div>
-	                {currentRegionControlInfo.controllerId && currentRegionControlInfo.controllerId !== 'player' && !gameSettings.negotiationMode && (
+	                {currentRegionControlInfo.controllerId && currentRegionControlInfo.controllerId !== 'player' && !gameSettings.negotiationMode && isFirstRunVisible(wp8State, 'advanced') /* V10.1 (SECTION 20BE): no "deposit to take control" while the controls are hidden */ && (
 	                  <div className="text-xs text-yellow-300">
 	                    Deposit at least {fmtMoney(currentRegionControlInfo.minimumPlayerDeposit)} to take control.
 	                  </div>
@@ -268535,7 +269174,7 @@ function dispatchGameSettingsChange(
           <div className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "travel_modal") ? "bg-black bg-opacity-50" : "bg-transparent"} flex items-center justify-center p-4`} style={{ zIndex: globalUISurfaceManager.getZIndex("travel_modal") }} onClick={() => updateUiState({ showTravelModal: false })}>
             <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden ${themeStyles.scrollbar}`} onClick={(e) => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-4 shrink-0">
-                <h3 className="text-xl font-bold">✈️ Travel</h3>
+                <div><h3 className="text-xl font-bold">✈️ Travel</h3><p className="text-xs opacity-70" data-testid="travel-modal-loop-line">{V101_TRAVEL_LOOP_LINE}</p>{/* V10.1 (SECTION 20BE): the core loop, said where the player is */}</div>
                 <button
                   onClick={() => updateUiState({ showTravelModal: false })}
                   className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
@@ -270007,6 +270646,7 @@ function dispatchGameSettingsChange(
           surfaceState={surfaceState}
           keyboardShortcuts={KEYBOARD_SHORTCUTS}
           gameSettings={gameSettings}
+          onOpenRules={wp7Kit.fn('helpOpenRules', () => { updateUiState({ showHelp: false }); openMechanicsEntry('win'); })} /* V10.1 (SECTION 20BE): the "How to play" section's link to the full rules */
         />
       </>
     );
@@ -277286,6 +277926,7 @@ function dispatchGameSettingsChange(
           surfaceState={surfaceState}
           keyboardShortcuts={KEYBOARD_SHORTCUTS}
           gameSettings={gameSettings}
+          onOpenRules={wp7Kit.fn('v101HelpOpenRulesOutsideMatch', () => { updateUiState({ showHelp: false }); openMechanicsEntry('win'); })} /* V10.1 (SECTION 20BE) */
         />
       )}
       {v99LeaveMatchOpen && gameState.gameMode === "game" && (
