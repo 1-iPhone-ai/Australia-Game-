@@ -209516,7 +209516,18 @@ export function V101SettingsHubBody({ settings, onToggle, onClassName, offClassN
 // V10.1: the current release's entry; it leads the "What's New" list (Settings → Interface, and the Simple view's card).
 export const V101_CHANGELOG = [
   `${GAME_VERSION_LABEL} - A fairer fight, a safer match`,
-  'Placeholder entry: the release notes are written when the V10.1 work packages are merged',
+  'Money you can trust: buying from the Resource Market now costs about what the same goods sell for, so buying and reselling in one region no longer prints cash. Bulk buys nudge the price up a little. (New matches.)',
+  'Challenges are a decision, not a free button: odds top out at 85%, the pay trims as the odds climb, and each challenge you take tires you a little. Every challenge card now shows the win, the loss and the average in dollars. (New matches.)',
+  'A rival that is what its label says: it pays the same fares and picks from the same challenge board as you, and selling no longer costs it an action. Turn on Rival Recap to see what it did on its turn, and why.',
+  'Match rules stay put: while a match runs, the Victory Goal, Game Length and Difficulty are locked and any change waits for your next match. Team bankruptcy counts debts, sabotage lasts what it says, replays are finalised and a Single Player run ends with a graded RUN COMPLETE. (New matches.)',
+  'A safer first hour: the menu says plainly how a save works, the tutorial answers the Ask chips right on the Play screen, and starting from a Journal seed or loading asks before it replaces your autosaved match.',
+  'The world tells the truth: infrastructure, contracts and faction advice only appear when those systems are switched on and are refused when they are off. Fund now lets you choose an amount instead of spending all your cash, faction rewards say what they really do, and the clock says day where the screen says Day.',
+  'Advice you can trust: Ask the Game AI answers the question you asked from your real match, the Play card names one best move, and the Strategy Planner plans real actions (and no longer suggests gathering that does nothing).',
+  'More to play for: Lord Howe, Antarctica and the other territories have their own challenges, objectives and challenge points count, story choices keep their consequences, and the optional Daily Challenge fixes the rules so scores compare from day to day.',
+  'Easier to use: the Strategy Planner window opens and closes properly, the More menu stays on screen, keyboard shortcuts follow their buttons, Escape works from any field, the main windows are real dialogs, Light theme is readable, text size has A- and A+, and a plain banner appears if the game styles fail to load.',
+  'Settings that do what they say: presets are always visible, Start Collapsed and Remember work, the Co-Pilot turn limit follows your actions per day, and applying a preset shows what will change and keeps your personal preferences.',
+  'Under the hood: replays and the in-game self-test buttons no longer disturb a live match, a calm recovery banner offers a backup copy if something unexpected breaks, and watching AI vs AI no longer runs the player advisor.',
+  'Want the old balance? Settings > New in V10.1 > Classic rules (V10.0) starts new matches by the V10.0 rules. Older saves always keep the rules they were started with.',
 ];
 
 /** "✨ New in V10.1" in the Simple settings view: the same switches as the hub's section and the release notes. */
