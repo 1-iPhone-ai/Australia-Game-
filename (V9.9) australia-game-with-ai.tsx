@@ -199079,12 +199079,13 @@ export function V99SimpleNewJump(): React.ReactElement {
   const jump = () => {
     if (typeof document === 'undefined') return;
     // V10.0 (SECTION 20AY): the V10.0 card sits just above V9.9's at the end of the page; the jump lands on it first.
-    const card = document.querySelector('[data-testid="v100-simple-new"]') || document.querySelector(V99_SIMPLE_NEW_CARD_SELECTOR);
+    // V10.1 (SECTION 20BG, final verification): the line still announced V10.0 as the new thing; V10.1's card sits above V10.0's, so the jump lands on it first.
+    const card = document.querySelector('[data-testid="v101-simple-new"]') || document.querySelector('[data-testid="v100-simple-new"]') || document.querySelector(V99_SIMPLE_NEW_CARD_SELECTOR);
     if (card instanceof HTMLElement) { card.scrollIntoView({ block: 'start' }); card.focus({ preventScroll: true }); }
   };
   return (
     <button type="button" onClick={jump} className="w-full text-left text-xs rounded-lg border border-sky-500 px-3 py-2" data-testid="v99-simple-new-jump">
-      <span className="font-semibold">{V100_SETTINGS_HUB_SECTION_TITLE}</span> — Rival Races and the classic rival, then V9.9's autosave, match journal, turn digest, rival speed and classic look, are at the end of this page ↓
+      <span className="font-semibold">{V101_SETTINGS_HUB_SECTION_TITLE}</span> — Rival Recap, the fixed-rules Daily and the Classic-rules switch, then V10.0's Rival Races and V9.9's autosave, match journal, turn digest, rival speed and classic look, are at the end of this page ↓
     </button>
   );
 }
@@ -209483,6 +209484,11 @@ export function isV101SettingKeyName(key: unknown): boolean {
   return typeof key === 'string' && (V101_SETTING_KEYS as readonly string[]).includes(key);
 }
 
+/** V10.1 (SECTION 20BG, final verification): the keys the Simple settings view may write. Its handler listed the V9.9 and V10.0 cards' keys but not the V10.1 card's, so the three "New in V10.1" switches in the Simple view did nothing when pressed. One list, used by the handler and the tests. */
+export function isSimpleViewWritableKey(key: unknown): boolean {
+  return typeof key === 'string' && (SIMPLE_SETTINGS_KEYS.includes(key) || isSimpleCompanionSettingKey(key) || isV99SettingKeyName(key) || isV100SettingKeyName(key) || isV101SettingKeyName(key));
+}
+
 /** What the hub body needs from the settings: the three keys, nothing else. GameSettingsState satisfies it. */
 export type V101SettingsView = { readonly [K in V101BooleanSettingKey]?: boolean };
 
@@ -214642,6 +214648,17 @@ export function runV101SettingsSelfTests(): V9SelfTestResult[] {
     const edited = v101SettingsWritePipeline(live, fromFile, 'direct_player_change');
     const untouched = loaded.every(out => out.maxActionsPerTurn === 3 && out.aiMaxActionsPerTurn === 3 && out.playerActionsPerDay === 4 && out.aiActionsPerDay === 5);
     return (untouched && edited.maxActionsPerTurn === 4 && edited.aiMaxActionsPerTurn === 5 && V101_RESTORE_SETTING_SOURCES.includes('save_loader')) || json({ loaded: loaded.map(o => [o.maxActionsPerTurn, o.aiMaxActionsPerTurn]), edited: [edited.maxActionsPerTurn, edited.aiMaxActionsPerTurn] });
+  });
+  check('v101st_25_simple_view_writes_the_v101_switches', 'The Simple view accepts a write for each of the three "New in V10.1" keys (the handler used to drop them, so those switches were dead there), still accepts the V9.9, V10.0 and everyday keys, and still refuses a key it never showed', () => {
+    const v101 = V101_SETTING_KEYS.filter(k => !isSimpleViewWritableKey(k));
+    const older = [...V99_SETTING_KEYS, ...V100_SETTING_KEYS, 'totalDays', 'experienceMode'].filter(k => SIMPLE_SETTINGS_KEYS.includes(k) || isV99SettingKeyName(k) || isV100SettingKeyName(k)).filter(k => !isSimpleViewWritableKey(k));
+    const junk = ['aiDifficulty', 'investmentsEnabled', '', 'rulesVersion'].filter(k => isSimpleViewWritableKey(k) && !SIMPLE_SETTINGS_KEYS.includes(k));
+    return (v101.length === 0 && older.length === 0 && junk.length === 0 && !isSimpleViewWritableKey(undefined) && !isSimpleViewWritableKey(42) && SIMPLE_SETTINGS_KEYS.every(k => isSimpleViewWritableKey(k))) || json({ v101, older, junk });
+  });
+  check('v101st_24_simple_view_jump_announces_v101', 'The line at the top of the Simple settings view announces "New in V10.1" (it still said V10.0 was the new thing) and still mentions the V10.0 and V9.9 switches it jumps past', () => {
+    if (!staticReady) return true; // rendered-markup test: needs the runner's static renderer
+    const html = markup(<V99SimpleNewJump />);
+    return (html.includes('New in V10.1') && html.includes('Rival Recap') && html.includes('Rival Races') && html.includes('autosave') && !html.includes('New in V10.0')) || html.slice(0, 400);
   });
   return results;
 }
@@ -252896,7 +252913,7 @@ function dispatchGameSettingsChange(
   const wp8SimpleSettingChange = useCallback((key: string, value: boolean | string | number) => {
     if (key === 'experienceMode') { if (value === 'explorer' || value === 'nation' || value === 'full') requestExperienceModeChange(value); return; }
     if (key === 'guidedFirstRunEnabled') { wp8SetGuidedFirstRun(value === true); return; }
-    if (!SIMPLE_SETTINGS_KEYS.includes(key) && !isSimpleCompanionSettingKey(key) && !isV99SettingKeyName(key) && !isV100SettingKeyName(key)) return; // V10.0 (SECTION 20AY): + the "New in V10.0" card // V9.9 (SECTION 20AS): + the rival's actions per day; W4A (f1-03): + the "New in V9.9" card
+    if (!isSimpleViewWritableKey(key)) return; // V10.1 (SECTION 20BG): + the "New in V10.1" card (its switches were silently dropped here) // V10.0 (SECTION 20AY): + the "New in V10.0" card // V9.9 (SECTION 20AS): + the rival's actions per day; W4A (f1-03): + the "New in V9.9" card
     trackedSetGameSettings('direct_player_change', '⚙️ Simple settings', prev => ({ ...prev, ...({ [key]: value } as unknown as Partial<GameSettingsState>) }));
   }, [requestExperienceModeChange, trackedSetGameSettings, wp8SetGuidedFirstRun]);
   // V10.1 (SECTION 20BE): what this browser remembers about the "matches are not saved" lesson (Not now / Don't ask again / turned on).
