@@ -48144,6 +48144,11 @@ export interface ClassicAiRuntimeContext {
    */
   travelCost?: (fromRegion: string, toRegion: string, actor: unknown) => number;
   challengesFor?: (actor: unknown) => unknown[] | null;
+  /**
+   * V10.1 (SECTION 20BC): the odds the live rival's roll really uses for a challenge (the 85% ceiling, the Tourist's +10%, fatigue), so the odds
+   * the chooser ranks, stakes and (in Rival Recap) prints are the odds the roll uses. Without the hook the chooser reads classicSuccessChance, as before.
+   */
+  challengeChance?: (challenge: unknown, actor: unknown) => number;
 }
 
 let tuningGenomeIdCounter = 0;
@@ -48543,7 +48548,7 @@ export function enumerateLegalActions(
   const availableChallenges = ((boardChallenges as Array<{ name: string }> | null) || currentRegion?.challenges || []).filter((c: any) => !(actor.completedThisSeason || []).includes(c.name));
   availableChallenges.forEach((challenge: any) => {
     if ((actor.money || 0) < MINIMUM_WAGER) return;
-    const successChance = classicSuccessChance(challenge, actor);
+    const successChance = ctx.challengeChance ? ctx.challengeChance(challenge, actor) : classicSuccessChance(challenge, actor); // V10.1 (SECTION 20BC): the roll's own odds in a V10.1 match
     const wager = Math.max(MINIMUM_WAGER, Math.min(actor.money, 500));
     const expectedValue = wager * (challenge.reward || 2) * successChance - wager * (1 - successChance);
     const riskTol = Number((AI_DIFFICULTY_PROFILES[ctx.difficultyKey] || {}).riskTolerance) || 0.7;
@@ -48726,7 +48731,8 @@ export function chooseAction(
     specialAbilityActive: Boolean(options?.specialAbilityActive),
     // V10.1 (SECTION 20BC): the live rival's V10.1 pricing and board (undefined for everything else).
     travelCost: options?.live?.travelCost,
-    challengesFor: options?.live?.challengesFor
+    challengesFor: options?.live?.challengesFor,
+    challengeChance: options?.live?.challengeChance // V10.1 (SECTION 20BC)
   };
   const profile = AI_DIFFICULTY_PROFILES[ctx.difficultyKey] || AI_DIFFICULTY_PROFILES.expert;
   // V9.9 (SECTION 20AS): the roll is always drawn; only the live rival's paid-for action (live.suppressMistake) ignores it.
@@ -196446,6 +196452,8 @@ export interface ClassicAiLiveHooks {
   v101Rules?: boolean;
   travelCost?: (fromRegion: string, toRegion: string, actor: unknown) => number;
   challengesFor?: (actor: unknown) => unknown[] | null;
+  /** V10.1 (SECTION 20BC): the odds the rival's roll uses (v101RivalRollOdds); without it the chooser reads classicSuccessChance. */
+  challengeChance?: (challenge: unknown, actor: unknown) => number;
   /** V10.1 (SECTION 20BC): told the final ranked list (best first) right before the pick, for Rival Recap. Reading it draws nothing and changes nothing. */
   onRanked?: (ranked: Array<AIAction & { score: number }>) => void;
 }
@@ -196840,6 +196848,7 @@ export function rivalLiveHooksFor(input: { options: RivalDecisionOptions | null 
   if (v101) {
     hooks.v101Rules = true;
     hooks.travelCost = v101TravelCost;
+    hooks.challengeChance = (challenge: unknown) => v101RivalRollOdds(challenge, input.aiState); // V10.1 (SECTION 20BC): ranked, staked and recapped at the odds the roll uses
     if (isChallengeBoardActive(input.settings)) hooks.challengesFor = actor => v101RivalBoardChallenges({ actor, gameState: input.gameState, settings: input.settings, themes: input.themes });
   }
   // V10.0 (SECTION 20AZ): while a Rival Race is open the rival favours the moves that advance it — weighed against the
@@ -196879,7 +196888,7 @@ export function previewRivalCandidates(input: RivalPreviewInput, ranked: boolean
   const difficultyKey = rivalDifficultyKey(input.gameState);
   const state = canonicalStateFromLiveRuntime({ gameState: input.gameState, player: input.player, aiPlayer: input.aiPlayer, gameSettings: input.settings, actorsById: { player: input.player, [aiId]: input.aiPlayer } });
   const live = rivalLiveHooksFor({ options: { isRejected: input.isRejected }, aiState: input.aiPlayer, gameState: input.gameState, playerState: input.player, settings: input.settings, difficultyKey, themes: input.themes });
-  const ctx: ClassicAiRuntimeContext = { settings: weightsToGameSettings(input.settings, input.weights), weights: input.weights, rng: { next: () => 0 }, difficultyKey, specialAbilityActive: input.specialAbilityActive, travelCost: live?.travelCost, challengesFor: live?.challengesFor }; // V10.1 (SECTION 20BC): the preview prices and lists exactly as the chooser does
+  const ctx: ClassicAiRuntimeContext = { settings: weightsToGameSettings(input.settings, input.weights), weights: input.weights, rng: { next: () => 0 }, difficultyKey, specialAbilityActive: input.specialAbilityActive, travelCost: live?.travelCost, challengesFor: live?.challengesFor, challengeChance: live?.challengeChance }; // V10.1 (SECTION 20BC): the preview prices, lists and rates exactly as the chooser does
   const list = classicAiProposable(enumerateLegalActions(state, aiId, ctx), live);
   if (!ranked) return list;
   return list.map(candidate => scoreCandidate(state, candidate, input.weights, ctx).candidate).sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -210653,6 +210662,22 @@ export function v101RivalTravelCost(fromRegion: string, toRegion: string, actor:
   });
 }
 
+/**
+ * V10.1 (SECTION 20BC): the odds the live rival's roll uses for a challenge in a V10.1 match: computeChallengeSuccessChanceCore with the match's 85%
+ * ceiling, the character's own bonus, level, stats and the rival's fatigue (the same terms as the executor's calculateAiSuccessChance with the
+ * default settings). The chooser used classicSuccessChance (95-98% at most, no Tourist bonus, no fatigue): it ranked and staked on, and Rival Recap
+ * printed, odds up to 13 points above the ones the roll used. Pure.
+ */
+export function v101RivalRollOdds(challenge: unknown, actor: unknown): number {
+  const c = v99IsRecord(challenge) ? challenge : {};
+  const a = v99IsRecord(actor) ? actor : {};
+  const characterName = v99IsRecord(a.character) && typeof a.character.name === 'string' ? a.character.name : null;
+  return computeChallengeSuccessChanceCore({
+    difficulty: Number(c.difficulty) || 1, type: String(c.type || ''), stats: getActorStats(a), characterName, level: Number(a.level) || 0,
+    fatiguePenalty: Math.max(0, Number(a.overrideFatigue) || 0), oddsCeiling: V101_ODDS_CEILING
+  });
+}
+
 // ---- RV1: "Decision 70%" means 70 in 100 ---------------------------------------------------------------------------------
 /**
  * The chance to play the best move when a mistake is rolled FIRST (chance `mistakeChance`, always the runner-up): the rate
@@ -211659,6 +211684,24 @@ export function runV101RivalSelfTests(): V9SelfTestResult[] {
     const b = runV101RivalParityMatch({ seed: 5, rules: 'v101', difficulty: 'expert', days: 12 });
     const c = runV101RivalParityMatch({ seed: 6, rules: 'v101', difficulty: 'expert', days: 12 });
     return (json(a) === json(b) && json(a.rivalTrace) !== json(c.rivalTrace)) || 'not deterministic';
+  });
+
+  check('v101rv_30_the_rival_ranks_and_prints_the_odds_its_roll_uses', "In a V10.1 match every challenge the rival is offered carries the odds its roll uses (85% ceiling, the Tourist's +10%, fatigue), so Rival Recap never prints more than the player's own ceiling; V10.0, unstamped and classic-rules matches keep the chooser's own odds (up to 98%)", () => {
+    const strong = { stats: { strength: 9, charisma: 9, luck: 9, intelligence: 9 }, level: 8 };
+    const mk = (o: BundleOptions, patch: Record<string, unknown> = {}) => { const b = bundle(o); b.rival = { ...b.rival, ...strong, ...patch }; return b; };
+    const oddsByName = (b: Bundle) => { const m: Record<string, number> = {}; preview(b).filter(c => c.type === 'challenge').forEach(c => { const ch = dataOf(c).challenge; if (v99IsRecord(ch)) m[String(ch.name)] = Number(dataOf(c).successChance); }); return m; };
+    const fresh = mk({}), tired = mk({}, { overrideFatigue: 0.05 });
+    const a = oddsByName(fresh), t = oddsByName(tired);
+    const names = Object.keys(a);
+    const challenges = (REGIONS.QLD.challenges as Array<{ name: string; difficulty: number; type: string }>);
+    const exact = names.every(name => { const ch = challenges.find(x => x.name === name); return ch !== undefined && Math.abs(a[name] - v101RivalRollOdds(ch, fresh.rival)) < 1e-9 && Math.abs(t[name] - v101RivalRollOdds(ch, tired.rival)) < 1e-9; });
+    const capped = names.length >= 3 && names.every(name => a[name] <= V101_ODDS_CEILING + 1e-9) && names.some(name => Math.abs(a[name] - V101_ODDS_CEILING) < 1e-9);
+    const tires = names.some(name => t[name] < a[name] - 0.0499);
+    const pin = (fatigue: number, character: string) => Number(v101RivalRollOdds({ difficulty: 2, type: 'physical' }, { character: { name: character }, level: 1, stats: { strength: 4, charisma: 3, luck: 3, intelligence: 3 }, overrideFatigue: fatigue }).toFixed(4));
+    const pins = pin(0, 'Tourist') === 0.62 && pin(0.03, 'Tourist') === 0.59 && pin(0, 'Scientist') === 0.52;
+    const old = [mk({ rules: V100_RULES_VERSION }), mk({ rules: null }), mk({ settings: { classicRulesV100: true } })].map(x => Math.max(...Object.values(oddsByName(x))));
+    const oldKeep = old.every(top => top > 0.9);
+    return (exact && capped && tires && pins && oldKeep) || json({ exact, capped, tires, pins, old, a, t });
   });
 
   return results;
