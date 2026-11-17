@@ -227651,6 +227651,9 @@ function dispatchGameSettingsChange(
   useEffect(() => {
     const pending = uiState.pendingSettingsNavigation;
     if (!pending) return;
+    // V10.1 (SECTION 20BF, final verification): opening Settings from the play screen's More menu asks to go nowhere in particular (no section, no field); the loop below
+    // looked for "undefined" for five frames and then logged a console warning on every open. There is nothing to scroll to, so the request is simply cleared.
+    if (!pending.fieldKey && !pending.sectionId) { setUiState(prev => ({ ...prev, pendingSettingsNavigation: null })); return; }
 
     let animationFrameId: number | null = null;
     let frameCount = 0;
