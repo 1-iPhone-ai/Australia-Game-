@@ -212055,7 +212055,10 @@ export const V101_RULE_LOCK_REASON = 'Locked while a match is running. Changes a
 /** Id prefix of the next-match deferrals this lock writes (so they are told apart from Smart Settings deferrals). */
 export const V101_RULE_DEFER_ID_PREFIX = 'v101_rule_';
 /** Sources that start or restore a match (a loaded save, a scenario, a replay) and so may write the rules. Everything else is a player edit. */
-export const V101_RULE_LOCK_EXEMPT_SOURCES: readonly string[] = ['save_loader', 'scenario_start', 'scenario_exit', 'save_file_migration', 'replay'];
+// V10.1 (SECTION 20BD, final verification): + 'daily_start'. The fixed-rules Daily writes its pinned Game Length and Victory Goal in the same batch as the match start; the write guard
+// runs inside the settings updater, after the reducer has made the new match a locked V10.1 match, so the pins were held back as "Waiting for your next match" and the Daily played
+// on the player's own rules while its card promised 20 days and Most Controlled Regions.
+export const V101_RULE_LOCK_EXEMPT_SOURCES: readonly string[] = ['save_loader', 'scenario_start', 'scenario_exit', 'save_file_migration', 'replay', 'daily_start'];
 
 /** True while `key` is a rule the match in `gameState` has frozen: a V10.1 match that is running. A menu, the end screen, a V10.0 or unstamped match: false. */
 export function v101MatchRuleLocked(gameState: unknown, key: string): boolean {
@@ -212386,6 +212389,14 @@ export function runV101MatchRulesSelfTests(): V9SelfTestResult[] {
     const held = withLock(true, () => sources.filter(src => { const out = writeSettings(start, prev => ({ ...prev, totalDays: 55, winCondition: 'regions' }), src); return out.totalDays !== 30 || out.winCondition !== 'money'; }));
     const exempt = withLock(true, () => V101_RULE_LOCK_EXEMPT_SOURCES.filter(src => { const out = writeSettings(start, prev => ({ ...prev, totalDays: 55, winCondition: 'regions' }), src); return out.totalDays !== 55 || out.winCondition !== 'regions'; }));
     return (held.length === 0 && exempt.length === 0 && ['save_loader', 'scenario_start', 'replay'].every(src => V101_RULE_LOCK_EXEMPT_SOURCES.includes(src))) || json({ gotThrough: held, exemptBlocked: exempt });
+  });
+  check('v101ru_26_daily_start_writes_its_pins_into_a_locked_match', 'The fixed-rules Daily\'s pinned Game Length and Victory Goal are written as a rules source (daily_start): with the new match already locked they still take effect, while the same write as a player edit is held back (the Daily used to play on the player\'s own rules)', () => {
+    const own = { ...base(), winCondition: 'money' as WinMetric, totalDays: 30 };
+    const pins = (prev: GameSettingsState): GameSettingsState => ({ ...prev, totalDays: 20, winCondition: 'regions' as WinMetric });
+    const asDaily = withLock(true, () => writeSettings(own, pins, 'daily_start'));
+    const asEdit = withLock(true, () => writeSettings(own, pins, 'direct_player_change'));
+    return (V101_RULE_LOCK_EXEMPT_SOURCES.includes('daily_start') && asDaily.totalDays === 20 && asDaily.winCondition === 'regions' && v101PendingRuleEdits(asDaily).length === 0
+      && asEdit.totalDays === 30 && asEdit.winCondition === 'money' && v101PendingRuleEdits(asEdit).length === 2) || json({ daily: [asDaily.totalDays, asDaily.winCondition, v101PendingRuleEdits(asDaily).length], edit: [asEdit.totalDays, asEdit.winCondition, v101PendingRuleEdits(asEdit).length] });
   });
   check('v101ru_05_unlocked_is_the_old_freedom', 'With no V10.1 match running (menu, end screen, V10.0, unstamped, Classic) the same writes change the rules exactly as before, and nothing is queued', () => {
     const start = { ...base(), winCondition: 'money' as WinMetric, totalDays: 30 };
@@ -231756,7 +231767,8 @@ function dispatchGameSettingsChange(
       const own = v101DailyRestoreRef.current?.values ?? readV101DailyRestore(store) ?? v101DailyOwnValues(gameSettings, patch);
       v101DailyRestoreRef.current = { values: own, armed: false };
       writeV101DailyRestore(store, own);
-      trackedSetGameSettings('direct_player_change', 'Daily Challenge rules', prev => ({ ...prev, ...patch }));
+      // V10.1 (SECTION 20BD, final verification): written as 'daily_start' (a rules source, like a scenario's), not as a player edit: the new match is locked by the time the update is applied.
+      dispatchGameSettingsChange(setGameSettings, prev => ({ ...prev, ...patch }), undefined, 'daily_start', { section: 'Daily Challenge rules', day: gameState?.day, turn: gameState?.turnCounter }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent);
       initializeGameMode(wpMjPendingStart.mode, wpMjPendingStart.difficulty, undefined, { seed: wpMjPendingStart.seed, settings: { ...gameSettings, ...patch }, dailyChallenge: v101DailyChallengeRecordOf(v101Daily) });
       return;
     }
