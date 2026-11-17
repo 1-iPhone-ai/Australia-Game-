@@ -3986,7 +3986,8 @@ export const VERSION_CONSTANTS = {
   // V9.9 (SECTION 20AQ): bumped from 9.6.0 (V9.6–V9.8 all stamped 9.6.0). The schema versions below are unchanged.
   // V10.0 (SECTION 20AY): bumped from 9.9.0. The schema versions stay; V10.0 adds only optional save fields.
   // V10.1 (SECTION 20BA): bumped from 10.0.0. The schema versions stay; V10.1 adds only optional save fields.
-  GAME_VERSION: "10.1.0",
+  // V11.0 (SECTION 20BL): bumped from 10.1.0. The schema versions stay; V11.0 adds one profile setting and no save fields (the rules stamp stays 1010).
+  GAME_VERSION: "11.0.0",
   SCHEMA_VERSION: "7.1",
   SAVE_SCHEMA_VERSION: "7.1",
   SETTINGS_SCHEMA_VERSION: "7.1",
@@ -14119,6 +14120,8 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   dailyFixedRulesEnabled: false,
   /** V10.1 (SECTION 20BA): on = a new match plays by the V10.0 rules (match rule; off = the V10.1 rules in a V10.1 match). */
   classicRulesV100: false,
+  /** V11.0 (SECTION 20BL): Find Anything — one search box over actions, screens, settings, shortcuts and LAB cards. New, off by default (profile). */
+  findAnythingEnabled: false,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -15260,6 +15263,7 @@ export function sanitizeGameSettings(input: unknown): GameSettingsState {
     rivalRecapEnabled: typeof src.rivalRecapEnabled === 'boolean' ? src.rivalRecapEnabled : defaults.rivalRecapEnabled,
     dailyFixedRulesEnabled: typeof src.dailyFixedRulesEnabled === 'boolean' ? src.dailyFixedRulesEnabled : defaults.dailyFixedRulesEnabled,
     classicRulesV100: typeof src.classicRulesV100 === 'boolean' ? src.classicRulesV100 : defaults.classicRulesV100,
+    findAnythingEnabled: typeof src.findAnythingEnabled === 'boolean' ? src.findAnythingEnabled : defaults.findAnythingEnabled, // V11.0 (SECTION 20BL): only a real boolean switches it on
     rememberCategoryNavigationState: typeof src.rememberCategoryNavigationState === 'boolean' ? src.rememberCategoryNavigationState : defaults.rememberCategoryNavigationState,
     rememberCategoryNavigationMode: typeof src.rememberCategoryNavigationMode === 'boolean' ? src.rememberCategoryNavigationMode : defaults.rememberCategoryNavigationMode,
     autoCollapseCategoriesOnNarrow: typeof src.autoCollapseCategoriesOnNarrow === 'boolean' ? src.autoCollapseCategoriesOnNarrow : defaults.autoCollapseCategoriesOnNarrow,
@@ -17437,6 +17441,8 @@ export interface UISurfaceDefinition {
   category: UISurfaceCategory;
   reservedZone?: UIScreenZone;
   allowEscapeClose?: boolean;
+  /** V11.0 (SECTION 20BL, Q4): 'not used in V10.1' on an id nothing opens or draws; the id is kept. */
+  note?: string;
 }
 
 export function isInputFocused(target: EventTarget | null): boolean {
@@ -17480,9 +17486,9 @@ export const UI_SURFACE_REGISTRY: Record<string, UISurfaceDefinition> = {
   unified_interface_launcher: { id: 'unified_interface_launcher', name: 'Unified Interface Launcher', tier: 4, isBlocking: false, hasBackdrop: false, category: 'launcher' },
 
   guardian_status_panel: { id: 'guardian_status_panel', name: 'Guardian AI Status Panel', tier: 5, isBlocking: false, hasBackdrop: false, category: 'drawer', reservedZone: 'side-drawer', allowEscapeClose: true },
-  guardian_side_panel: { id: 'guardian_side_panel', name: 'Guardian Side Panel', tier: 5, isBlocking: false, hasBackdrop: false, category: 'drawer', reservedZone: 'side-drawer', allowEscapeClose: true },
+  guardian_side_panel: { id: 'guardian_side_panel', name: 'Guardian Side Panel', tier: 5, isBlocking: false, hasBackdrop: false, category: 'drawer', reservedZone: 'side-drawer', allowEscapeClose: true, note: 'not used in V10.1' }, // V11.0 (SECTION 20BL, Q4): nothing in V10.1 opens or draws it; the id is kept
   notification_drawer: { id: 'notification_drawer', name: 'Notification Drawer', tier: 5, isBlocking: false, hasBackdrop: false, category: 'drawer', reservedZone: 'side-drawer', allowEscapeClose: true },
-  developer_diagnostics_drawer: { id: 'developer_diagnostics_drawer', name: 'Developer Diagnostics Drawer', tier: 5, isBlocking: false, hasBackdrop: false, category: 'drawer', reservedZone: 'side-drawer', allowEscapeClose: true },
+  developer_diagnostics_drawer: { id: 'developer_diagnostics_drawer', name: 'Developer Diagnostics Drawer', tier: 5, isBlocking: false, hasBackdrop: false, category: 'drawer', reservedZone: 'side-drawer', allowEscapeClose: true, note: 'not used in V10.1' }, // V11.0 (SECTION 20BL, Q4): nothing in V10.1 opens or draws it; the id is kept
 
   settings_hub: { id: 'settings_hub', name: 'Settings Hub', tier: 6, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true },
   major_transition_confirmation_modal: { id: 'major_transition_confirmation_modal', name: 'Major Transition Confirmation Modal', tier: 6, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true },
@@ -17516,7 +17522,7 @@ export const UI_SURFACE_REGISTRY: Record<string, UISurfaceDefinition> = {
   shop_modal: { id: 'shop_modal', name: 'Shop Modal', tier: 6, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true },
   investments_modal: { id: 'investments_modal', name: 'Investments Modal', tier: 6, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true },
   sabotage_modal: { id: 'sabotage_modal', name: 'Sabotage Modal', tier: 6, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true },
-  stats_modal: { id: 'stats_modal', name: 'Stats Modal', tier: 6, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true },
+  stats_modal: { id: 'stats_modal', name: 'Stats Modal', tier: 6, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true, note: 'not used in V10.1' }, // V11.0 (SECTION 20BL, Q4): nothing in V10.1 opens or draws it; the id is kept
   workshop_modal: { id: 'workshop_modal', name: 'Workshop Modal', tier: 6, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true },
   // Rendered as a full-page route (min-h-screen), NOT an overlay. Marking it
   // blocking made openSurface() lock body scroll on a page that needs to
@@ -17529,15 +17535,16 @@ export const UI_SURFACE_REGISTRY: Record<string, UISurfaceDefinition> = {
   // V10.1 (SECTION 20BJ): the Narrative Engine's story-decision popup (it was an unregistered full-screen lock: no Escape, no rescue, shortcuts still acting behind it).
   narrative_decision_modal: { id: 'narrative_decision_modal', name: 'Story Decision', tier: 7, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true },
   approval_dialog: { id: 'approval_dialog', name: 'Approval Dialog', tier: 7, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true },
-  treasury_requests_dialog: { id: 'treasury_requests_dialog', name: 'Treasury Requests Dialog', tier: 7, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true },
-  governor_exception_dialog: { id: 'governor_exception_dialog', name: 'Governor Exception Dialog', tier: 7, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true },
-  guardian_warning_modal: { id: 'guardian_warning_modal', name: 'Guardian Critical Warning Modal', tier: 7, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: false },
+  treasury_requests_dialog: { id: 'treasury_requests_dialog', name: 'Treasury Requests Dialog', tier: 7, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true, note: 'not used in V10.1' }, // V11.0 (SECTION 20BL, Q4): nothing in V10.1 opens or draws it; the id is kept
+  governor_exception_dialog: { id: 'governor_exception_dialog', name: 'Governor Exception Dialog', tier: 7, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true, note: 'not used in V10.1' }, // V11.0 (SECTION 20BL, Q4): nothing in V10.1 opens or draws it; the id is kept
+  guardian_warning_modal: { id: 'guardian_warning_modal', name: 'Guardian Critical Warning Modal', tier: 7, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: false, note: 'not used in V10.1' }, // V11.0 (SECTION 20BL, Q4): nothing in V10.1 opens or draws it; the id is kept
   save_migration_modal: { id: 'save_migration_modal', name: 'Save Migration Modal', tier: 7, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true },
   dependency_auto_fix_modal: { id: 'dependency_auto_fix_modal', name: 'Dependency Auto-Fix Modal', tier: 7, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true },
   day_transition_overlay: { id: 'day_transition_overlay', name: 'Day Transition Overlay', tier: 7, isBlocking: true, hasBackdrop: true, category: 'overlay', reservedZone: 'fullscreen', allowEscapeClose: true },
-  double_or_nothing_modal: { id: 'double_or_nothing_modal', name: 'Double or Nothing Modal', tier: 7, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true },
+  double_or_nothing_modal: { id: 'double_or_nothing_modal', name: 'Double or Nothing Modal', tier: 7, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose: true, note: 'not used in V10.1' }, // V11.0 (SECTION 20BL, Q4): nothing in V10.1 opens or draws it; the id is kept
 
-  rescue_emergency_overlay: { id: 'rescue_emergency_overlay', name: 'Rescue Interface / Emergency Overlay', tier: 8, isBlocking: true, hasBackdrop: true, category: 'overlay', reservedZone: 'fullscreen', allowEscapeClose: false }
+  rescue_emergency_overlay: { id: 'rescue_emergency_overlay', name: 'Rescue Interface / Emergency Overlay', tier: 8, isBlocking: true, hasBackdrop: true, category: 'overlay', reservedZone: 'fullscreen', allowEscapeClose: false, note: 'not used in V10.1' }, // V11.0 (SECTION 20BL, Q4): nothing in V10.1 opens or draws it; the id is kept
+  ...v110SurfaceRegistryAdditions() // V11.0 (SECTION 20BL, Q4): the 27 windows V10.1 drew without an id, and Find Anything
 };
 
 export interface SurfaceHistoryEntry {
@@ -18494,6 +18501,18 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     validate: (v: unknown) => typeof v === 'boolean',
     isLiveSafe: false,
     affectsFairness: true,
+  },
+  // V11.0 (SECTION 20BL): Find Anything (new, off by default, profile). The label is the one its settings row shows (V110_FIND_LABEL; pinned by v110fa).
+  {
+    key: 'findAnythingEnabled',
+    category: 'interface',
+    label: 'Find Anything',
+    description: 'One search box for every action, screen, setting, keyboard shortcut and LAB card (the 🔎 Find button and Ctrl/⌘+K). Nothing about how a match plays changes.',
+    valueType: 'boolean',
+    defaultValue: false,
+    validate: (v: unknown) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: false,
   },
   {
     key: 'canonicalActionRoutingV97',
@@ -26996,6 +27015,8 @@ export type GameSettingsState = {
   classicRivalV99?: boolean;
   /** V10.1 Rival Recap (SECTION 20BC): true = a card after the rival's turn lists what it did and why. Off (default) = nothing is built or shown. Profile-scoped. */
   rivalRecapEnabled?: boolean;
+  /** V11.0 Find Anything (SECTION 20BM): true = the 🔎 Find button and Ctrl/⌘+K open one search box over everything. Off (default) = as in V10.1. Profile-scoped. */
+  findAnythingEnabled?: boolean; // V11.0 (SECTION 20BL): the round's switch
   /** V10.1 Daily Challenge with fixed rules (SECTION 20BJ): true = the Daily Seed match runs on pinned rules. Off (default) = the Daily Seed is as in V9.9. Match-scoped. */
   dailyFixedRulesEnabled?: boolean;
   /** V10.1 (SECTION 20BA): true = a match started now plays by the V10.0 rules (no Resource Market spread, no V10.1 rival costs, rules editable mid-match, …).
@@ -65127,6 +65148,7 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'home.dashboard', tab: 'home', title: 'Settings Dashboard', tags: ['UX'], fieldKeys: [], keywords: 'home dashboard settings overview welcome quick setup' },
   { id: 'interface.startScreen', tab: 'interfaceAcc', title: '🛡️ Start-Screen Protection', tags: ['UX'], fieldKeys: ['startScreenConflictProtection', 'showFloatingControlsOnStartScreen', 'startScreenFloatingLayout', 'restoreEligibleFloatingControlsAfterMatchStarts', 'hideGameplaySidePanelsOnStartScreen'], keywords: 'start screen protection floating controls safe area layout conflict' },
   { id: 'interface.floatingUi', tab: 'interfaceAcc', title: '🎯 Floating UI Conflict Control & Priority Matrix', tags: ['UX', 'Floating UI'], fieldKeys: ['conflictControlSettings', 'conflictControlEnabled', 'conflictAllowRelocation', 'conflictReturnToPreferred', 'conflictShowExplanations', 'floatingUiPriorityMatrix'], keywords: 'floating ui conflict control priority matrix spatial collision relocation return to preferred' },
+  { id: 'interface.findAnything', tab: 'interfaceAcc', title: '🔎 Find Anything', tags: ['UX'], chips: ['Off by default'], fieldKeys: ['findAnythingEnabled'], keywords: 'find anything search everything command palette ctrl k cmd k go to open jump look up where is' }, // V11.0 (SECTION 20BL, Q7): filed under its goal, no version in the title
   { id: 'interface.aiAssistants', tab: 'interfaceAcc', title: '🧠 AI Assistant Surfaces', tags: ['UX', 'AI', 'Floating UI'], fieldKeys: ['aiCommandCenterUiEnabled', 'askGameAiUiEnabled', 'aiTuningLabUiEnabled'], keywords: 'ai command center ask game assistant tuning lab floating button hud widget hide show off by default alt+c ctrl+k' },
   { id: 'interface.launcherDock', tab: 'interfaceAcc', title: '🚀 Unified Launcher & Dock', tags: ['UX', 'Launcher', 'Dock'], fieldKeys: ['launcherSettings', 'dockSettings'], keywords: 'unified launcher floating widget dock positioning mode dragging collapse badge' },
   { id: 'interface.quickActionsVisibility', tab: 'interfaceAcc', title: '⚡ Quick Actions Visibility & Close Behavior', tags: ['UX', 'Quick Actions'], fieldKeys: ['keepQuickActionsReopenHandleWhenClosed', 'fullyHideQuickActionsWhenClosed'], keywords: 'quick actions visibility reopen handle button close behavior minimize hide' },
@@ -86637,6 +86659,8 @@ export type QuickActionDomainId = 'all' | 'core' | 'economy' | 'competition' | '
 interface UIState {
   /** V9: top-level PLAY / INTELLIGENCE / LAB layer. Transient UI state — never saved. */
   experienceLayer?: ExperienceLayer;
+  /** V11.0 (SECTION 20BM): Find Anything's dialog is open (only ever set while findAnythingEnabled is on). Transient — never saved. */
+  showFindAnything?: boolean;
   showLiveControlCenter: boolean;
   liveControlCenterTab: LiveControlCenterTab;
   quickActionDomainFilter: QuickActionDomainId;
@@ -88521,9 +88545,10 @@ export class GlobalUISurfaceManager {
       { flags: ['showRescueEmergencyOverlay', 'showRescueOverlay', 'showEmergencyOverlay'], surfaceId: 'rescue_emergency_overlay' }
     ];
 
-    v101SurfaceFlagSink.current = modalMapping; // V10.1 (SECTION 20BF): lets Escape and the rescue find every flag that opens a surface (see v101EscapeFlagPatch)
+    const v110Mapping = v110SurfaceFlagTable(modalMapping, uiState.v110SurfaceIds === true); // V11.0 (SECTION 20BL, Q4): with Find Anything on, each window has its own id; off = the table above, unchanged
+    v101SurfaceFlagSink.current = v110Mapping; // V10.1 (SECTION 20BF): lets Escape and the rescue find every flag that opens a surface (see v101EscapeFlagPatch)
     const activeSurfacesInUI = new Set<string>();
-    for (const item of modalMapping) {
+    for (const item of v110Mapping) { // V11.0 (SECTION 20BL): the table above (V10.1's while Find Anything is off)
       if (item.flags.some(flag => Boolean(uiState[flag]))) {
         activeSurfacesInUI.add(item.surfaceId);
       }
@@ -99892,6 +99917,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
                         ? 'bg-sky-600 text-white shadow'
                         : v99Shell.tabIdle
                     }`}
+                    data-testid="settings-view-experience" /* V11.0 (SECTION 20BM): Find Anything's "Game Experience" result presses this button */
                   >
                     🎮 Game Experience
                   </button>
@@ -103045,7 +103071,7 @@ export const LabWorkspace: React.FC<LabWorkspaceProps> = ({ entries, theme, tech
   const q = filter.trim().toLowerCase();
   const visible = q ? entries.filter(e => `${e.title} ${e.description} ${LAB_GROUP_META[e.group].title}`.toLowerCase().includes(q)) : entries;
   const groups = (Object.keys(LAB_GROUP_META) as LabGroupId[]).filter(g => visible.some(e => e.group === g));
-  const passed = selfTestResults ? selfTestResults.filter(r => r.passed).length : 0;
+  const v110Totals = v110LabTotals(selfTestResults || []); // V11.0 (SECTION 20BM, Q8): skipped rows are counted apart, never as passes
   return (
     <div className="space-y-4" data-testid="v9-lab">
       <div className={`${theme.card} ${theme.border} border rounded-xl p-4 space-y-2`}>
@@ -103164,12 +103190,12 @@ export const LabWorkspace: React.FC<LabWorkspaceProps> = ({ entries, theme, tech
           <button type="button" onClick={onRunSelfTests} className={`${theme.buttonSecondary} px-3 py-1.5 rounded-lg text-xs font-semibold`} data-testid="v9-run-self-tests">
             Run V9 + Game Intelligence 2.1 self-tests
           </button>
-          {selfTestResults && <span className="text-xs font-semibold">{passed}/{selfTestResults.length} passed</span>}
+          {selfTestResults && <span className="text-xs font-semibold" data-testid="v110-lab-totals">{v110Totals.passed}/{v110Totals.total} passed{v110Totals.skipped > 0 ? ` · ${v110Totals.skipped} skipped` : ''}{v110Totals.failed > 0 ? ` · ${v110Totals.failed} failed` : ''}</span>}{/* V11.0 (SECTION 20BM, Q8) */}
         </div>
         {selfTestResults && (
           <ul className="mt-2 text-[11px] space-y-0.5 max-h-64 overflow-y-auto">
             {selfTestResults.map(r => (
-              <li key={r.id}><span className={r.passed ? 'text-emerald-500' : 'text-red-500'}>{r.passed ? '✓' : '✗'}</span> {r.name}{r.passed ? '' : ` — ${r.detail}`}</li>
+              <li key={r.id}>{r.skipped ? <span className="text-amber-500" aria-label="skipped">–</span> : <span className={r.passed ? 'text-emerald-500' : 'text-red-500'}>{r.passed ? '✓' : '✗'}</span>} {r.name}{r.passed ? '' : ` — ${r.skipped ? 'skipped: ' : ''}${r.detail}`}</li>/* V11.0 (SECTION 20BM, Q8): a skipped row shows as skipped */
             ))}
           </ul>
         )}
@@ -103187,6 +103213,8 @@ export interface V9SelfTestResult {
   name: string;
   passed: boolean;
   detail: string;
+  /** V11.0 (SECTION 20BM, Q8): true = the check did not run (detail says why). A skipped row is never a pass: passed is false and the LAB counts it as skipped. */
+  skipped?: boolean;
 }
 
 function v9TestSettings(mode: PlayerControlMode): GameSettingsState {
@@ -134399,6 +134427,7 @@ export const V95_MATCH_SCOPED_SETTING_KEYS = [
  */
 export const V95_PROFILE_SCOPED_SETTING_KEYS: readonly string[] = [
   'rivalRecapEnabled', // V10.1 (SECTION 20BA): a display preference, remembered between visits
+  'findAnythingEnabled', // V11.0 (SECTION 20BL): an interface preference, remembered between visits, never in a save
   'allowSettingsCategoryCollapse',
   'startSettingsCategoryCollapsed',
   'settingsCategoryNavigationMode',
@@ -136924,6 +136953,8 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101wl', label: 'V10.1 Release: World Layer Honesty', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101WorldSelfTests()) },
   { id: 'v101ct', label: 'V10.1 Release: Content & Daily', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101ContentSelfTests()) },
   { id: 'v101en', label: 'V10.1 Release: Engine Integrity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101EngineSelfTests()) },
+  // V11.0 (SECTION 20BM): one suite per V11.0 package (UX-2: Find Anything).
+  { id: 'v110fa', label: 'V11.0 UX-2: Find Anything', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV110FindAnythingSelfTests()) },
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
@@ -137036,7 +137067,7 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
   const fixture = () => JSON.parse(JSON.stringify(createV95SaveFixture()));
 
   // ---- Version consistency
-  check('v_game_version', 'GAME_VERSION reports the V10.1 build', () => GAME_VERSION === '10.1.0' || `GAME_VERSION=${GAME_VERSION}`); // V10.1 (SECTION 20BA): pin moved with the version bump (V10.0 moved it from 9.9.0)
+  check('v_game_version', 'GAME_VERSION reports the V11.0 build', () => GAME_VERSION === '11.0.0' || `GAME_VERSION=${GAME_VERSION}`); // V11.0 (SECTION 20BL): pin moved with the version bump (V10.1 moved it from 10.0.0)
   check('v_schema_labels', 'Save / replay schema labels agree with their numeric forms', () =>
     (VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1' && Number.parseInt(VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION, 10) === REPLAY_SCHEMA_VERSION) || `${VERSION_CONSTANTS.SAVE_SCHEMA_VERSION}/${VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION}/${REPLAY_SCHEMA_VERSION}`);
 
@@ -181970,8 +182001,8 @@ export function runV96ExperienceModesSelfTests(): V9SelfTestResult[] {
     return (m1.migrated && m1.sourceVersion === '9.5.0' && m1.data.gameSettings.experienceMode === 'full' && !m2.migrated && m1.data.metadata.gameVersion === VERSION_CONSTANTS.GAME_VERSION && !current.migrated) || `m1=${m1.migrated}/${String(m1.data.gameSettings.experienceMode)} m2=${m2.migrated} current=${current.migrated}`;
   });
   // V9.9 (SECTION 20AQ): pin moved with the version bump (was 9.6.0).
-  check('em34_version_bumped', 'GAME_VERSION is 10.1.0 and new saves stamp it', () => // V10.1 (SECTION 20BA): pin moved with the version bump
-    (GAME_VERSION === '10.1.0' && createV95SaveFixture().metadata.gameVersion === '10.1.0') || `GAME_VERSION=${GAME_VERSION}`);
+  check('em34_version_bumped', 'GAME_VERSION is 11.0.0 and new saves stamp it', () => // V11.0 (SECTION 20BL): pin moved with the version bump
+    (GAME_VERSION === '11.0.0' && createV95SaveFixture().metadata.gameVersion === '11.0.0') || `GAME_VERSION=${GAME_VERSION}`);
   check('em35_sanitize_game_settings', 'sanitizeGameSettings: valid kept, missing → full, invalid → full, DEFAULT → explorer', () =>
     (sanitizeGameSettings({ experienceMode: 'nation' }).experienceMode === 'nation' && sanitizeGameSettings({}).experienceMode === 'full' && sanitizeGameSettings({ experienceMode: 'x' }).experienceMode === 'full' && sanitizeGameSettings(DEFAULT_GAME_SETTINGS).experienceMode === 'explorer') || 'sanitize wrong');
   check('em36_confirmation_rule', 'Mode switch: same mode → noop; start screen / game over → apply at once; live match → confirm', () =>
@@ -186939,11 +186970,11 @@ const KeyboardShortcutsHelpModalView: React.FC<KeyboardShortcutsHelpModalProps> 
   return (
     <div
       className={`fixed inset-0 ${
-        (!surfaceState.backdropOwner || surfaceState.backdropOwner === "ask_game_ai")
+        (!surfaceState.backdropOwner || surfaceState.backdropOwner === v110WindowSurfaceId('help_shortcuts_modal', gameSettings)) // V11.0 (SECTION 20BL, Q4): its own id while Find Anything is on (was "ask_game_ai")
           ? "bg-black bg-opacity-50"
           : "bg-transparent"
       } flex items-center justify-center p-4`}
-      style={{ zIndex: globalUISurfaceManager.getZIndex("ask_game_ai") }}
+      style={{ zIndex: globalUISurfaceManager.getZIndex(v110WindowSurfaceId('help_shortcuts_modal', gameSettings)) }} /* V11.0 (SECTION 20BL, Q4): its own id while Find Anything is on */
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -188050,8 +188081,8 @@ export function runV97CorrectnessSweepSelfTests(): V9SelfTestResult[] {
     return swing?.id === 'tp_swing_big' || JSON.stringify(swing);
   });
   // V9.9 (SECTION 20AQ): GAME_VERSION moved to 9.9.0 with the V9.9 bump; what WP-A pinned for the save schema still holds.
-  check('v97cs36_version_unchanged', 'GAME_VERSION is 10.1.0 (bumped in V10.1) and SAVE_SCHEMA_VERSION stays 7.1', () => // V10.1 (SECTION 20BA): pin moved with the version bump
-    (VERSION_CONSTANTS.GAME_VERSION === '10.1.0' && VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1') || `${VERSION_CONSTANTS.GAME_VERSION} / ${VERSION_CONSTANTS.SAVE_SCHEMA_VERSION}`);
+  check('v97cs36_version_unchanged', 'GAME_VERSION is 11.0.0 (bumped in V11.0) and SAVE_SCHEMA_VERSION stays 7.1', () => // V11.0 (SECTION 20BL): pin moved with the version bump
+    (VERSION_CONSTANTS.GAME_VERSION === '11.0.0' && VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1') || `${VERSION_CONSTANTS.GAME_VERSION} / ${VERSION_CONSTANTS.SAVE_SCHEMA_VERSION}`);
   check('v97cs37_crisis_slices', "Crisis slices: flag off keeps V9.6's default-80 working copy; flag on uses the live stability and chains", () => {
     const a: GameAction = { type: 'mitigateCrisis', actorId: 'player', price: 120, parameters: { cost: 120, crisisId: 'crisis_cyber_grid_blackout' } };
     const offRes = act(fixture(false), a), onRes = act(fixture(true), a);
@@ -189409,6 +189440,12 @@ export function runSaveMigrationLadder(data: SaveGameData, sourceVersion: string
     current = step.data;
     changed = changed || step.changed;
   }
+  // V11.0 (SECTION 20BL): a save written before V11.0 needs nothing new (migrateSaveTo1100 changes nothing; its rules stamp is kept).
+  if (compareSemVer(sourceVersion, '11.0.0') < 0) {
+    const step = migrateSaveTo1100(current);
+    current = step.data;
+    changed = changed || step.changed;
+  }
   return { data: current, changed };
 }
 
@@ -189472,8 +189509,8 @@ export function runV99FoundationsSelfTests(): V9SelfTestResult[] {
 
   // ---- Version ----------------------------------------------------------------------------------------------------------
   // V10.0 (SECTION 20AY): pin moved with the version bump — the label still derives from GAME_VERSION.
-  check('v99fx_01_version', 'GAME_VERSION is 10.1.0, the label reads V10.1 and a new save stamps it', () => // V10.1 (SECTION 20BA): pin moved with the version bump
-    (GAME_VERSION === '10.1.0' && VERSION_CONSTANTS.GAME_VERSION === '10.1.0' && GAME_VERSION_LABEL === 'V10.1' && createV95SaveFixture().metadata.gameVersion === '10.1.0') || `${GAME_VERSION} / ${GAME_VERSION_LABEL}`);
+  check('v99fx_01_version', 'GAME_VERSION is 11.0.0, the label reads V11.0 and a new save stamps it', () => // V11.0 (SECTION 20BL): pin moved with the version bump
+    (GAME_VERSION === '11.0.0' && VERSION_CONSTANTS.GAME_VERSION === '11.0.0' && GAME_VERSION_LABEL === 'V11.0' && createV95SaveFixture().metadata.gameVersion === '11.0.0') || `${GAME_VERSION} / ${GAME_VERSION_LABEL}`);
   check('v99fx_02_schemas_unchanged', 'The bump leaves every schema version where it was', () =>
     (VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.SETTINGS_SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION === '4.0'
       && VERSION_CONSTANTS.RNG_SCHEMA_VERSION === '1.0' && VERSION_CONSTANTS.CHECKPOINT_SCHEMA_VERSION === '1.0') || json(VERSION_CONSTANTS));
@@ -208841,8 +208878,8 @@ export function runV100FoundationsSelfTests(): V9SelfTestResult[] {
   const sig = (o: Partial<FirstRunSignals> = {}): FirstRunSignals => ({ day: 1, money: 1000, inventoryCount: 0, challengesWon: 0, rivalAhead: false, diplomacyOffer: false, inShopRegion: false, ...o });
 
   // ---- Version and release notes -----------------------------------------------------------------------------------------
-  check('v100fx_01_version', 'GAME_VERSION is 10.1.0, the label reads V10.1 and a new save stamps it', () => // V10.1 (SECTION 20BA): pin moved with the version bump
-    (GAME_VERSION === '10.1.0' && GAME_VERSION_LABEL === 'V10.1' && createV95SaveFixture().metadata.gameVersion === '10.1.0' && VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1') || `${GAME_VERSION} / ${GAME_VERSION_LABEL}`);
+  check('v100fx_01_version', 'GAME_VERSION is 11.0.0, the label reads V11.0 and a new save stamps it', () => // V11.0 (SECTION 20BL): pin moved with the version bump
+    (GAME_VERSION === '11.0.0' && GAME_VERSION_LABEL === 'V11.0' && createV95SaveFixture().metadata.gameVersion === '11.0.0' && VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1') || `${GAME_VERSION} / ${GAME_VERSION_LABEL}`);
   check('v100fx_02_whats_new', "What's New leads with V10.0, names the new switch as off by default, and keeps V9.9's entry written out", () =>
     (V100_CHANGELOG[0].startsWith('V10.0 - ') && V100_CHANGELOG.length >= 8 && V100_CHANGELOG.length <= 14 && new Set(V100_CHANGELOG).size === V100_CHANGELOG.length
       && V100_CHANGELOG.every(line => line.length >= 20 && line.length <= 240)
@@ -209541,7 +209578,7 @@ export function V101SettingsHubBody({ settings, onToggle, onClassName, offClassN
 // ---- What's New ---------------------------------------------------------------------------------------------------------------
 // V10.1: the current release's entry; it leads the "What's New" list (Settings → Interface, and the Simple view's card).
 export const V101_CHANGELOG = [
-  `${GAME_VERSION_LABEL} - A fairer fight, a safer match`,
+  'V10.1 - A fairer fight, a safer match', // V11.0 (SECTION 20BL): written out — GAME_VERSION_LABEL now reads V11.0
   'Money you can trust: buying from the Resource Market now costs about what the same goods sell for, so buying and reselling in one region no longer prints cash. Bulk buys nudge the price up a little. (New matches.)',
   'Challenges are a decision, not a free button: odds top out at 85%, the pay trims as the odds climb, and each challenge you take tires you a little. Every challenge card now shows the win, the loss and the average in dollars. (New matches.)',
   'A rival that is what its label says: it pays the same fares and picks from the same challenge board as you, and selling no longer costs it an action. Harder rivals now plan their journeys and rank challenges by what a win really pays, so Medium, Hard and Expert play stronger than before. Turn on Rival Recap to see what it did on its turn, and why.',
@@ -209563,7 +209600,7 @@ export function V101SimpleNewCard({ settings, onChange, boxClassName }: { settin
       <h4 className="font-semibold text-sm">{V101_SETTINGS_HUB_SECTION_TITLE}</h4>
       <V101SettingsHubBody settings={settings} onToggle={key => onChange(key, settings[key] !== true)} onClassName="bg-emerald-600 text-white" offClassName="bg-slate-500/30" />
       <details className="text-xs" data-testid="v101-simple-whats-new">
-        <summary className="cursor-pointer font-semibold">What's new in {GAME_VERSION_LABEL}</summary>
+        <summary className="cursor-pointer font-semibold">What's new in V10.1</summary>{/* V11.0 (SECTION 20BL): written out — GAME_VERSION_LABEL now reads V11.0 */}
         <ul className="list-disc pl-5 mt-1 space-y-0.5 opacity-90">{V101_CHANGELOG.slice(1).map(line => <li key={line}>{line}</li>)}</ul>
       </details>
     </section>
@@ -209693,8 +209730,8 @@ export function runV101FoundationsSelfTests(): V9SelfTestResult[] {
   };
   const gsOf = (d: SaveGameData): Record<string, unknown> => d.gameState as unknown as Record<string, unknown>;
 
-  check('v101fx_01_version', 'GAME_VERSION is 10.1.0, the label reads V10.1, a new save stamps it and the schemas stay put', () =>
-    (GAME_VERSION === '10.1.0' && GAME_VERSION_LABEL === 'V10.1' && createV95SaveFixture().metadata.gameVersion === '10.1.0'
+  check('v101fx_01_version', 'GAME_VERSION is 11.0.0, the label reads V11.0, a new save stamps it and the schemas stay put', () => // V11.0 (SECTION 20BL): pin moved with the version bump
+    (GAME_VERSION === '11.0.0' && GAME_VERSION_LABEL === 'V11.0' && createV95SaveFixture().metadata.gameVersion === '11.0.0'
       && VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.SETTINGS_SCHEMA_VERSION === '7.1') || `${GAME_VERSION} / ${GAME_VERSION_LABEL}`);
   check('v101fx_02_whats_new', "What's New leads with V10.1 and keeps V10.0's and V9.9's entries written out", () =>
     (V101_CHANGELOG[0].startsWith('V10.1 - ') && V100_CHANGELOG[0].startsWith('V10.0 - ') && V99_CHANGELOG[0].startsWith('V9.9 - ')
@@ -214580,7 +214617,7 @@ export function v101StorageAvailable(): boolean { return v99BrowserStorage() !==
 export function runV101SettingsSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   const check = (id: string, name: string, fn: () => true | string) => {
-    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    try { const r = fn(); results.push({ id, name, passed: r === true || v110IsSkipNote(r), detail: r === true ? '' : String(r) }); } // V11.0 (SECTION 20BM, Q8): a SKIPPED: note keeps V10.1's raw pass and says so; the LAB shows it as skipped
     catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
   };
   const json = (v: unknown) => JSON.stringify(v);
@@ -214596,7 +214633,7 @@ export function runV101SettingsSelfTests(): V9SelfTestResult[] {
     if (!sec && SETTINGS_HUB_SECTION_INDEX.every(s => !/preset/i.test(s.id))) return 'the presets section is not indexed';
     if (json(gates) !== json([false, true, false]) || v101PresetsSectionOpen(null) !== false) return `gate ${json(gates)}`;
     if (v101PresetsSectionOpen(fresh({ settingsPresetsEnabled: true, uxAssistPackEnabled: false })) !== true) return 'still waits for the master switch';
-    if (!staticReady) return true; // the rendered-markup half needs the runner's static renderer (set by tools/selftest/node-run.mjs); the pure half above ran
+    if (!staticReady) return v110RenderSkipNote(); // the rendered-markup half needs the runner's static renderer (set by tools/selftest/node-run.mjs); the pure half above ran. V11.0 (SECTION 20BM, Q8): was a silent true
     const off = markup(<V101PresetsGateCard enabled={false} onShow={() => undefined} />);
     const on = markup(<V101PresetsGateCard enabled onShow={() => undefined} />);
     return (off.includes('Show presets') && off.includes('v101-presets-gate') && off.includes('does not switch on the other UX Assist helpers') && on === '') || `off=${off.slice(0, 200)} on=${on}`;
@@ -214766,7 +214803,7 @@ export function runV101SettingsSelfTests(): V9SelfTestResult[] {
     const pureOk = json(rowsWithChip) === json([...V101_SIMPLE_RIVAL_KEYS].sort((a, b) => SIMPLE_SETTINGS_KEYS.indexOf(a) - SIMPLE_SETTINGS_KEYS.indexOf(b))) && V101_SIMPLE_RIVAL_KEYS.every(k => SIMPLE_SETTINGS_KEYS.includes(k))
       && single !== null && ai !== null && unknown !== null && single.label !== ai.label && v101SimpleModeCaveat('totalDays', 'single') === null && v101SimpleModeChip('winCondition', 'ai') === null;
     if (!pureOk) return json({ rowsWithChip, single, ai });
-    if (!staticReady) return true;
+    if (!staticReady) return v110RenderSkipNote(); // V11.0 (SECTION 20BM, Q8): was a silent true
     const view = (mode: string | null) => markup(<SimpleSettingsPanel settings={fresh()} onChange={() => undefined} onShowAll={() => undefined} isDark isRetro={false} matchMode={mode} />);
     const inSingle = view('single'), inAi = view('ai');
     const count = (html: string, re: RegExp) => (html.match(re) || []).length;
@@ -214920,7 +214957,7 @@ export function runV101SettingsSelfTests(): V9SelfTestResult[] {
     return (v101.length === 0 && older.length === 0 && junk.length === 0 && !isSimpleViewWritableKey(undefined) && !isSimpleViewWritableKey(42) && SIMPLE_SETTINGS_KEYS.every(k => isSimpleViewWritableKey(k))) || json({ v101, older, junk });
   });
   check('v101st_24_simple_view_jump_announces_v101', 'The line at the top of the Simple settings view announces "New in V10.1" (it still said V10.0 was the new thing) and still mentions the V10.0 and V9.9 switches it jumps past', () => {
-    if (!staticReady) return true; // rendered-markup test: needs the runner's static renderer
+    if (!staticReady) return v110RenderSkipNote(); // rendered-markup test: needs the runner's static renderer. V11.0 (SECTION 20BM, Q8): was a silent true
     const html = markup(<V99SimpleNewJump />);
     return (html.includes('New in V10.1') && html.includes('Rival Recap') && html.includes('Rival Races') && html.includes('autosave') && !html.includes('New in V10.0')) || html.slice(0, 400);
   });
@@ -216032,7 +216069,7 @@ export const V101_RELATIONSHIP_RELEVANCE_BOUND = 5;
 export function runV101WorldSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   const check = (id: string, name: string, fn: () => true | string) => {
-    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    try { const r = fn(); results.push({ id, name, passed: r === true || v110IsSkipNote(r), detail: r === true ? '' : String(r) }); } // V11.0 (SECTION 20BM, Q8): a SKIPPED: note keeps V10.1's raw pass and says so; the LAB shows it as skipped
     catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
   };
   const json = (v: unknown) => JSON.stringify(v);
@@ -216177,7 +216214,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
 
   // V10.1 (SECTION 20BI): ---- W2: rendered entry points -----------------------------------------------------------------------------------------
   check('v101wl_11_region_panel_render', 'The real region panel shows a one-line reason instead of an Invest or Contracts button for a switched-off system, and keeps both buttons where they are allowed', () => {
-    if (!v101StaticRendererReady()) return true; // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer.
+    if (!v101StaticRendererReady()) return v110RenderSkipNote(); // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer. V11.0 (SECTION 20BM, Q8): says so (was a silent true)
     const ctx = buildV9RegionContext('QLD', lrViewOf(qld()), null, null);
     const html = (props: Record<string, unknown>) => v101RenderStatic(<V9RegionContextPanel ctx={ctx} theme={theme} onAsk={noop} more={null} {...props} />);
     const off = html({ investOffReason: v101WorldOffReason('infra'), contractsOffReason: v101WorldOffReason('contracts') });
@@ -216186,7 +216223,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
       && />Invest<\/button>/.test(on) && />Contracts<\/button>/.test(on) && !/v101-invest-off/.test(on)) || off.slice(0, 600);
   });
   check('v101wl_12_switched_off_card', 'The modal that replaces a switched-off screen names the system, says it is off and where to turn it on, and has a way out', () => {
-    if (!v101StaticRendererReady()) return true; // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer.
+    if (!v101StaticRendererReady()) return v110RenderSkipNote(); // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer. V11.0 (SECTION 20BM, Q8): says so (was a silent true)
     const html = v101RenderStatic(<V101WorldSwitchedOffCard title="Infrastructure & Mega-Projects" reason={v101WorldOffReason('infra')} onClose={noop} />);
     return (/v101-world-off-card/.test(html) && /Infrastructure &amp; Mega-Projects/.test(html) && /switched off in this match/.test(html) && /Settings &gt; Competition/.test(html) && />Close</.test(html)) || html.slice(0, 400);
   });
@@ -216230,7 +216267,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
       && v101FundAmountValid(plan, 1000) && !v101FundAmountValid(plan, 1001) && !v101FundAmountValid(plan, 0) && !v101FundAmountValid(plan, -5) && !v101FundAmountValid(plan, 10.5) && !v101FundAmountValid({ ...plan, cash: 999999 }, 85001)) || json({ all, some });
   });
   check('v101wl_16_fund_chooser_render', 'The real "Fund now" control opens to amounts and a confirm sentence with nothing pre-chosen when only your whole cash is in reach; the confirm button appears only for a chosen amount', () => {
-    if (!v101StaticRendererReady()) return true; // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer.
+    if (!v101StaticRendererReady()) return v110RenderSkipNote(); // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer. V11.0 (SECTION 20BM, Q8): says so (was a silent true)
     const poor = v101FundPlan({ id: 'p1', title: 'Inland Rail Freight Hub', totalCost: 85000, totalInvestedMoney: 0 }, 1000)!;
     const rich = v101FundPlan({ id: 'p1', title: 'Inland Rail Freight Hub', totalCost: 85000, totalInvestedMoney: 0 }, 100000)!;
     const closed = v101RenderStatic(<V101FundNowChooser plan={poor} onConfirm={noop} />);
@@ -216243,7 +216280,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
       && /Put \$1,000 into Inland Rail Freight Hub \(all of your cash\)/.test(poorPicked)) || poorOpen.slice(0, 900);
   });
   check('v101wl_17_stakeholder_panel_fund_now', 'In the real Stakeholders panel a V10.1 match shows what is still needed against your cash and the amount chooser; a V10.0 match keeps its old "Fund now" button, now saying what it does', () => {
-    if (!v101StaticRendererReady()) return true; // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer.
+    if (!v101StaticRendererReady()) return v110RenderSkipNote(); // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer. V11.0 (SECTION 20BM, Q8): says so (was a silent true)
     const s = qld(); const st = play(s);
     const req = st.requests.find(r => r.type === 'fund_project');
     if (!req) return 'fixture has no fund request';
@@ -216314,7 +216351,7 @@ export function runV101WorldSelfTests(): V9SelfTestResult[] {
     return (wrong.length === 0 && v101TimeWordCap('day') === 'Day' && v101TimeWordCap('round') === 'Round' && v101TimeWordCap(undefined) === 'Round' && v101TimeWordCap('week') === 'Round' && v101TimeWord({ rulesVersion: 1010, selectedMode: 'ai' }) === v101TimeWord({ rulesVersion: 1000, selectedMode: 'ai' })) || json(wrong);
   });
   check('v101wl_24_day_labels', 'Faction request text says "day" where the HUD says Day (the request line, the strip, the issue notice) and still says "round" in team mode and old matches', () => {
-    if (!v101StaticRendererReady()) return true; // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer.
+    if (!v101StaticRendererReady()) return v110RenderSkipNote(); // V10.1 (SECTION 20BI): skipped where the runner supplies no static renderer. V11.0 (SECTION 20BM, Q8): says so (was a silent true)
     const s = qld({ timeWord: 'day' }); const st = play(s);
     const req = st.requests.find(r => r.type === 'fund_project');
     if (!req) return 'fixture has no request';
@@ -217242,10 +217279,12 @@ export function v101SuiteRows(raw: unknown): V9SelfTestResult[] {
   return list.map(item => {
     const t = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
     const id = String(t.id ?? t.testId ?? t.name ?? 'test');
+    const v110Skipped = v110RowSkipped(t); // V11.0 (SECTION 20BM, Q8): a row that says SKIPPED is reported as skipped, never as a pass
     return {
       id, name: String(t.name ?? t.id ?? t.testId ?? 'test'),
-      passed: t.passed === true || t.pass === true || t.status === 'pass' || t.status === 'passed',
-      detail: String(t.detail ?? t.message ?? t.reason ?? t.errorMessage ?? '')
+      passed: !v110Skipped && (t.passed === true || t.pass === true || t.status === 'pass' || t.status === 'passed'),
+      detail: String(t.detail ?? t.message ?? t.reason ?? t.errorMessage ?? ''),
+      ...(v110Skipped ? { skipped: true } : {}) // V11.0 (SECTION 20BM, Q8)
     };
   });
 }
@@ -217267,7 +217306,7 @@ export function runV101LabSuites(specs: readonly V95SuiteSpec[] = V95_EXISTING_S
 /** One registered suite, isolated, with its own try / catch (a suite the LAB skips returns no rows). */
 function v101RunLabSpec(spec: V95SuiteSpec): V9SelfTestResult[] {
   if (V101_LAB_SKIP.has(spec.id)) return [];
-  try { return v101SuiteRows(runIsolatedSuite(() => spec.run())); }
+  try { return v110MarkSourceScanSkips(v101SuiteRows(runIsolatedSuite(() => spec.run())), V101_SOURCE_SCAN_SKIPS); } // V11.0 (SECTION 20BM, Q8): a source scan that recorded a skip shows as skipped
   catch (err) { return [{ id: `${spec.id}:threw`, name: `${spec.label} suite threw`, passed: false, detail: err instanceof Error ? err.message : String(err) }]; }
 }
 function v101RunLabReleaseOwn(): V9SelfTestResult[] {
@@ -217306,7 +217345,7 @@ export async function runV101LabProgressive(onProgress: (rows: V9SelfTestResult[
  * are not started (one SKIPPED row says so; press the button again between turns). A turn that begins while they run is the one case this cannot stop.
  */
 export async function runV101LabAsyncSuites(liveBusy?: () => boolean): Promise<V9SelfTestResult[]> {
-  if (liveBusy && liveBusy()) return [{ id: 'gi-async:skipped', name: 'Game Intelligence async suites', passed: true, detail: 'SKIPPED: a turn is running; they would rewind the live match\'s random draws. Press Run again between turns.' }];
+  if (liveBusy && liveBusy()) return [v110LabAsyncSkipRow()]; // V11.0 (SECTION 20BM, Q8): was passed: true; a skipped row now says skipped
   try {
     return await runIsolatedSuiteAsync(async () => {
       const first = await runGameIntelligence2AsyncSelfTests();
@@ -217335,6 +217374,7 @@ export const V101_SUITE_MANIFEST: ReadonlyArray<readonly [string, string]> = [
   ['runV101MatchRulesSelfTests', 'v101ru'], ['runV101FirstRunSelfTests', 'v101fr'], ['runV101PlayScreenSelfTests', 'v101ui'],
   ['runV101SettingsSelfTests', 'v101st'], ['runV101AdviceSelfTests', 'v101ai'], ['runV101WorldSelfTests', 'v101wl'],
   ['runV101ContentSelfTests', 'v101ct'], ['runV101EngineSelfTests', 'v101en'],
+  ['runV110FindAnythingSelfTests', 'v110fa'], // V11.0 (SECTION 20BM)
   ['runV102StrategicInfrastructureNetworksSelfTests', 'v102'], ['runV103NationalMegaprojectSelfTests', 'v103'], ['runV104NationalDevelopmentSelfTests', 'v104'],
   ['runV105InnovationCapabilitiesSelfTests', 'v105'], ['runV106ResilienceSystemicRiskSelfTests', 'v106'], ['runV107DynamicNationalPrioritiesSelfTests', 'v107'],
   ['runV108RegionalCompetitionSelfTests', 'v108'], ['runV109StrategicCapitalSelfTests', 'v109'], ['runV1010WorkforceHumanCapitalSelfTests', 'v1010'],
@@ -217650,7 +217690,7 @@ export function useV101FrameMeasure(measure: () => void, enabled: boolean = true
 export function runV101EngineSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   const check = (id: string, name: string, fn: () => true | string) => {
-    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    try { const r = fn(); results.push({ id, name, passed: r === true || v110IsSkipNote(r), detail: r === true ? '' : String(r) }); } // V11.0 (SECTION 20BM, Q8): a SKIPPED: note keeps V10.1's raw pass and says so; the LAB shows it as skipped
     catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
   };
   const json = (v: unknown) => JSON.stringify(v);
@@ -217834,7 +217874,7 @@ export function runV101EngineSelfTests(): V9SelfTestResult[] {
     return (shown && !again && survived && added === 1 && state.shown === 1 && state.visible) || json({ shown, again, survived, added, state });
   });
   check('v101en_18_error_net_banner_markup', 'The banner says what happened in plain words and offers a recovery download only when a recovery save exists (rendered, not mirrored)', () => {
-    if (!v101StaticRendererReady()) return true; // no static renderer in this runner (V10.1 SECTION 20BI note): the pure checks above carry the guarantee
+    if (!v101StaticRendererReady()) return v110RenderSkipNote(); // no static renderer in this runner (V10.1 SECTION 20BI note): the pure checks above carry the guarantee. V11.0 (SECTION 20BM, Q8): says so
     const withSave = v101RenderStatic(<V101ErrorNetView hasRecovery={true} downloaded={false} onDownload={() => undefined} onDismiss={() => undefined} />);
     const noSave = v101RenderStatic(<V101ErrorNetView hasRecovery={false} downloaded={false} onDownload={() => undefined} onDismiss={() => undefined} />);
     const done = v101RenderStatic(<V101ErrorNetView hasRecovery={true} downloaded={true} onDownload={() => undefined} onDismiss={() => undefined} />);
@@ -218009,7 +218049,7 @@ export function runV101EngineSelfTests(): V9SelfTestResult[] {
       && !v101AdvisorActive(false, null)) || 'advisor gate wrong';
   });
   check('v101en_32_measuring_components_still_render', 'The screen-measuring components (the toast lane under the first-run panel) still draw their content now that they measure once per frame (rendered)', () => {
-    if (!v101StaticRendererReady()) return true;
+    if (!v101StaticRendererReady()) return v110RenderSkipNote(); // V11.0 (SECTION 20BM, Q8): was a silent true
     const lane = v101RenderStatic(<V99ToastLaneBelow active={true}><span>first-run panel</span></V99ToastLaneBelow>);
     const idle = v101RenderStatic(<V99ToastLaneBelow active={false}><span>first-run panel</span></V99ToastLaneBelow>);
     return (/first-run panel/.test(lane) && /v99-toast-lane-below/.test(lane) && /first-run panel/.test(idle)) || json({ lane, idle });
@@ -218055,6 +218095,2120 @@ export function runV101EngineSelfTests(): V9SelfTestResult[] {
   return results;
 }
 // <<V101-SLOT ENGINE end>>
+
+// ============================================================================
+// SECTION 20BL: V11.0 FOUNDATIONS — VERSION, SAVE RUNG, THE FIND ANYTHING SWITCH, SUITE LIST, AN ID FOR EVERY WINDOW
+// ============================================================================
+// V11.0 reorganises the interface in six packages, UX-1 to UX-6; V11.0_UX_MAP.md (UX-1) is the map every package works from.
+// UX-2, "Find Anything", adds one search box over actions, screens, settings, shortcuts and LAB cards (SECTION 20BM) and gives
+// every window the surface manager did not know an id of its own (Q4). It is a reorganisation, not a rewrite: nothing is removed.
+// How a match plays does not change: the rules stamp stays V101_RULES_VERSION (1010), a new match is stamped exactly as in V10.1,
+// and nothing here draws from a gameplay random stream or reads the clock in its logic. Everything new is OFF until UX-6 turns the
+// defaults on: one profile setting, findAnythingEnabled, read with === true. With it off, Ctrl/⌘+K and every window behave exactly
+// as in V10.1. Suite v110fa (runV110FindAnythingSelfTests, SECTION 20BM).
+// ============================================================================
+
+// ---- Save ladder rung ---------------------------------------------------------------------------------------------------
+/**
+ * Rung for saves stamped older than 11.0.0. V11.0 adds no match state and one profile setting (findAnythingEnabled), which a
+ * save never carries and a load never restores (it is in V95_PROFILE_SCOPED_SETTING_KEYS). So the rung changes nothing: the
+ * save keeps its rules stamp (a V10.1 match stays 1010, a V10.0 match 1000, an older match has none) and comes back as the very
+ * same object with changed: false. Pure and idempotent, like every rung (no clock, no counters, no random draws).
+ */
+export function migrateSaveTo1100(data: SaveGameData): SaveMigrationStepResult {
+  return { data, changed: false };
+}
+
+// ---- The round's switch -----------------------------------------------------------------------------------------------------
+//   findAnythingEnabled  boolean, false  NEW (UX-2, SECTION 20BM), profile setting: the 🔎 Find button, Ctrl/⌘+K opening Find
+//                                        Anything, and the V11.0 window ids. Off = Ctrl/⌘+K and every window as in V10.1.
+// Q7: the switch is filed under its goal (Settings › Interface & Accessibility › 🔎 Find Anything); the release label lives in
+// What's New (V110_CHANGELOG), not in a section title.
+export type V110BooleanSettingKey = 'findAnythingEnabled';
+export const V110_SETTING_KEYS: readonly V110BooleanSettingKey[] = ['findAnythingEnabled'];
+export const V110_FIND_SECTION_ID = 'interface.findAnything';
+export const V110_FIND_SECTION_TITLE = '🔎 Find Anything';
+export const V110_FIND_LABEL = 'Find Anything';
+export const V110_FIND_DESCRIPTION = 'One search box for every action, screen, setting, keyboard shortcut and LAB card. Press 🔎 Find or Ctrl/⌘+K, type a few letters and press Enter: the result opens through the same button you would have pressed. While it is on, Ctrl/⌘+K opens Find Anything (the Ask drawer is one of its results) and every window has an id of its own, so Escape always closes the window on top.';
+
+/** True only when Find Anything is switched on (a real true; anything else, including a missing value, is off). */
+export function v110FindAnythingOn(settings: { readonly findAnythingEnabled?: unknown } | null | undefined): boolean {
+  return settings?.findAnythingEnabled === true;
+}
+
+/** True for the keys of the V11.0 switch (the Simple view's card may write exactly these). */
+export function isV110SettingKeyName(key: unknown): boolean {
+  return typeof key === 'string' && (V110_SETTING_KEYS as readonly string[]).includes(key);
+}
+
+// ---- What's New ---------------------------------------------------------------------------------------------------------------
+// V11.0: the current release's entry; it leads the "What's New" list. (V10.1's entry keeps its own label written out.)
+export const V110_CHANGELOG: readonly string[] = [
+  `${GAME_VERSION_LABEL} - Find anything`,
+  'Find Anything (off by default: Settings › Interface & Accessibility › 🔎 Find Anything): one search box over every action, screen, setting, keyboard shortcut and LAB card. Press 🔎 Find or Ctrl/⌘+K, type, press Enter, and the result opens through the same button you would have pressed.',
+  'Every setting can be found by its name or its key, including the ones the settings search used to miss. A setting with no switch of its own says so, and one that only appears behind another switch names that switch.',
+  'Ask is a result too: type a question and "Ask the game" answers it on the Intelligence tab. With Find Anything on, Ctrl/⌘+K opens Find Anything; with it off, Ctrl/⌘+K works exactly as before.',
+  'Every window has an id of its own now (27 new window ids, and the 61 old ones are kept), so Escape and the window stack follow the right window. Eight old ids that nothing opened are marked "not used in V10.1".',
+  'The LAB self-test list shows a skipped check as skipped, never as a pass.',
+  'Nothing about how a match plays has changed: matches, saves and replays from V10.1 and older play move for move.',
+];
+
+// ---- Self-tests ------------------------------------------------------------------------------------------------------------------
+/** The V11.0 suites, in section order (one per package; UX-2's is v110fa). */
+export const V110_SUITE_IDS: readonly string[] = ['v110fa'];
+
+// ---- Q4: an id for every window ---------------------------------------------------------------------------------------------------
+/**
+ * The windows and panels V10.1 drew without a surface id (map §5), and Find Anything itself. Spread into UI_SURFACE_REGISTRY:
+ * a function declaration (hoisted), so the registry, built long before this section, can call it; it reads nothing but literals.
+ * 'ask_drawer' (map §5) is the live window behind the shared id 'ask_game_ai' and keeps that id, so 27 window ids are new.
+ */
+export function v110SurfaceRegistryAdditions(): Record<string, UISurfaceDefinition> {
+  const modal = (id: string, name: string, tier: UISurfaceTier = 6, allowEscapeClose: boolean = true): UISurfaceDefinition =>
+    ({ id, name, tier, isBlocking: true, hasBackdrop: true, category: 'modal', reservedZone: 'center-modal', allowEscapeClose });
+  const panel = (id: string, name: string, tier: UISurfaceTier, category: UISurfaceCategory, reservedZone?: UIScreenZone): UISurfaceDefinition =>
+    (reservedZone ? { id, name, tier, isBlocking: false, hasBackdrop: false, category, reservedZone } : { id, name, tier, isBlocking: false, hasBackdrop: false, category });
+  const list: UISurfaceDefinition[] = [
+    modal('help_shortcuts_modal', 'How to Play & Keyboard Shortcuts'),
+    modal('progress_dashboard', 'Progress Dashboard'),
+    modal('live_control_center', 'Live Control Center'),
+    modal('advanced_loans_modal', 'Advanced Loans'),
+    modal('ai_tuning_lab', 'AI Tuning Lab'),
+    modal('ai_pipeline_inspector', 'AI Action Pipeline Inspector'),
+    modal('copilot_console', 'Co-Pilot Console'),
+    modal('copilot_recommendations', 'Co-Pilot Recommendations'),
+    modal('copilot_proposal', 'Co-Pilot Proposal (waits for your answer)', 7, false),
+    { ...panel('diagnostics_drawer', 'Diagnostics Drawer (Auto Mode / Co-Pilot)', 5, 'drawer', 'side-drawer'), allowEscapeClose: true },
+    modal('auto_mode_activity_panel', 'Auto Mode Activity Panel'),
+    modal('leave_match_dialog', 'Leave Match?', 7, true),
+    modal('confirmation_dialog', 'Action Confirmation', 7, false),
+    modal('load_preview_modal', 'Load Preview', 7, true),
+    panel('settings_simple_view', 'Settings: Simple View', 6, 'panel', 'center-modal'),
+    panel('settings_experience_view', 'Settings: Game Experience View', 6, 'panel', 'center-modal'),
+    modal('settings_preset_manager', 'Settings Preset Manager'),
+    modal('settings_import_export', 'Settings Import / Export'),
+    panel('settings_view_filters', 'Settings Filters Panel', 6, 'panel'),
+    panel('main_menu', 'Main Menu', 1, 'panel', 'fullscreen'),
+    panel('game_over_screen', 'Result Screen', 1, 'panel', 'fullscreen'),
+    modal('diplomatic_breach_prompt', 'Diplomatic Breach Prompt', 7, false),
+    panel('safe_area_overlay', 'Safe-Area Preview Overlay', 8, 'overlay', 'fullscreen'),
+    panel('diag2_overlay', 'DIAG-2 Telemetry Overlay', 8, 'overlay'),
+    panel('intent_panels', 'Play Card Panels (All Actions, Change Goal, Goal Planner, Path, Why These)', 2, 'panel'),
+    panel('intelligence_tabs', 'Intelligence Sections', 1, 'panel', 'fullscreen'),
+    panel('lab_inspectors', 'LAB Inspectors', 1, 'panel', 'fullscreen'),
+    modal('find_anything', 'Find Anything', 7, true),
+  ];
+  const out: Record<string, UISurfaceDefinition> = {};
+  list.forEach(def => { out[def.id] = def; });
+  return out;
+}
+
+/** Q4: the eight registry ids nothing in V10.1 opens or draws (map §11.1). They stay in the registry, marked; Find Anything never offers them. */
+export const V110_UNUSED_SURFACE_IDS: readonly string[] = [
+  'guardian_side_panel', 'developer_diagnostics_drawer', 'guardian_warning_modal', 'treasury_requests_dialog',
+  'governor_exception_dialog', 'double_or_nothing_modal', 'rescue_emergency_overlay', 'stats_modal',
+];
+export const V110_UNUSED_SURFACE_NOTE = 'not used in V10.1';
+
+/** Q4: the five ids V10.1 shared between two windows. Each keeps one window; the other gets its own id while the V11.0 table is on. */
+export interface V110SharedSurfaceSplit { sharedId: string; keeps: string; movedFlags: readonly string[]; newId: string | null; moved: string }
+export const V110_SHARED_SURFACE_SPLITS: readonly V110SharedSurfaceSplit[] = [
+  { sharedId: 'ask_game_ai', keeps: 'Ask the Game AI drawer', movedFlags: ['showHelp'], newId: 'help_shortcuts_modal', moved: 'How to play & keyboard shortcuts' },
+  { sharedId: 'campaign_progression_modal', keeps: 'Campaign Progression window', movedFlags: ['showProgress'], newId: 'progress_dashboard', moved: 'Progress dashboard (📊 Progress, P)' },
+  { sharedId: 'human_automation_dashboard', keeps: 'Human Automation dashboard', movedFlags: ['showLiveControlCenter'], newId: 'live_control_center', moved: 'Live Control Center' },
+  { sharedId: 'activity_ledger', keeps: 'Game Activity Ledger dashboard', movedFlags: ['showAutoModeActivityPanel'], newId: 'auto_mode_activity_panel', moved: 'Auto Mode activity panel' },
+  // The map's second "window" here was the id's own name: showApprovalDialog, showApprovalModal and showApprovalsDialog are never set,
+  // so the Auto Mode proposal is the one live window and nothing needs to move.
+  { sharedId: 'approval_dialog', keeps: 'Auto Mode proposal (the only live window)', movedFlags: [], newId: null, moved: '' },
+];
+
+/** Windows the V11.0 table tracks that V10.1's did not (each is opened and closed by one interface flag). */
+export const V110_TRACKED_WINDOW_ROWS: ReadonlyArray<V101SurfaceFlagEntry> = [
+  { flags: ['showAdvancedLoans'], surfaceId: 'advanced_loans_modal' },
+  { flags: ['showCoPilotModal'], surfaceId: 'copilot_console' },
+  { flags: ['showCoPilotRecommendationsModal'], surfaceId: 'copilot_recommendations' },
+  { flags: ['showFindAnything'], surfaceId: 'find_anything' },
+];
+
+/** What Escape clears for each id the V11.0 table adds (spread into the Escape handler's own map; inert while the table is off). */
+export const V110_ESCAPE_FLAGS: Readonly<Record<string, string>> = {
+  help_shortcuts_modal: 'showHelp',
+  progress_dashboard: 'showProgress',
+  live_control_center: 'showLiveControlCenter',
+  auto_mode_activity_panel: 'showAutoModeActivityPanel',
+  advanced_loans_modal: 'showAdvancedLoans',
+  copilot_console: 'showCoPilotModal',
+  copilot_recommendations: 'showCoPilotRecommendationsModal',
+  find_anything: 'showFindAnything',
+};
+
+/**
+ * The surface manager's flag table. Off: V10.1's table, the very same array. On (Find Anything on): the shared ids keep one window
+ * each, the moved windows get their own rows, and the windows above are tracked too. Never changes the rows' order otherwise.
+ */
+export function v110SurfaceFlagTable(base: ReadonlyArray<V101SurfaceFlagEntry>, on: boolean): ReadonlyArray<V101SurfaceFlagEntry> {
+  if (!on) return base;
+  const moved = new Set<string>();
+  V110_SHARED_SURFACE_SPLITS.forEach(split => { if (split.newId) split.movedFlags.forEach(flag => moved.add(flag)); });
+  const out: V101SurfaceFlagEntry[] = base.map(row => (row.flags.some(flag => moved.has(flag)) ? { flags: row.flags.filter(flag => !moved.has(flag)), surfaceId: row.surfaceId } : row));
+  V110_SHARED_SURFACE_SPLITS.forEach(split => { if (split.newId && split.movedFlags.length > 0) out.push({ flags: [...split.movedFlags], surfaceId: split.newId }); });
+  V110_TRACKED_WINDOW_ROWS.forEach(row => { if (!out.some(existing => existing.surfaceId === row.surfaceId)) out.push(row); });
+  return out;
+}
+
+/** The interface state the play screen hands the surface manager: unchanged with Find Anything off; with it on, it also asks for the V11.0 table. */
+export function v110SyncState<T extends object>(uiState: T, settings: { readonly findAnythingEnabled?: unknown } | null | undefined): T | (T & { v110SurfaceIds: true }) {
+  return v110FindAnythingOn(settings) ? { ...uiState, v110SurfaceIds: true as const } : uiState;
+}
+
+/** The id a window that used to share one reads its stacking and backdrop from: its own id with Find Anything on, the shared id (as in V10.1) with it off. */
+export function v110WindowSurfaceId(windowId: string, settings: { readonly findAnythingEnabled?: unknown } | null | undefined): string {
+  if (v110FindAnythingOn(settings)) return windowId;
+  const split = V110_SHARED_SURFACE_SPLITS.find(s => s.newId === windowId);
+  return split ? split.sharedId : windowId;
+}
+
+// ============================================================================
+// SECTION 20BM: V11.0 FIND ANYTHING — ONE SEARCH BOX OVER ACTIONS, SCREENS, SETTINGS, SHORTCUTS AND LAB CARDS
+// ============================================================================
+// Package UX-2. Off by default (findAnythingEnabled, SECTION 20BL). With it on, a 🔎 Find button in the play screen's header
+// and Ctrl/⌘+K open one dialog; type, and the results list every match from:
+//   actions and screens  V110_FIND_PLACES: each window, panel and play action, with the call its own button makes;
+//   settings             every key of DEFAULT_GAME_SETTINGS (all 600), by its label or its key, routed to the section whose
+//                        control really changes it (V110_SETTING_ROUTES), with a note when it has no control of its own;
+//   settings sections    every section of SETTINGS_HUB_SECTION_INDEX and the Balance Lab;
+//   shortcuts            the 17 shortcut groups of the map (§10);
+//   LAB cards            the 48 LAB cards, opened through the card's own onOpen;
+//   Ask                  any text as a question for the game ("Ask the game"), answered on the Intelligence tab.
+// A result opens the real thing through the same path its button uses (the router never opens a window by any other way),
+// and says why when it cannot open now (no match, not your turn, a switch is off: it then offers that switch).
+// Ranking is deterministic: a score from where the words matched, then the kind, then the entry's place in the index.
+// Nothing here reads the clock, draws a random number or touches the match: it only reads settings and the interface state.
+// The data block below is generated from V11.0_UX_MAP.md (UX-1); v110fa walks every id in it.
+// ============================================================================
+
+export type V110FindKind = 'action' | 'screen' | 'setting' | 'section' | 'shortcut' | 'lab' | 'ask';
+export type V110FindLayer = 'play' | 'intelligence' | 'lab';
+/** The game's own handlers a result may call (the AustraliaGame component hands the real ones to useV110FindAnything). */
+export type V110FindCall = 'endTurn' | 'saveGame' | 'clearNotifications' | 'uiRescue' | 'toggleMap' | 'openNegotiations' | 'openTuningLab'
+  | 'openPipelineInspector' | 'openReplayStudio' | 'openLeaveMatch' | 'openPresetManager' | 'openImportExport' | 'openAskDrawer' | 'openDiagnosticsDrawer';
+export const V110_FIND_CALLS: readonly V110FindCall[] = ['endTurn', 'saveGame', 'clearNotifications', 'uiRescue', 'toggleMap', 'openNegotiations', 'openTuningLab',
+  'openPipelineInspector', 'openReplayStudio', 'openLeaveMatch', 'openPresetManager', 'openImportExport', 'openAskDrawer', 'openDiagnosticsDrawer'];
+/** How a result opens. 'ui' sets the interface flags the window's own button sets; 'settings' goes through navigateToSettings (and may press a button
+ *  inside Settings, e.g. the Game Experience view); 'layer' switches PLAY / INTELLIGENCE / LAB and scrolls to a section; 'call' runs a game handler;
+ *  'lab' runs the LAB card's own onOpen; 'ask' asks the game; 'none' opens nothing (the result only explains). */
+export type V110FindRoute =
+  | { kind: 'ui'; patch: Readonly<Record<string, boolean | string>> }
+  | { kind: 'settings'; tab: SettingsHubTabId; section?: string; field?: string; press?: string }
+  | { kind: 'layer'; layer: V110FindLayer; anchor?: string; ask?: string }
+  | { kind: 'call'; call: V110FindCall }
+  | { kind: 'lab'; cardId: string }
+  | { kind: 'ask'; query: string }
+  | { kind: 'none' };
+/** Facts about the match a play-screen button checks before it is enabled. */
+export type V110FindFact = 'shopRegion' | 'competitiveMode' | 'loansForPlayer' | 'allChallengesCompleted' | 'teamMode';
+/** When a result can open: everything listed must hold. */
+export interface V110FindNeeds {
+  match?: boolean;
+  menu?: boolean;
+  humanTurn?: boolean;
+  /** Switches that must all be on (a dotted path reaches into an object setting, e.g. 'dockSettings.enabled'). */
+  on?: readonly string[];
+  /** Switches of which at least one must be on. */
+  anyOn?: readonly string[];
+  facts?: readonly V110FindFact[];
+  /** The play-screen button the guided first match may still be hiding (isFirstRunActionVisible). */
+  firstRunAction?: string;
+}
+export interface V110FindEntry {
+  id: string;
+  kind: V110FindKind;
+  title: string;
+  /** Where it lives, in the words of the screen ("Settings › Gameplay & Rules › 🎲 Match Variety"). */
+  where: string;
+  route: V110FindRoute;
+  /** Lower-case search text: synonyms, keys, section words. */
+  keywords: string;
+  /** Said in the result: a setting with no control of its own, a control behind another switch, an event-only window. */
+  note?: string;
+  needs?: V110FindNeeds;
+  settingKey?: string;
+  sectionId?: string;
+  surfaceId?: string;
+  shortcutId?: string;
+  labCardId?: string;
+  /** The entry's place in the index (the last tie-break of the ranking). */
+  order: number;
+}
+/** One row of the hand-written places and shortcuts tables. */
+export interface V110FindPlace {
+  id: string;
+  kind: 'action' | 'screen' | 'shortcut';
+  title: string;
+  where: string;
+  route: V110FindRoute;
+  keywords?: string;
+  note?: string;
+  needs?: V110FindNeeds;
+  surfaceId?: string;
+  shortcutId?: string;
+}
+
+// ---- The UX-1 map, as data (generated from V11.0_UX_MAP.md by the UX-2 audit scripts; v110fa walks every id below) ------------------------
+/** The 61 registry surfaces the map lists (§4). */
+export const V110_MAP_SURFACE_IDS: readonly string[] = ["base_game", "game_hud", "floating_widget_dock", "guardian_floating_button", "ai_command_center_widget", "quick_actions", "quick_actions_reopen_handle", "notification_toasts", "unified_interface_launcher", "guardian_status_panel", "guardian_side_panel", "notification_drawer", "developer_diagnostics_drawer", "settings_hub", "major_transition_confirmation_modal", "quick_actions_customizer", "guardian_ai_center", "ai_command_center_modal", "ask_game_ai", "strategy_planner", "negotiation_center", "save_load_modal", "replay_viewer", "activity_ledger", "developer_diagnostics", "overseer_dashboard", "auditor_dashboard", "human_automation_dashboard", "regional_contracts_modal", "infrastructure_projects_modal", "expeditions_relics_modal", "what_if_timelines_modal", "crisis_management_modal", "campaign_progression_modal", "fog_of_war_intel_modal", "scenario_builder_modal", "career_progression_modal", "ai_rivalry_modal", "travel_modal", "challenges_modal", "market_modal", "resource_market_modal", "shop_modal", "investments_modal", "sabotage_modal", "stats_modal", "workshop_modal", "campaign_select_modal", "end_game_modes", "ai_stats", "determinism_audit_modal", "narrative_decision_modal", "approval_dialog", "treasury_requests_dialog", "governor_exception_dialog", "guardian_warning_modal", "save_migration_modal", "dependency_auto_fix_modal", "day_transition_overlay", "double_or_nothing_modal", "rescue_emergency_overlay"];
+/** The 28 windows the map found without an id (§5). 'ask_drawer' is the live window behind the shared id 'ask_game_ai' (Q4), so it keeps that id; the other 27 get their own. */
+export const V110_MAP_WINDOW_IDS: readonly string[] = ["help_shortcuts_modal", "progress_dashboard", "live_control_center", "advanced_loans_modal", "ai_tuning_lab", "ai_pipeline_inspector", "copilot_console", "copilot_recommendations", "copilot_proposal", "diagnostics_drawer", "auto_mode_activity_panel", "leave_match_dialog", "confirmation_dialog", "load_preview_modal", "settings_simple_view", "settings_experience_view", "settings_preset_manager", "settings_import_export", "settings_view_filters", "main_menu", "game_over_screen", "ask_drawer", "diplomatic_breach_prompt", "safe_area_overlay", "diag2_overlay", "intent_panels", "intelligence_tabs", "lab_inspectors"];
+export const V110_MAP_WINDOW_ID_ALIASES: Readonly<Record<string, string>> = { ask_drawer: 'ask_game_ai' };
+/** The 87 settings sections the map lists (§6): the 86 indexed ones and the rendered-only Balance Lab. */
+export const V110_MAP_SECTION_IDS: readonly string[] = ["interface.categoryNavigation", "home.dashboard", "interface.startScreen", "interface.floatingUi", "interface.aiAssistants", "interface.launcherDock", "interface.quickActionsVisibility", "interface.layoutPresets", "interface.modalSizes", "interface.uiRescue", "interface.safeAreaPreview", "interface.accessibility", "mechanicsDirectory.directory", "interface.appearance", "interface.firstRun", "interface.mapSound", "quickSetup.presets", "quickSetup.core", "interface.changelog", "interface.uxAssist", "gameplay.core", "economy.winCondition", "economy.matchShape", "gameplay.actionLimits", "gameplay.actionOverride", "gameplay.challengeRules", "gameplay.expansions", "ai.settings", "aiStrategyLab.main", "aiTeams.strategySliders", "teamModeAi.teamBrain", "teamModeAi.competitiveAi", "teamModeAi.actionOverrides", "teamModeAi.sharedActionBank", "teamModeAi.actionLending", "teamModeAi.teamPlans", "teamModeAi.reservations", "teamModeAi.threatTargeting", "teamModeAi.endgameAcceleration", "teamModeAi.emergencyActions", "teamModeAi.teamInitiative", "teamModeAi.comboBonuses", "teamModeAi.cashVault", "teamModeAi.economyGovernor", "teamModeAi.performanceSync2", "teamModeAi.parallelPlanning", "teamModeAi.actionSequences", "teamModeAi.actionApproval", "teamModeAi.actionRequirements", "teamModeAi.treasury", "teamModeAi.overseer", "teamModeAi.governanceControlSurface", "teamModeAi.auditor", "teamModeAi.aiThinkingAlgorithm", "teamModeAi.algorithmBuilder", "teamModeAi.overview", "competition.regionControl", "competition.regionalStanding", "competition.externalTerritories", "competition.negotiations", "competition.competitiveActions", "economy.loans", "ai.adaptive", "ai.memory", "ai.persistentMemory", "ai.opponentMind", "ai.communication", "advancedSystems.priority", "advancedSystems.decisionTransparency", "advancedSystems.gameActivityLedger", "advancedSystems.aiPipelineInspector", "advancedSystems.diag2Overlay", "advancedSystems.coPilotStartPhase", "advancedSystems.postMatchDebrief", "gameplay.matchVariety", "gameplay.scenarioMode", "gameplay.rivalryCampaign", "gameplay.v101", "gameplay.v100", "gameplay.v99", "advancedSystems.replaySafety", "advancedSystems.humanAutomation", "autoMode.main", "autoMode.advanced", "aiTeams.coPilot", "interface.notifications", "advancedSystems.balanceLab"];
+/** The 599 settings the map lists (§7), in DEFAULT_GAME_SETTINGS order. */
+export const V110_MAP_SETTING_KEYS: readonly string[] = [
+  "allowSettingsCategoryCollapse", "startSettingsCategoryCollapsed", "settingsCategoryNavigationMode", "rememberCategoryNavigationState", "rememberCategoryNavigationMode", "autoCollapseCategoriesOnNarrow", "keepQuickActionsReopenHandleWhenClosed", "fullyHideQuickActionsWhenClosed",
+  "uiRescueSettings", "rescueSettings", "safeAreaPreviewSettings", "accessibilitySettings", "diagnosticsSettings", "aiCommandCenterUiEnabled", "askGameAiUiEnabled", "aiTuningLabUiEnabled",
+  "opponentGenomeId", "startScreenConflictProtection", "showFloatingControlsOnStartScreen", "startScreenFloatingLayout", "restoreEligibleFloatingControlsAfterMatchStarts", "hideGameplaySidePanelsOnStartScreen", "actionPointConsumptionSettings", "autoModeEnabled",
+  "permissionMode", "allowStrategyChanges", "allowEconomyChanges", "allowActionManagementChanges", "allowNumericalModifiers", "preserveReplayDeterminism", "randomnessMode", "survivalMechanicsEnabled",
+  "dailySupplyConsumptionRate", "forcedRetreatEnabled", "actionLimitsEnabled", "maxActionsPerTurn", "aiMaxActionsPerTurn", "allowActionOverride", "overrideCost", "totalDays",
+  "playerActionsPerDay", "aiActionsPerDay", "showDayTransition", "dynamicWagerEnabled", "doubleOrNothingEnabled", "investmentsEnabled", "equipmentShopEnabled", "sabotageEnabled",
+  "aiUsesMarketModifiers", "aiSpecialAbilitiesEnabled", "aiAffectsEconomy", "aiWinConditionSpendingEnabled", "aiWinConditionAdaptationV2Enabled", "aiRegionsMajorityRushEnabled", "teammatePerformanceSyncEnabled", "directiveStrength",
+  "directiveBudgetEnabled", "directivesPerTurn", "directiveEscalationCost", "overseerAutoResolveThreshold", "deterministicRngActive", "teamAiTacticalLookaheadDepth", "teamAiCandidateEvaluationWidth", "aiDeterministic",
+  "aiDeterministicSeed", "worldRngMode", "worldRngSeed", "aiReplayRecordingEnabled", "aiReplayMaxEvents", "aiReplayPolicy", "replaySmartCheckpointsEnabled", "replayTurningPointDetectionEnabled",
+  "replayDeterministicValidationEnabled", "replayWhatIfBranchingEnabled", "replayDeveloperDiagnosticsEnabled", "replayAutoOpenAtMatchEnd", "replayDetailLevel", "aiEngineVersion", "aiFairnessLevel", "aiPersonalityVariance",
+  "aiPlanningDepth", "aiGrandTourPriority", "aiMarketModifierAwareness", "aiSpecialAbilityPriority", "aiEconomyInteractionWeight", "aiWinConditionSpendingStrength", "aiRegionRushIntensity", "aiSabotagePriority",
+  "aiInvestmentPriority", "aiEquipmentPurchasePriority", "aiRegionalContractPriority", "aiInfrastructurePriority", "aiRelicEquipPriority", "aiCrisisMitigationPriority", "aiNegotiationParticipationWeight", "aiNegotiationValuationWeight",
+  "teammatePerformanceSyncStrength", "aiStrategyLabEnabled", "aiStrategyLabScope", "aiStrategyLabPreset", "aiStrategyLabSafeRangesEnabled", "aiStrategyLabExtremeModeEnabled", "aiStrategyLabSeparateProfilesEnabled", "aiStrategyLabScorePreviewEnabled",
+  "aiStrategyLabWarningsEnabled", "aiStrategyLabDesignerNotesEnabled", "playerTeammateAiPreset", "opponentAiPreset", "aiEvaluationFactors", "adaptiveAiPatternMemoryStrength", "aiMemoryEnabled", "aiMemoryInfluenceStrength",
+  "aiMemoryInspectionEnabled", "aiMemoryFullInspectionEnabled", "aiStrategicLearningEnabled", "aiStrategicLearningStrength", "aiPersistentMemoryEnabled", "aiPersistentLearningEnabled", "aiPersistentIdentityMode", "aiPersistentAskOnAbandon",
+  "aiPersistentAivsAiEnabled", "aiCommunicationEnabled", "aiCommunicationProactiveEnabled", "aiCommunicationProactiveFrequency", "aiCommunicationAutonomyLevel", "adaptiveAiRubberBandingStrength", "advancedLoansEnabled", "advancedLoansAccessMode",
+  "creditScoreEnabled", "loanEventsEnabled", "earlyRepaymentEnabled", "loanRefinancingEnabled", "defaultPenaltyMultiplier", "interestAccrualRate", "maxSimultaneousLoans", "loanTierUnlockSpeedMultiplier",
+  "aiLoanRiskWeight", "aiLoanRepaymentPriority", "aiLoanRefinancingWeight", "aiLoanEmergencyOnly", "adaptiveAiEnabled", "adaptiveAiNetWorthThreshold", "adaptiveAiLevelDifference", "adaptiveAiChallengeDifference",
+  "adaptiveAiConsecutiveDays", "adaptiveAiMaxDifficulty", "adaptiveAiAggressionMultiplier", "adaptiveAiPatternLearning", "adaptiveAiRubberBanding", "adaptiveAiTauntsEnabled", "adaptiveAiAffectedModes", "adaptiveAiTeamComebackStrength",
+  "adaptiveAiTriggerSensitivity", "adaptiveAiSupportFocus", "adaptiveAiRiskBias", "adaptiveAiEconomyRecoveryBias", "adaptiveAiDisruptionBias", "adaptiveAiShowDecisionTransparency", "adaptiveAiShowActiveModifiers", "regionalStandingEnabled",
+  "regionalStandingDecayRate", "aiStandingWeight", "aiStandingPriority", "externalTerritoriesEnabled", "territoryEquipmentGateEnabled", "territoryTravelMode", "multiTurnJourneyEnabled", "opponentModelDecayRate",
+  "opponentModelWeight", "opponentThreatWeightsEnabled", "rivalDossierPanelEnabled", "settingPriorityMode", "maxConcurrentHighInfluenceSettings", "conflictResolutionStrength", "deprioritizeLowImpactSettings", "priorityTransparencyEnabled",
+  "manualPriorityWeights", "decisionTransparencyEnabled", "decisionTransparencyVisibilityScope", "decisionTransparencyViewMode", "decisionTransparencyRealtimeBreakdown", "decisionTransparencyTimeline", "decisionTransparencySettingContributions", "decisionTransparencyReasonExplanations",
+  "decisionTransparencyAlternativeActions", "decisionTransparencyPriorityFlow", "decisionTransparencyMaxHistoryRetained", "decisionTransparencyDetailLevel", "decisionTransparencyExplanationDepth", "decisionTransparencyTimelineLength", "decisionTransparencySamplingDensity", "decisionTransparencyPanelDensity",
+  "decisionTransparencyMultiAiOverviewEnabled", "decisionTransparencyShowPerAiMiniCards", "decisionTransparencyShowAdaptiveActorBreakdown", "decisionTransparencyShowTeamAdaptiveSource", "decisionTransparencyShowActorAppliedEffects", "decisionTransparencyDefaultGroupView", "decisionTransparencyShowOnlyActiveAis", "decisionTransparencyShowUnaffectedAis",
+  "decisionTransparencyMaxVisibleAiCards", "decisionTransparencyPerAiTimelineDensity", "decisionTransparencyPerAiTimelineLength", "gameActivityLedgerEnabled", "gameActivityLedgerDetailLevel", "gameActivityLedgerIncludeInSaveFile", "gameActivityLedgerMaxEvents", "gameActivityLedgerRetentionPolicy",
+  "gameActivityLedgerRecordingPaused", "aiPipelineInspectorEnabled", "diag2OverlayEnabled", "coPilotStartPhaseOverlayEnabled", "postMatchDebriefEnabled", "scenarioModeEnabled", "selectedScenarioId", "scenarioEngineV73Enabled",
+  "customScenarioBuilderEnabled", "regionalContractsEnabled", "stateInfrastructureEnabled", "expeditionsRelicsEnabled", "expeditionModeEnabled", "dynamicCrisesEnabled", "dynamicCrisisChainsEnabled", "campaignModeEnabled",
+  "campaignEngineEnabled", "fogOfWarEnabled", "whatIfTimelinesEnabled", "narrativeEngineEnabled", "publicStabilityEnabled", "nationalEventsEnabled", "careerProgressionEnabled", "achievementsEnabled",
+  "aiRivalryEnabled", "winCondition", "winConditionTieBreakers", "allowCashOut", "negotiationMode", "negotiationOptions", "uxAssistPackEnabled", "simplifiedActionBarEnabled",
+  "disabledActionFeedbackEnabled", "interactiveMapEnabled", "winConditionCoachEnabled", "settingsPresetsEnabled", "groupedInventoryCardsEnabled", "playerIntentOnboardingEnabled", "playerIntentOnboardingDismissed", "guidedLearning",
+  "v93ContentEnabled", "nationalSystemsEnabled", "industriesEnabled", "infraNetworksEnabled", "megaprojectsEnabled", "nationalDevelopmentEnabled", "innovationEnabled", "systemicRiskEnabled",
+  "nationalPrioritiesEnabled", "economicGeographyEnabled", "workforceHumanCapitalEnabled", "stateCapacityEnabled", "publicFinanceEnabled", "householdsEnabled", "experienceMode", "challengeApproachesEnabled",
+  "expandedChallengeContentEnabled", "proceduralChallengesEnabled", "visualMode", "soundEnabled", "soundVolume", "reducedMotion", "opponentPersonalityEnabled", "matchShapeEnabled",
+  "matchObjectiveWeight", "comebackStrength", "comebackFullGap", "finalStretchPct", "guidedFirstRunEnabled", "canonicalActionRoutingV97", "autoModeDiagnosticsDrawerOpen", "infrastructureEnabled",
+  "deferredTransactions", "aiDifficulty", "gameActivityLedgerPreserveBookmarks", "gameActivityLedgerPreserveRootCausal", "rivalryCampaignEnabled", "matchRecoveryEnabled", "matchJournalEnabled", "turnDigestEnabled",
+  "rivalTurnPace", "classicStickyToasts", "classicPlayScreenLayout", "warnBeforeUnloadEnabled", "rivalRacesEnabled", "classicRivalV99", "rivalRecapEnabled", "dailyFixedRulesEnabled",
+  "classicRulesV100", "v93StartingPackage", "v93RegionalOpening", "v93ContentThemes", "v93ContractAbundance", "v93CrisisIntensity", "v93RareEventFrequency", "v93RecentRare",
+  "playerIntentExplainRoutineActions", "playerIntentExplainMode", "teamModeAiSystemsEnabled", "teamModeAiSystemProfile", "teamBrainV63Enabled", "teamBrainModeV63", "teamBrainStrategyModesEnabled", "teamBrainPersonalitiesEnabled",
+  "teamBrainTeammateSupportEnabled", "teamBrainOpponentPressureEnabled", "teamBrainComebackLogicEnabled", "teamBrainRecoveryLogicEnabled", "teamBrainTravelDisciplineEnabled", "teamBrainResourceLogicEnabled", "teamBrainExplanationEnabled", "teamBrainTeammateSupportBias",
+  "teamBrainOpponentPressureBias", "teamBrainTravelDiscipline", "teamBrainRiskScaling", "teamCompetitiveAiEnabled", "teamModeAiDifficultyPreset", "friendlyTeamAiPreset", "enemyTeamAiPreset", "teamAiActionOverridesEnabled",
+  "teamAiOverridePolicy", "friendlyAiOverridePolicy", "teamAiOverrideMaxPerActorPerDay", "teamAiOverrideMaxPerTeamPerDay", "teamAiOverrideBaseCostMultiplier", "teamAiOverrideMinimumDecisionScore", "teamAiOverrideMinimumCashReserve", "teamAiOverrideEscalatingCostEnabled",
+  "teamAiOverrideFatigueEnabled", "teamAiOverrideTransparencyEnabled", "teamActionBankEnabled", "teamActionBankBonusActionsPerDay", "teamActionBankDistributionMode", "teamActionBankReserveActions", "teamActionBankMaxDrawsPerActorPerDay", "teamActionBankTransparencyEnabled",
+  "teamAiActionLendingEnabled", "teamAiMaxLentActionsPerActorPerDay", "teamAiMaxReceivedActionsPerActorPerDay", "teamAiActionLendingMinimumValueGain", "teamAiActionLendingRequiresCommittedPlan", "teamAiActionLendingTransparencyEnabled", "teamAiPlanCommitmentEnabled", "teamAiPlanCommitmentStrength",
+  "teamAiPlanMaximumDurationDays", "teamAiPlanReevaluationFrequency", "teamAiPlanInterruptionSensitivity", "teamAiPlanTransparencyEnabled", "teamAiReservationStrictness", "friendlyAiRespectPlayerReservations", "friendlyAiMayRequestReservedResource", "teamAiThreatTargetingEnabled",
+  "teamAiThreatTargetingStrength", "teamAiThreatReevaluationFrequency", "teamAiThreatFocusDuration", "teamAiMayTargetFriendlyAiTeammate", "teamAiEndgameAccelerationEnabled", "teamAiEndgameStartPercent", "teamAiEndgameAggressionMultiplier", "teamAiEndgameOverrideBias",
+  "teamAiEndgameCashConversionStrength", "teamAiEmergencyActionsEnabled", "teamAiEmergencyActionCooldownDays", "teamAiEmergencyActionsPerGame", "teamAiEmergencyActionStrength", "teamAiEmergencyActionsForFriendlyTeam", "teamAiEmergencyActionsForEnemyTeam", "teamInitiativeEnabled",
+  "teamInitiativeMaximum", "teamInitiativeGainMultiplier", "teamInitiativeDecayEnabled", "teamInitiativeVisibleToPlayer", "teamComboBonusesEnabled", "teamComboBonusStrength", "teamComboWindowActions", "teamAiReservationTransparencyEnabled",
+  "teamAiThreatTargetingTransparencyEnabled", "teamAiEndgameAccelerationTransparencyEnabled", "teamAiEmergencyActionsTransparencyEnabled", "teamInitiativeTransparencyEnabled", "teamComboBonusesTransparencyEnabled", "teamCashVaultEnabled", "automaticCashLockingEnabled", "vaultProtectionMode",
+  "vaultLockPercentage", "vaultMilestoneSizeMultiplier", "vaultMinimumWorkingCash", "vaultCountProtectedCashTowardVictory", "vaultTransparencyEnabled", "teamEconomyGovernorEnabled", "teamIntelligenceOsEnabled", "teamOsAuthorityLevel",
+  "teamOsEnemyEnabled", "teamOsFullInspectionEnabled", "economyCashFloor", "economyRecoveryTarget", "economyMinimumChallengeProbability", "economyRecoverySpendingCap", "economyReserveStrength", "economyEndgameCashConversionEnabled",
+  "economySpendingApprovalStrictness", "economyGovernorTransparencyEnabled", "teamAiGovernorRestrictionDetectionEnabled", "teamAiGovernorRestrictionTransparencyEnabled", "teamAiProductiveRecoveryLadderEnabled", "teamAiGovernorAutomaticExceptionsEnabled", "teamAiGovernorExceptionConsecutiveTurnsThreshold", "teamAiGovernorExceptionMaxReserveBreach",
+  "teamAiGovernorExceptionMinProbability", "teamAiGovernorExceptionMinEvRatio", "teamAiGovernorExceptionMaxCost", "teammatePerformanceSync2Enabled", "teammatePerformanceSync2Strength", "teammatePerformanceSync2StrategyLearningEnabled", "teammatePerformanceSync2ChallengeExpertiseEnabled", "teammatePerformanceSync2ChallengeExpertiseMaxBonus",
+  "guaranteedRecoveryProtocolEnabled", "guaranteedRecoveryMinimumChallengeProbability", "teammatePerformanceSync2TransparencyEnabled", "teammatePerformanceSyncAssistScope", "governorCategoryPolicy", "teamDifficultyOverrides", "teammatePerformanceSyncMomentumEnabled", "teammatePerformanceSyncExpertiseDecayEnabled",
+  "teammatePerformanceSyncExpertiseDecayRate", "parallelAiPlanningEnabled", "parallelAiPlanningCoordinationStrictness", "parallelAiPlanningSabotageCoordinationEnabled", "parallelAiPlanningTransparencyEnabled", "teamAiActionSequencesEnabled", "aiActionApprovalEnabled", "actionRequirementsEnabled",
+  "actionRequirementGroups", "actionRequirementsTransparencyEnabled", "aiActionApprovalMode", "aiActionApprovalSelectedTypes", "aiActionApprovalHighRiskThresholds", "aiActionApprovalTeammateOverrides", "aiActionApprovalRejectionOutcome", "aiActionApprovalTransparencyEnabled",
+  "aiActionApprovalAutoRulesEnabled", "aiActionApprovalAutoRules", "teamAiActionSequencesTransparencyEnabled", "teamAiSequenceInterruptsEnabled", "teamAiPhaseSequenceSwitchingEnabled", "notificationSettings", "notificationClearShortcut", "teamTreasuryEnabled",
+  "teamTreasuryEnabledForFriendlyTeam", "teamTreasuryEnabledForEnemyTeam", "teamTreasuryShowInUi", "teamTreasuryShowTransactions", "teamTreasuryAllowManualContributions", "teamTreasuryAllowProtectedCashContribution", "teamAiTreasuryContributionEnabled", "treasuryAutomaticContributionEnabled",
+  "treasuryAutomaticContributionPolicy", "teamTreasuryMaxAutoContributionPerActorPerDay", "teamTreasuryMinPersonalCashRemaining", "teamTreasuryMinContributionAmount", "teamTreasuryContributionCooldownDays", "teamTreasuryDisableContributionDuringRecovery", "teamTreasuryReserve", "teamTreasuryDynamicReserveEnabled",
+  "teamTreasuryAllowHumanFundingRequests", "teamTreasuryAllowAiFundingRequests", "teamTreasuryAllowRequestsAtZeroCash", "teamTreasuryEmergencyOperatingTarget", "teamTreasuryMaxWithdrawalPerRequest", "teamTreasuryMaxWithdrawalPerActorPerDay", "teamTreasuryRequireApprovalForFriendlyAiWithdrawals", "teamTreasuryAllowPartialApproval",
+  "teamTreasuryRequireIntendedAction", "teamTreasuryReturnUnusedRestrictedFunds", "teamTreasuryRequestCooldownDays", "teamAiTreasuryRequestsEnabled", "countTeamTreasuryTowardVictory", "teamAiOverseerSystemEnabled", "teamAiStrategicCommandEnabled", "teamAiStrategicCommandAuthorityMode",
+  "teamAiStrategicCommandDirectiveDurationDays", "teamAiStrategicCommandDirectiveScoreBias", "teamAiStrategicCommandMaxSpendingPercent", "teamAiStrategicCommandTreasuryAllocationCap", "teamAiStrategicCommandOverrideBias", "teamAiStrategicCommandEnabledForFriendlyTeam", "teamAiStrategicCommandEnabledForEnemyTeam", "teamAiStrategicCommandInterventionsEnabled",
+  "teamAiAdaptiveOverseerEnabled", "teamAiAdaptiveOverseerAuthorityMode", "teamAiOverseerShowStatusCard", "teamAiOverseerTransparencyEnabled", "teamAiOverseerDashboardEnabled", "teamAiSafeModeEnabled", "teamAiSafeModeRestrictedActorThreshold", "teamAiStrategicCommandPersonality",
+  "teamAiAdaptiveOverseerPersonality", "teamAiAdaptiveOverseerComebackEnterPercent", "teamAiAdaptiveOverseerComebackExitPercent", "teamAiAdaptiveOverseerProtectLeadEnterPercent", "teamAiAdaptiveOverseerProtectLeadExitPercent", "teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold", "teamAiAdaptiveOverseerMinimumStrategyDurationDays", "overseerWinConditionCounterStrategyEnabled",
+  "teamAiAuditorSystemEnabled", "teamAiAuditorModeForFriendlyTeam", "teamAiAuditorModeForEnemyTeam", "teamAiAuditorShowStatusCard", "teamAiAuditorDashboardEnabled", "teamAiAuditorAutomaticRecoveryMinConfidence", "teamAiAuditorAutomaticRecoveryMaxPerDay", "teamAiAuditorSafeModeEnabled",
+  "teamAiAuditorSafeModeEscalatedIncidentThreshold", "aiAlgorithmForFriendlyTeam", "aiAlgorithmForEnemyTeam", "aiAlgorithmForOpponent", "aiThinkingDepth", "aiAlgorithmBuilderEnabled", "aiAlgorithmBuilderDefaultEditorMode", "humanAutomationEnabled",
+  "humanAutomationTransparencyEnabled", "automationSequenceLaunchEnabled", "automationSlotProgressionEnabled", "automationRunHistoryEnabled", "automationExtendedTriggersEnabled", "automationExtendedActionsEnabled", "automationConflictWarningsEnabled", "automationDailyDigestEnabled",
+  "automationImportExportEnabled", "replayComparisonEnabled", "replayComparisonToleranceThreshold", "replayComparisonIgnoreMinorTiming", "aiEffectivenessScorecardEnabled", "aiEffectivenessBlunderThresholdRoi", "aiEffectivenessTrackCompliance", "balanceLabEnabled",
+  "balanceLabAutoStressTracking", "balanceLabSandboxMode", "ledgerDiagnosticsEnabled", "ledgerPruneRetentionLimit", "ledgerAutoPruneEnabled", "ledgerExportCompressionEnabled", "enableAiCalibrationLearning", "aiCalibrationLearningRate",
+  "enableCounterfactualEvaluation", "enablePersistentOpponentModels", "planSwitchingCost", "teamGovernanceMode", "aiTacticalIntelligence", "aiEconomicCheats", "teamOverviewDensity", "projectedOutcomeEnabled",
+  "projectedOutcomeHorizon", "projectedOutcomeMode", "deterministicMode", "governanceControlSurfaceEnabled", "humanGovernanceVetoEnabled", "teamGovernanceModeOverrides", "governanceLeaderVoteWeight", "governanceMemberVoteWeight",
+  "governanceVoteThreshold", "governanceConsensusThreshold", "governanceVetoUsesPerMatch", "governanceWeightSettings", "defaultGuardianOpeningStyle", "showGuardianFloatingButton", "showGuardianInQuickActions", "enableGuardianSidePanelAccess",
+  "hideGuardianFloatingButtonWhileCenterOpen", "hideGuardianFloatingButtonWhileAnotherBlockingModalOpen", "guardianFloatingPosition", "allowGuardianFloatingButtonDragging", "rememberGuardianFloatingPosition", "autoModeSettings", "coPilotSettings", "guardianAiSettings",
+  "commandCenterSettings", "strategyPlannerSettings", "smartSettingsProfile", "conflictControlSettings", "conflictControlEnabled", "conflictAllowRelocation", "conflictReturnToPreferred", "conflictShowExplanations",
+  "floatingUiPriorityMatrix", "launcherSettings", "dockSettings", "presetSettings", "autoHideSettings", "notificationLaneSettings", "modalSizeSettings"
+];
+/** The 17 shortcut groups the map lists (§10). */
+export const V110_MAP_SHORTCUT_IDS: readonly string[] = ["space", "c-t-r-m-w", "g", "n-h-p", "question", "escape", "shift-escape", "ctrl-s", "ctrl-shift-c", "alt-c", "ctrl-k", "ctrl-alt-d", "slash-ctrl-f", "replay-keys", "layer-arrows", "tab-trap", "alt-s"];
+/** The 48 LAB cards the map lists (§3), by the id buildV9LabEntries gives them. */
+export const V110_MAP_LAB_CARD_IDS: readonly string[] = ["ai_difficulty", "ai_algorithms", "ai_builder", "ai_strategy_lab", "ai_adaptive", "team_brain", "team_strategic_command", "team_governor", "team_treasury", "team_governance", "team_auditor", "team_sequences", "team_plans", "copilot_advanced", "ai_assistant_surfaces", "ai_communication", "auto_mode", "auto_mode_advanced", "action_approval", "action_requirements", "rules_core", "rules_action_limits", "rules_priority", "memory_ai", "memory_persistent", "replay_settings", "ledger_settings", "decision_transparency", "diag2", "settings_home", "settings_quick", "settings_interface", "settings_mechanics", "ai_command_center", "team_overseer_dashboard", "team_auditor_dashboard", "guardian_center", "copilot_console", "human_automation", "live_control_center", "rules_determinism", "rules_whatif", "rules_balance", "ledger_dashboard", "auto_mode_diagnostics", "save_migration", "ai_tuning_lab", "ai_pipeline"];
+/** Labels the settings' own controls show, for keys no registry labels (read from the controls' { key, label } rows and settingLabel arguments). Others fall back to the field metadata, the smart registry, the Simple view or the key in words. */
+export const V110_SETTING_LABELS: Readonly<Record<string, string>> = {
+  allowSettingsCategoryCollapse: "Allow Settings Category Collapse",
+  startSettingsCategoryCollapsed: "Start Settings Category Collapsed",
+  settingsCategoryNavigationMode: "Settings Category Navigation Mode",
+  rememberCategoryNavigationState: "Remember Category Navigation State",
+  rememberCategoryNavigationMode: "Remember Category Navigation Mode",
+  autoCollapseCategoriesOnNarrow: "Auto Collapse Categories On Narrow Screen",
+  keepQuickActionsReopenHandleWhenClosed: "Keep Reopen Button When Closed",
+  fullyHideQuickActionsWhenClosed: "Fully Hide Quick Actions When Closed",
+  uiRescueSettings: "UI Rescue Settings",
+  rescueSettings: "Rescue Settings",
+  safeAreaPreviewSettings: "Safe-Area Preview",
+  accessibilitySettings: "Accessibility Settings",
+  diagnosticsSettings: "Diagnostics Settings",
+  aiCommandCenterUiEnabled: "AI Command Center UI",
+  startScreenConflictProtection: "Start-Screen Conflict Protection",
+  showFloatingControlsOnStartScreen: "Show Floating Controls on Start Screen",
+  startScreenFloatingLayout: "Start Screen Floating Layout",
+  restoreEligibleFloatingControlsAfterMatchStarts: "Restore Floating Controls After Match Starts",
+  hideGameplaySidePanelsOnStartScreen: "Hide Gameplay Side Panels on Start Screen",
+  aiWinConditionAdaptationV2Enabled: "AI Win-Condition Adaptation V2",
+  directiveStrength: "AI Directive Strength",
+  directiveBudgetEnabled: "Directive Budget",
+  directivesPerTurn: "Directives Per Turn",
+  directiveEscalationCost: "Directive Escalation Cost",
+  aiRelicEquipPriority: "AI Relic Equip Priority",
+  aiCrisisMitigationPriority: "AI Crisis Mitigation Priority",
+  aiStrategyLabSafeRangesEnabled: "Safe Ranges",
+  aiStrategyLabExtremeModeEnabled: "Extreme Mode",
+  aiStrategyLabSeparateProfilesEnabled: "Separate Teammate and Opponent Profiles",
+  aiStrategyLabScorePreviewEnabled: "Before vs After Score Preview",
+  aiStrategyLabWarningsEnabled: "Strategy Warnings",
+  aiStrategyLabDesignerNotesEnabled: "Designer Notes",
+  aiMemoryEnabled: "AI Memory",
+  aiMemoryInfluenceStrength: "Memory Influence Strength",
+  aiMemoryInspectionEnabled: "Show AI Memory Inspection",
+  aiMemoryFullInspectionEnabled: "Full Memory Inspection (Debug)",
+  aiStrategicLearningEnabled: "Strategic Learning",
+  aiStrategicLearningStrength: "Strategic Learning Strength",
+  aiPersistentMemoryEnabled: "Persistent AI Memory",
+  aiPersistentLearningEnabled: "Write Persistent Profiles",
+  aiPersistentIdentityMode: "Persistent Identity",
+  aiPersistentAskOnAbandon: "Ask Before Saving Abandoned Matches",
+  aiPersistentAivsAiEnabled: "Persist AI-vs-AI Matches",
+  aiCommunicationEnabled: "AI Communication",
+  aiCommunicationProactiveEnabled: "Proactive Intelligence",
+  aiCommunicationProactiveFrequency: "Proactive Frequency",
+  aiCommunicationAutonomyLevel: "Communication Autonomy",
+  creditScoreEnabled: "Credit Score Engine",
+  adaptiveAiEnabled: "Adaptive AI (\"Comeback Mode\")",
+  adaptiveAiRiskBias: "Adaptive AI Risk Appetite",
+  regionalStandingEnabled: "Regional Standing System",
+  regionalStandingDecayRate: "Standing Decay Rate",
+  aiStandingWeight: "AI Standing Weight",
+  aiStandingPriority: "AI Standing Action Priority",
+  externalTerritoriesEnabled: "External Territories System",
+  territoryEquipmentGateEnabled: "Territory Equipment Gate",
+  territoryTravelMode: "Territory Travel Mode",
+  multiTurnJourneyEnabled: "Multi-Turn Journeys",
+  decisionTransparencyRealtimeBreakdown: "Show Real-Time Decision Breakdown",
+  decisionTransparencyTimeline: "Show Decision Timeline",
+  decisionTransparencySettingContributions: "Show Per-Setting Contributions",
+  decisionTransparencyReasonExplanations: "Show Reason Explanations",
+  decisionTransparencyAlternativeActions: "Show Alternative Actions",
+  decisionTransparencyPriorityFlow: "Show Priority Flow",
+  decisionTransparencyMultiAiOverviewEnabled: "Multi-AI Overview",
+  decisionTransparencyShowPerAiMiniCards: "Show Per-AI Mini Cards",
+  decisionTransparencyShowAdaptiveActorBreakdown: "Show Adaptive AI Actor Breakdown",
+  decisionTransparencyShowTeamAdaptiveSource: "Show Team Adaptive Source",
+  decisionTransparencyShowActorAppliedEffects: "Show Actor Applied Effects",
+  decisionTransparencyShowOnlyActiveAis: "Show Only Active AIs",
+  decisionTransparencyShowUnaffectedAis: "Show Unaffected AIs",
+  gameActivityLedgerEnabled: "Master Ledger",
+  gameActivityLedgerIncludeInSaveFile: "Include in Save File",
+  gameActivityLedgerMaxEvents: "Max Recorded Events",
+  gameActivityLedgerRetentionPolicy: "Retention Policy",
+  gameActivityLedgerRecordingPaused: "Recording Pause",
+  aiPipelineInspectorEnabled: "AI Action Pipeline Inspector",
+  diag2OverlayEnabled: "DIAG-2 Overlay",
+  coPilotStartPhaseOverlayEnabled: "Co-Pilot Start Box",
+  postMatchDebriefEnabled: "Post-Match Debrief Analytics",
+  scenarioModeEnabled: "Scenario Mode",
+  selectedScenarioId: "Selected Scenario ID",
+  dynamicCrisesEnabled: "Dynamic Crises",
+  campaignModeEnabled: "Campaign Mode",
+  whatIfTimelinesEnabled: "What-If Timelines",
+  negotiationMode: "Negotiation Mode",
+  negotiationOptions: "Suggest Counter-Offers",
+  uxAssistPackEnabled: "UX Assist Pack",
+  simplifiedActionBarEnabled: "Simplified Action Bar",
+  disabledActionFeedbackEnabled: "Disabled Button Feedback",
+  interactiveMapEnabled: "Interactive Map",
+  winConditionCoachEnabled: "Win-Condition Coach",
+  settingsPresetsEnabled: "Settings Presets",
+  groupedInventoryCardsEnabled: "Grouped Inventory Cards",
+  nationalSystemsEnabled: "National Systems & Networks",
+  industriesEnabled: "Industries & Supply Chains",
+  infraNetworksEnabled: "Strategic Infrastructure Networks",
+  megaprojectsEnabled: "National Megaprojects",
+  nationalDevelopmentEnabled: "National Development Strategy",
+  innovationEnabled: "Innovation & Emerging Capabilities",
+  systemicRiskEnabled: "Resilience & Systemic Risk",
+  nationalPrioritiesEnabled: "Dynamic National Priorities",
+  economicGeographyEnabled: "Regional Competition & Economic Geography",
+  workforceHumanCapitalEnabled: "Workforce, Skills & Human Capital",
+  stateCapacityEnabled: "Adaptive Governance & State Capacity",
+  publicFinanceEnabled: "Public Finance & Fiscal Capacity",
+  householdsEnabled: "Households & Living Standards",
+  teamModeAiSystemProfile: "Team Mode AI System Profile",
+  teamBrainV63Enabled: "Team Brain",
+  teamBrainModeV63: "Team Brain Mode",
+  teamBrainStrategyModesEnabled: "Strategy Modes",
+  teamBrainPersonalitiesEnabled: "AI Personalities",
+  teamBrainTeammateSupportEnabled: "Teammate Support Logic",
+  teamBrainOpponentPressureEnabled: "Opponent Pressure Logic",
+  teamBrainComebackLogicEnabled: "Comeback Logic",
+  teamBrainRecoveryLogicEnabled: "Recovery Logic",
+  teamBrainTravelDisciplineEnabled: "Travel Discipline",
+  teamBrainResourceLogicEnabled: "Resource Logic",
+  teamBrainExplanationEnabled: "Team Brain Explanations",
+  teamBrainOpponentPressureBias: "Opponent Pressure Bias",
+  teamBrainTravelDiscipline: "Travel Discipline",
+  teamBrainRiskScaling: "Risk Scaling",
+  teamCompetitiveAiEnabled: "Competitive AI",
+  teamAiActionOverridesEnabled: "AI Action Overrides",
+  teamAiOverrideEscalatingCostEnabled: "Escalating Cost",
+  teamAiOverrideFatigueEnabled: "Override Fatigue",
+  teamAiOverrideTransparencyEnabled: "Show in Transparency",
+  teamAiActionLendingEnabled: "Action Lending",
+  teamAiEndgameAggressionMultiplier: "Team AI Endgame Aggression",
+  teamCashVaultEnabled: "Team Cash Vault",
+  vaultLockPercentage: "Protected Cash",
+  teamIntelligenceOsEnabled: "Team Intelligence 2.0",
+  teamOsAuthorityLevel: "Team OS Authority",
+  economyRecoverySpendingCap: "Recovery Spending Limit",
+  parallelAiPlanningEnabled: "Parallel AI Planning",
+  teamTreasuryEnabled: "Team Treasury",
+  teamAiOverseerSystemEnabled: "Overseer system",
+  humanAutomationTransparencyEnabled: "Human Automation Transparency",
+  automationSequenceLaunchEnabled: "Automation Sequence Launch",
+  automationSlotProgressionEnabled: "Automation Slot Progression",
+  automationRunHistoryEnabled: "Automation Run History",
+  automationExtendedTriggersEnabled: "Automation Extended Triggers",
+  automationExtendedActionsEnabled: "Automation Extended Actions",
+  automationConflictWarningsEnabled: "Automation Conflict Warnings",
+  automationDailyDigestEnabled: "Automation Daily Digest",
+  automationImportExportEnabled: "Automation Import/Export",
+  replayComparisonToleranceThreshold: "Replay Comparison Tolerance Threshold",
+  replayComparisonIgnoreMinorTiming: "Ignore Minor Timing Drift",
+  aiEffectivenessScorecardEnabled: "AI Effectiveness Scorecard",
+  aiEffectivenessTrackCompliance: "AI Effectiveness Track Compliance",
+  balanceLabEnabled: "Balance Lab",
+  balanceLabAutoStressTracking: "Balance Lab Auto Stress Tracking",
+  balanceLabSandboxMode: "Balance Lab Sandbox Mode",
+  ledgerDiagnosticsEnabled: "Ledger Diagnostics",
+  ledgerPruneRetentionLimit: "Prune Retention Limit",
+  ledgerAutoPruneEnabled: "Auto-Prune Ledger",
+  ledgerExportCompressionEnabled: "Export Compression",
+  enableAiCalibrationLearning: "AI Calibration Learning",
+  aiCalibrationLearningRate: "Learning Rate",
+  enableCounterfactualEvaluation: "Counterfactual Evaluation",
+  enablePersistentOpponentModels: "Persistent Opponent Models",
+  planSwitchingCost: "Plan Switching Cost",
+  teamOverviewDensity: "Team Overview Density",
+  showGuardianInQuickActions: "Show Guardian AI Safety in Quick Actions",
+  autoModeSettings: "Auto Mode (Adaptive Match Manager)",
+  conflictControlSettings: "Floating UI Conflict Control",
+  conflictControlEnabled: "Conflict Control",
+  conflictAllowRelocation: "Conflict Allow Relocation",
+  conflictReturnToPreferred: "Conflict Return to Preferred",
+  conflictShowExplanations: "Conflict Show Explanations",
+  floatingUiPriorityMatrix: "Priority Matrix",
+  launcherSettings: "Unified Launcher",
+  dockSettings: "Widget Dock",
+  autoHideSettings: "Contextual Auto-Hide",
+  notificationLaneSettings: "Notification Lane Anchor",
+  modalSizeSettings: "Restore Default UI Scale"
+};
+/** Where a setting's control really is, when that is not the first section the hub index lists for it (map §11.4 and the 30 unindexed keys, §11.5). */
+export const V110_SETTING_ROUTES: Readonly<Record<string, V110FindRoute>> = {
+  directiveBudgetEnabled: { kind: 'settings', tab: 'oversight', section: 'teamModeAi.overseer' },
+  directivesPerTurn: { kind: 'settings', tab: 'oversight', section: 'teamModeAi.overseer' },
+  directiveEscalationCost: { kind: 'settings', tab: 'oversight', section: 'teamModeAi.overseer' },
+  aiEffectivenessScorecardEnabled: { kind: 'ui', patch: { showGameActivityLedgerDashboard: true } },
+  aiEffectivenessTrackCompliance: { kind: 'ui', patch: { showGameActivityLedgerDashboard: true } },
+  commandCenterSettings: { kind: 'ui', patch: { showAiCommandCenterModal: true } },
+  defaultGuardianOpeningStyle: { kind: 'ui', patch: { showGuardianAiCenter: true } },
+  showGuardianFloatingButton: { kind: 'ui', patch: { showGuardianAiCenter: true } },
+  enableGuardianSidePanelAccess: { kind: 'ui', patch: { showGuardianAiCenter: true } },
+  hideGuardianFloatingButtonWhileCenterOpen: { kind: 'ui', patch: { showGuardianAiCenter: true } },
+  hideGuardianFloatingButtonWhileAnotherBlockingModalOpen: { kind: 'ui', patch: { showGuardianAiCenter: true } },
+  allowGuardianFloatingButtonDragging: { kind: 'ui', patch: { showGuardianAiCenter: true } },
+  rememberGuardianFloatingPosition: { kind: 'ui', patch: { showGuardianAiCenter: true } },
+  teamDifficultyOverrides: { kind: 'settings', tab: 'aiTeams', section: 'teamModeAi.competitiveAi' },
+  overseerWinConditionCounterStrategyEnabled: { kind: 'settings', tab: 'aiTeams', section: 'ai.adaptive' },
+  ledgerDiagnosticsEnabled: { kind: 'settings', tab: 'aiTeams', section: 'ai.settings' },
+  ledgerPruneRetentionLimit: { kind: 'ui', patch: { showGameActivityLedgerDashboard: true } },
+  ledgerAutoPruneEnabled: { kind: 'ui', patch: { showGameActivityLedgerDashboard: true } },
+  ledgerExportCompressionEnabled: { kind: 'ui', patch: { showGameActivityLedgerDashboard: true } },
+  preserveReplayDeterminism: { kind: 'settings', tab: 'automation', section: 'autoMode.advanced' },
+  opponentGenomeId: { kind: 'settings', tab: 'aiTeams', section: 'teamModeAi.aiThinkingAlgorithm' },
+  replaySmartCheckpointsEnabled: { kind: 'settings', tab: 'aiTeams', section: 'ai.settings' },
+  replayTurningPointDetectionEnabled: { kind: 'settings', tab: 'aiTeams', section: 'ai.settings' },
+  replayDeterministicValidationEnabled: { kind: 'settings', tab: 'aiTeams', section: 'ai.settings' },
+  replayWhatIfBranchingEnabled: { kind: 'settings', tab: 'aiTeams', section: 'ai.settings' },
+  replayDeveloperDiagnosticsEnabled: { kind: 'settings', tab: 'aiTeams', section: 'ai.settings' },
+  replayAutoOpenAtMatchEnd: { kind: 'settings', tab: 'aiTeams', section: 'ai.settings' },
+  replayDetailLevel: { kind: 'settings', tab: 'aiTeams', section: 'ai.settings' },
+  playerIntentOnboardingEnabled: { kind: 'layer', layer: 'intelligence', anchor: '#v9-intel-learn' },
+  playerIntentExplainRoutineActions: { kind: 'layer', layer: 'intelligence', anchor: '#v9-control-heading' },
+  playerIntentExplainMode: { kind: 'layer', layer: 'intelligence', anchor: '#v9-control-heading' },
+  guidedLearning: { kind: 'layer', layer: 'intelligence', anchor: '#v9-intel-learn' },
+  nationalSystemsEnabled: { kind: 'settings', tab: 'gameplay', section: 'gameplay.matchVariety' },
+  industriesEnabled: { kind: 'settings', tab: 'gameplay', section: 'gameplay.matchVariety' },
+  infraNetworksEnabled: { kind: 'settings', tab: 'gameplay', section: 'gameplay.matchVariety' },
+  megaprojectsEnabled: { kind: 'settings', tab: 'gameplay', section: 'gameplay.matchVariety' },
+  nationalDevelopmentEnabled: { kind: 'settings', tab: 'gameplay', section: 'gameplay.matchVariety' },
+  innovationEnabled: { kind: 'settings', tab: 'gameplay', section: 'gameplay.matchVariety' },
+  systemicRiskEnabled: { kind: 'settings', tab: 'gameplay', section: 'gameplay.matchVariety' },
+  nationalPrioritiesEnabled: { kind: 'settings', tab: 'gameplay', section: 'gameplay.matchVariety' },
+  economicGeographyEnabled: { kind: 'settings', tab: 'gameplay', section: 'gameplay.matchVariety' },
+  workforceHumanCapitalEnabled: { kind: 'settings', tab: 'gameplay', section: 'gameplay.matchVariety' },
+  stateCapacityEnabled: { kind: 'settings', tab: 'gameplay', section: 'gameplay.matchVariety' },
+  publicFinanceEnabled: { kind: 'settings', tab: 'gameplay', section: 'gameplay.matchVariety' },
+  householdsEnabled: { kind: 'settings', tab: 'gameplay', section: 'gameplay.matchVariety' },
+  teamIntelligenceOsEnabled: { kind: 'layer', layer: 'lab', anchor: '[data-testid="team-os-inspector"]' },
+  teamOsAuthorityLevel: { kind: 'layer', layer: 'lab', anchor: '[data-testid="team-os-inspector"]' },
+  teamOsEnemyEnabled: { kind: 'layer', layer: 'lab', anchor: '[data-testid="team-os-inspector"]' },
+  teamOsFullInspectionEnabled: { kind: 'layer', layer: 'lab', anchor: '[data-testid="team-os-inspector"]' }
+};
+/** Settings with no control of their own (map §11.3): 'no-control' (presets, imports and saves only), 'reset-only' (only a reset button touches it) or 'internal' (state, not a choice). */
+export const V110_SETTING_VERDICTS: Readonly<Record<string, 'no-control' | 'reset-only' | 'internal'>> = {
+  rescueSettings: 'reset-only',
+  rememberCategoryNavigationMode: 'no-control',
+  autoCollapseCategoriesOnNarrow: 'no-control',
+  aiSabotagePriority: 'no-control',
+  aiInvestmentPriority: 'no-control',
+  aiEquipmentPurchasePriority: 'no-control',
+  aiInfrastructurePriority: 'no-control',
+  aiCrisisMitigationPriority: 'no-control',
+  v93ContentThemes: 'no-control',
+  v93RecentRare: 'internal',
+  aiDifficulty: 'internal',
+  aiFairnessLevel: 'no-control',
+  aiPersonalityVariance: 'no-control',
+  aiPlanningDepth: 'no-control',
+  aiEngineVersion: 'no-control',
+  aiGrandTourPriority: 'no-control',
+  aiMarketModifierAwareness: 'no-control',
+  aiSpecialAbilityPriority: 'no-control',
+  aiEconomyInteractionWeight: 'no-control',
+  aiNegotiationParticipationWeight: 'reset-only',
+  aiNegotiationValuationWeight: 'reset-only',
+  teammatePerformanceSyncStrength: 'no-control',
+  aiEffectivenessBlunderThresholdRoi: 'no-control',
+  aiEconomicCheats: 'no-control',
+  strategyPlannerSettings: 'no-control',
+  guardianFloatingPosition: 'no-control',
+  teamTreasuryAllowAiFundingRequests: 'reset-only',
+  teamAiOverseerDashboardEnabled: 'reset-only',
+  teamGovernanceMode: 'no-control',
+  overseerAutoResolveThreshold: 'no-control',
+  planSwitchingCost: 'no-control',
+  aiTacticalIntelligence: 'no-control',
+  teamAiTacticalLookaheadDepth: 'no-control',
+  teamAiCandidateEvaluationWidth: 'no-control',
+  defaultPenaltyMultiplier: 'no-control',
+  loanTierUnlockSpeedMultiplier: 'no-control',
+  decisionTransparencySamplingDensity: 'no-control',
+  decisionTransparencyPanelDensity: 'no-control',
+  gameActivityLedgerPreserveBookmarks: 'no-control',
+  gameActivityLedgerPreserveRootCausal: 'no-control',
+  randomnessMode: 'no-control',
+  allowStrategyChanges: 'no-control',
+  allowEconomyChanges: 'no-control',
+  allowActionManagementChanges: 'no-control',
+  smartSettingsProfile: 'internal',
+  autoModeDiagnosticsDrawerOpen: 'internal',
+  deferredTransactions: 'internal',
+  infrastructureEnabled: 'no-control',
+  aiRegionalContractPriority: 'no-control',
+  expeditionModeEnabled: 'no-control',
+  survivalMechanicsEnabled: 'no-control',
+  dailySupplyConsumptionRate: 'no-control',
+  forcedRetreatEnabled: 'no-control',
+  aiRelicEquipPriority: 'no-control',
+  playerIntentOnboardingDismissed: 'internal',
+  deterministicRngActive: 'internal'
+};
+/** Settings whose control appears only when another switch is on (map §7 "shown when … on"): the result says which switch to turn on first. */
+export const V110_SETTING_PARENTS: Readonly<Record<string, readonly string[]>> = {
+  creditScoreEnabled: ['advancedLoansEnabled'],
+  loanEventsEnabled: ['advancedLoansEnabled'],
+  earlyRepaymentEnabled: ['advancedLoansEnabled'],
+  interestAccrualRate: ['advancedLoansEnabled'],
+  maxSimultaneousLoans: ['advancedLoansEnabled'],
+  advancedLoansAccessMode: ['advancedLoansEnabled'],
+  aiLoanRiskWeight: ['advancedLoansEnabled'],
+  aiLoanRepaymentPriority: ['advancedLoansEnabled'],
+  aiLoanRefinancingWeight: ['advancedLoansEnabled'],
+  aiLoanEmergencyOnly: ['advancedLoansEnabled'],
+  regionalStandingDecayRate: ['regionalStandingEnabled'],
+  aiStandingWeight: ['regionalStandingEnabled'],
+  aiStandingPriority: ['regionalStandingEnabled'],
+  territoryEquipmentGateEnabled: ['externalTerritoriesEnabled'],
+  multiTurnJourneyEnabled: ['externalTerritoriesEnabled'],
+  territoryTravelMode: ['externalTerritoriesEnabled'],
+  negotiationOptions: ['negotiationMode'],
+  aiWinConditionSpendingStrength: ['aiWinConditionSpendingEnabled'],
+  aiRegionRushIntensity: ['aiRegionsMajorityRushEnabled'],
+  playerTeammateAiPreset: ['aiStrategyLabEnabled', 'aiStrategyLabSeparateProfilesEnabled'],
+  opponentAiPreset: ['aiStrategyLabEnabled', 'aiStrategyLabSeparateProfilesEnabled'],
+  teamAiActionOverridesEnabled: ['teamCompetitiveAiEnabled'],
+  teamAiOverridePolicy: ['teamCompetitiveAiEnabled', 'teamAiActionOverridesEnabled'],
+  friendlyAiOverridePolicy: ['teamCompetitiveAiEnabled', 'teamAiActionOverridesEnabled'],
+  teamAiOverrideMaxPerActorPerDay: ['teamCompetitiveAiEnabled', 'teamAiActionOverridesEnabled'],
+  teamAiOverrideMaxPerTeamPerDay: ['teamCompetitiveAiEnabled', 'teamAiActionOverridesEnabled'],
+  teamAiOverrideBaseCostMultiplier: ['teamCompetitiveAiEnabled', 'teamAiActionOverridesEnabled'],
+  teamAiOverrideMinimumDecisionScore: ['teamCompetitiveAiEnabled', 'teamAiActionOverridesEnabled'],
+  teamAiOverrideMinimumCashReserve: ['teamCompetitiveAiEnabled', 'teamAiActionOverridesEnabled'],
+  teamActionBankEnabled: ['teamCompetitiveAiEnabled'],
+  teamActionBankBonusActionsPerDay: ['teamCompetitiveAiEnabled', 'teamActionBankEnabled'],
+  teamActionBankDistributionMode: ['teamCompetitiveAiEnabled', 'teamActionBankEnabled'],
+  teamActionBankReserveActions: ['teamCompetitiveAiEnabled', 'teamActionBankEnabled'],
+  teamActionBankMaxDrawsPerActorPerDay: ['teamCompetitiveAiEnabled', 'teamActionBankEnabled'],
+  teamActionBankTransparencyEnabled: ['teamCompetitiveAiEnabled', 'teamActionBankEnabled'],
+  teamAiActionLendingEnabled: ['teamCompetitiveAiEnabled'],
+  teamAiMaxLentActionsPerActorPerDay: ['teamCompetitiveAiEnabled', 'teamAiActionLendingEnabled'],
+  teamAiMaxReceivedActionsPerActorPerDay: ['teamCompetitiveAiEnabled', 'teamAiActionLendingEnabled'],
+  teamAiActionLendingMinimumValueGain: ['teamCompetitiveAiEnabled', 'teamAiActionLendingEnabled'],
+  teamAiActionLendingRequiresCommittedPlan: ['teamCompetitiveAiEnabled', 'teamAiActionLendingEnabled'],
+  teamAiActionLendingTransparencyEnabled: ['teamCompetitiveAiEnabled', 'teamAiActionLendingEnabled'],
+  teamAiPlanCommitmentEnabled: ['teamCompetitiveAiEnabled'],
+  teamAiPlanCommitmentStrength: ['teamCompetitiveAiEnabled', 'teamAiPlanCommitmentEnabled'],
+  teamAiPlanMaximumDurationDays: ['teamCompetitiveAiEnabled', 'teamAiPlanCommitmentEnabled'],
+  teamAiPlanReevaluationFrequency: ['teamCompetitiveAiEnabled', 'teamAiPlanCommitmentEnabled'],
+  teamAiPlanInterruptionSensitivity: ['teamCompetitiveAiEnabled', 'teamAiPlanCommitmentEnabled'],
+  teamAiPlanTransparencyEnabled: ['teamCompetitiveAiEnabled', 'teamAiPlanCommitmentEnabled'],
+  teamAiReservationStrictness: ['teamCompetitiveAiEnabled'],
+  friendlyAiRespectPlayerReservations: ['teamCompetitiveAiEnabled'],
+  friendlyAiMayRequestReservedResource: ['teamCompetitiveAiEnabled'],
+  teamAiReservationTransparencyEnabled: ['teamCompetitiveAiEnabled'],
+  teamAiThreatTargetingEnabled: ['teamCompetitiveAiEnabled'],
+  teamAiThreatTargetingStrength: ['teamCompetitiveAiEnabled', 'teamAiThreatTargetingEnabled'],
+  teamAiThreatReevaluationFrequency: ['teamCompetitiveAiEnabled', 'teamAiThreatTargetingEnabled'],
+  teamAiThreatFocusDuration: ['teamCompetitiveAiEnabled', 'teamAiThreatTargetingEnabled'],
+  teamAiMayTargetFriendlyAiTeammate: ['teamCompetitiveAiEnabled', 'teamAiThreatTargetingEnabled'],
+  teamAiThreatTargetingTransparencyEnabled: ['teamCompetitiveAiEnabled', 'teamAiThreatTargetingEnabled'],
+  teamAiEndgameAccelerationEnabled: ['teamCompetitiveAiEnabled'],
+  teamAiEndgameStartPercent: ['teamCompetitiveAiEnabled', 'teamAiEndgameAccelerationEnabled'],
+  teamAiEndgameAggressionMultiplier: ['teamCompetitiveAiEnabled', 'teamAiEndgameAccelerationEnabled'],
+  teamAiEndgameOverrideBias: ['teamCompetitiveAiEnabled', 'teamAiEndgameAccelerationEnabled'],
+  teamAiEndgameCashConversionStrength: ['teamCompetitiveAiEnabled', 'teamAiEndgameAccelerationEnabled'],
+  teamAiEndgameAccelerationTransparencyEnabled: ['teamCompetitiveAiEnabled', 'teamAiEndgameAccelerationEnabled'],
+  teamAiEmergencyActionsEnabled: ['teamCompetitiveAiEnabled'],
+  teamAiEmergencyActionCooldownDays: ['teamCompetitiveAiEnabled', 'teamAiEmergencyActionsEnabled'],
+  teamAiEmergencyActionsPerGame: ['teamCompetitiveAiEnabled', 'teamAiEmergencyActionsEnabled'],
+  teamAiEmergencyActionStrength: ['teamCompetitiveAiEnabled', 'teamAiEmergencyActionsEnabled'],
+  teamAiEmergencyActionsForFriendlyTeam: ['teamCompetitiveAiEnabled', 'teamAiEmergencyActionsEnabled'],
+  teamAiEmergencyActionsForEnemyTeam: ['teamCompetitiveAiEnabled', 'teamAiEmergencyActionsEnabled'],
+  teamAiEmergencyActionsTransparencyEnabled: ['teamCompetitiveAiEnabled', 'teamAiEmergencyActionsEnabled'],
+  teamInitiativeEnabled: ['teamCompetitiveAiEnabled'],
+  teamInitiativeMaximum: ['teamCompetitiveAiEnabled', 'teamInitiativeEnabled'],
+  teamInitiativeGainMultiplier: ['teamCompetitiveAiEnabled', 'teamInitiativeEnabled'],
+  teamInitiativeDecayEnabled: ['teamCompetitiveAiEnabled', 'teamInitiativeEnabled'],
+  teamInitiativeVisibleToPlayer: ['teamCompetitiveAiEnabled', 'teamInitiativeEnabled'],
+  teamInitiativeTransparencyEnabled: ['teamCompetitiveAiEnabled', 'teamInitiativeEnabled'],
+  teamComboBonusesEnabled: ['teamCompetitiveAiEnabled'],
+  teamComboBonusStrength: ['teamCompetitiveAiEnabled', 'teamComboBonusesEnabled'],
+  teamComboWindowActions: ['teamCompetitiveAiEnabled', 'teamComboBonusesEnabled'],
+  teamComboBonusesTransparencyEnabled: ['teamCompetitiveAiEnabled', 'teamComboBonusesEnabled'],
+  teamCashVaultEnabled: ['teamCompetitiveAiEnabled'],
+  automaticCashLockingEnabled: ['teamCompetitiveAiEnabled', 'teamCashVaultEnabled'],
+  vaultProtectionMode: ['teamCompetitiveAiEnabled', 'teamCashVaultEnabled'],
+  vaultLockPercentage: ['teamCompetitiveAiEnabled', 'teamCashVaultEnabled'],
+  vaultMilestoneSizeMultiplier: ['teamCompetitiveAiEnabled', 'teamCashVaultEnabled'],
+  vaultMinimumWorkingCash: ['teamCompetitiveAiEnabled', 'teamCashVaultEnabled'],
+  vaultCountProtectedCashTowardVictory: ['teamCompetitiveAiEnabled', 'teamCashVaultEnabled'],
+  vaultTransparencyEnabled: ['teamCompetitiveAiEnabled', 'teamCashVaultEnabled'],
+  teammatePerformanceSync2Enabled: ['teamCompetitiveAiEnabled'],
+  teammatePerformanceSync2Strength: ['teamCompetitiveAiEnabled', 'teammatePerformanceSync2Enabled'],
+  teammatePerformanceSync2StrategyLearningEnabled: ['teamCompetitiveAiEnabled', 'teammatePerformanceSync2Enabled'],
+  teammatePerformanceSync2ChallengeExpertiseEnabled: ['teamCompetitiveAiEnabled', 'teammatePerformanceSync2Enabled'],
+  teammatePerformanceSync2ChallengeExpertiseMaxBonus: ['teamCompetitiveAiEnabled', 'teammatePerformanceSync2Enabled', 'teammatePerformanceSync2ChallengeExpertiseEnabled'],
+  guaranteedRecoveryProtocolEnabled: ['teamCompetitiveAiEnabled', 'teammatePerformanceSync2Enabled'],
+  guaranteedRecoveryMinimumChallengeProbability: ['teamCompetitiveAiEnabled', 'teammatePerformanceSync2Enabled', 'guaranteedRecoveryProtocolEnabled'],
+  teammatePerformanceSync2TransparencyEnabled: ['teamCompetitiveAiEnabled', 'teammatePerformanceSync2Enabled'],
+  teammatePerformanceSyncAssistScope: ['teamCompetitiveAiEnabled', 'teammatePerformanceSync2Enabled'],
+  teammatePerformanceSyncMomentumEnabled: ['teamCompetitiveAiEnabled', 'teammatePerformanceSync2Enabled'],
+  teammatePerformanceSyncExpertiseDecayEnabled: ['teamCompetitiveAiEnabled', 'teammatePerformanceSync2Enabled'],
+  teammatePerformanceSyncExpertiseDecayRate: ['teamCompetitiveAiEnabled', 'teammatePerformanceSync2Enabled', 'teammatePerformanceSyncExpertiseDecayEnabled'],
+  parallelAiPlanningEnabled: ['teamCompetitiveAiEnabled'],
+  parallelAiPlanningCoordinationStrictness: ['teamCompetitiveAiEnabled', 'parallelAiPlanningEnabled'],
+  parallelAiPlanningSabotageCoordinationEnabled: ['teamCompetitiveAiEnabled', 'parallelAiPlanningEnabled'],
+  parallelAiPlanningTransparencyEnabled: ['teamCompetitiveAiEnabled', 'parallelAiPlanningEnabled'],
+  teamAiActionSequencesEnabled: ['teamCompetitiveAiEnabled'],
+  teamAiActionSequencesTransparencyEnabled: ['teamCompetitiveAiEnabled', 'teamAiActionSequencesEnabled'],
+  teamAiSequenceInterruptsEnabled: ['teamCompetitiveAiEnabled', 'teamAiActionSequencesEnabled'],
+  teamAiPhaseSequenceSwitchingEnabled: ['teamCompetitiveAiEnabled', 'teamAiActionSequencesEnabled'],
+  aiAlgorithmBuilderDefaultEditorMode: ['aiAlgorithmBuilderEnabled'],
+  adaptiveAiPatternLearning: ['adaptiveAiEnabled'],
+  adaptiveAiRubberBanding: ['adaptiveAiEnabled'],
+  adaptiveAiTauntsEnabled: ['adaptiveAiEnabled'],
+  adaptiveAiAggressionMultiplier: ['adaptiveAiEnabled'],
+  enablePersistentOpponentModels: ['adaptiveAiEnabled'],
+  enableAiCalibrationLearning: ['adaptiveAiEnabled'],
+  opponentModelDecayRate: ['adaptiveAiEnabled', 'enablePersistentOpponentModels'],
+  opponentModelWeight: ['adaptiveAiEnabled', 'enablePersistentOpponentModels'],
+  opponentThreatWeightsEnabled: ['adaptiveAiEnabled'],
+  rivalDossierPanelEnabled: ['adaptiveAiEnabled'],
+  adaptiveAiPatternMemoryStrength: ['adaptiveAiEnabled'],
+  adaptiveAiRubberBandingStrength: ['adaptiveAiEnabled'],
+  adaptiveAiConsecutiveDays: ['adaptiveAiEnabled'],
+  adaptiveAiAffectedModes: ['adaptiveAiEnabled'],
+  adaptiveAiTeamComebackStrength: ['adaptiveAiEnabled'],
+  adaptiveAiTriggerSensitivity: ['adaptiveAiEnabled'],
+  adaptiveAiSupportFocus: ['adaptiveAiEnabled'],
+  adaptiveAiRiskBias: ['adaptiveAiEnabled'],
+  adaptiveAiEconomyRecoveryBias: ['adaptiveAiEnabled'],
+  adaptiveAiDisruptionBias: ['adaptiveAiEnabled'],
+  adaptiveAiShowDecisionTransparency: ['adaptiveAiEnabled'],
+  adaptiveAiShowActiveModifiers: ['adaptiveAiEnabled'],
+  projectedOutcomeHorizon: ['projectedOutcomeEnabled'],
+  projectedOutcomeMode: ['projectedOutcomeEnabled'],
+  aiActionApprovalEnabled: ['teamCompetitiveAiEnabled'],
+  aiActionApprovalMode: ['teamCompetitiveAiEnabled', 'aiActionApprovalEnabled'],
+  aiActionApprovalSelectedTypes: ['teamCompetitiveAiEnabled', 'aiActionApprovalEnabled'],
+  aiActionApprovalHighRiskThresholds: ['teamCompetitiveAiEnabled', 'aiActionApprovalEnabled'],
+  aiActionApprovalTeammateOverrides: ['teamCompetitiveAiEnabled', 'aiActionApprovalEnabled'],
+  aiActionApprovalRejectionOutcome: ['teamCompetitiveAiEnabled', 'aiActionApprovalEnabled'],
+  aiActionApprovalTransparencyEnabled: ['teamCompetitiveAiEnabled', 'aiActionApprovalEnabled'],
+  aiActionApprovalAutoRulesEnabled: ['teamCompetitiveAiEnabled', 'aiActionApprovalEnabled'],
+  aiActionApprovalAutoRules: ['teamCompetitiveAiEnabled', 'aiActionApprovalEnabled', 'aiActionApprovalAutoRulesEnabled'],
+  actionRequirementsEnabled: ['teamCompetitiveAiEnabled'],
+  actionRequirementGroups: ['teamCompetitiveAiEnabled', 'actionRequirementsEnabled'],
+  actionRequirementsTransparencyEnabled: ['teamCompetitiveAiEnabled', 'actionRequirementsEnabled'],
+  humanAutomationTransparencyEnabled: ['humanAutomationEnabled'],
+  automationSequenceLaunchEnabled: ['humanAutomationEnabled'],
+  automationSlotProgressionEnabled: ['humanAutomationEnabled'],
+  automationRunHistoryEnabled: ['humanAutomationEnabled'],
+  automationExtendedTriggersEnabled: ['humanAutomationEnabled'],
+  automationExtendedActionsEnabled: ['humanAutomationEnabled'],
+  automationConflictWarningsEnabled: ['humanAutomationEnabled'],
+  automationDailyDigestEnabled: ['humanAutomationEnabled'],
+  automationImportExportEnabled: ['humanAutomationEnabled'],
+  teamEconomyGovernorEnabled: ['teamCompetitiveAiEnabled'],
+  economyCashFloor: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled'],
+  economyRecoveryTarget: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled'],
+  economyMinimumChallengeProbability: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled'],
+  economyRecoverySpendingCap: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled'],
+  economyReserveStrength: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled'],
+  economyEndgameCashConversionEnabled: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled'],
+  economySpendingApprovalStrictness: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled'],
+  economyGovernorTransparencyEnabled: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled'],
+  teamAiGovernorRestrictionDetectionEnabled: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled'],
+  teamAiGovernorRestrictionTransparencyEnabled: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled'],
+  teamAiProductiveRecoveryLadderEnabled: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled'],
+  teamAiGovernorAutomaticExceptionsEnabled: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled', 'teamAiProductiveRecoveryLadderEnabled'],
+  teamAiGovernorExceptionConsecutiveTurnsThreshold: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled', 'teamAiProductiveRecoveryLadderEnabled', 'teamAiGovernorAutomaticExceptionsEnabled'],
+  teamAiGovernorExceptionMaxReserveBreach: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled', 'teamAiProductiveRecoveryLadderEnabled', 'teamAiGovernorAutomaticExceptionsEnabled'],
+  teamAiGovernorExceptionMinProbability: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled', 'teamAiProductiveRecoveryLadderEnabled', 'teamAiGovernorAutomaticExceptionsEnabled'],
+  teamAiGovernorExceptionMinEvRatio: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled', 'teamAiProductiveRecoveryLadderEnabled', 'teamAiGovernorAutomaticExceptionsEnabled'],
+  teamAiGovernorExceptionMaxCost: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled', 'teamAiProductiveRecoveryLadderEnabled', 'teamAiGovernorAutomaticExceptionsEnabled'],
+  governorCategoryPolicy: ['teamCompetitiveAiEnabled', 'teamEconomyGovernorEnabled'],
+  teamTreasuryEnabled: ['teamCompetitiveAiEnabled'],
+  teamTreasuryEnabledForFriendlyTeam: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryEnabledForEnemyTeam: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryShowInUi: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryShowTransactions: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryAllowManualContributions: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryAllowProtectedCashContribution: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamAiTreasuryContributionEnabled: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  treasuryAutomaticContributionEnabled: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  treasuryAutomaticContributionPolicy: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryMaxAutoContributionPerActorPerDay: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryMinPersonalCashRemaining: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryMinContributionAmount: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryContributionCooldownDays: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryDisableContributionDuringRecovery: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryReserve: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryDynamicReserveEnabled: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryAllowHumanFundingRequests: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryAllowRequestsAtZeroCash: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryEmergencyOperatingTarget: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryMaxWithdrawalPerRequest: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryMaxWithdrawalPerActorPerDay: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryRequireApprovalForFriendlyAiWithdrawals: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryAllowPartialApproval: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryRequireIntendedAction: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryReturnUnusedRestrictedFunds: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamTreasuryRequestCooldownDays: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamAiTreasuryRequestsEnabled: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  countTeamTreasuryTowardVictory: ['teamCompetitiveAiEnabled', 'teamTreasuryEnabled'],
+  teamAiOverseerSystemEnabled: ['teamCompetitiveAiEnabled'],
+  teamAiStrategicCommandEnabled: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled'],
+  teamAiStrategicCommandAuthorityMode: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled'],
+  teamAiStrategicCommandDirectiveDurationDays: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled'],
+  teamAiStrategicCommandDirectiveScoreBias: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled'],
+  teamAiStrategicCommandMaxSpendingPercent: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled'],
+  teamAiStrategicCommandTreasuryAllocationCap: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled'],
+  teamAiStrategicCommandOverrideBias: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled'],
+  teamAiStrategicCommandEnabledForFriendlyTeam: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled'],
+  teamAiStrategicCommandEnabledForEnemyTeam: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled'],
+  teamAiStrategicCommandInterventionsEnabled: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled'],
+  teamAiAdaptiveOverseerEnabled: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled'],
+  teamAiAdaptiveOverseerAuthorityMode: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiAdaptiveOverseerEnabled'],
+  teamAiOverseerShowStatusCard: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled'],
+  teamAiOverseerTransparencyEnabled: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled'],
+  teamAiSafeModeEnabled: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled'],
+  teamAiSafeModeRestrictedActorThreshold: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiSafeModeEnabled'],
+  teamAiStrategicCommandPersonality: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled'],
+  teamAiAdaptiveOverseerPersonality: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiAdaptiveOverseerEnabled'],
+  teamAiAdaptiveOverseerComebackEnterPercent: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiAdaptiveOverseerEnabled'],
+  teamAiAdaptiveOverseerComebackExitPercent: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiAdaptiveOverseerEnabled'],
+  teamAiAdaptiveOverseerProtectLeadEnterPercent: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiAdaptiveOverseerEnabled'],
+  teamAiAdaptiveOverseerProtectLeadExitPercent: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiAdaptiveOverseerEnabled'],
+  teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiAdaptiveOverseerEnabled'],
+  teamAiAdaptiveOverseerMinimumStrategyDurationDays: ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'teamAiAdaptiveOverseerEnabled'],
+  humanGovernanceVetoEnabled: ['governanceControlSurfaceEnabled'],
+  teamGovernanceModeOverrides: ['governanceControlSurfaceEnabled'],
+  governanceWeightSettings: ['governanceControlSurfaceEnabled'],
+  governanceLeaderVoteWeight: ['governanceControlSurfaceEnabled'],
+  governanceMemberVoteWeight: ['governanceControlSurfaceEnabled'],
+  governanceVoteThreshold: ['governanceControlSurfaceEnabled'],
+  governanceConsensusThreshold: ['governanceControlSurfaceEnabled'],
+  governanceVetoUsesPerMatch: ['governanceControlSurfaceEnabled'],
+  teamAiAuditorSystemEnabled: ['teamCompetitiveAiEnabled'],
+  teamAiAuditorModeForFriendlyTeam: ['teamCompetitiveAiEnabled', 'teamAiAuditorSystemEnabled'],
+  teamAiAuditorModeForEnemyTeam: ['teamCompetitiveAiEnabled', 'teamAiAuditorSystemEnabled'],
+  teamAiAuditorShowStatusCard: ['teamCompetitiveAiEnabled', 'teamAiAuditorSystemEnabled'],
+  teamAiAuditorDashboardEnabled: ['teamCompetitiveAiEnabled', 'teamAiAuditorSystemEnabled'],
+  teamAiAuditorAutomaticRecoveryMinConfidence: ['teamCompetitiveAiEnabled', 'teamAiAuditorSystemEnabled'],
+  teamAiAuditorAutomaticRecoveryMaxPerDay: ['teamCompetitiveAiEnabled', 'teamAiAuditorSystemEnabled'],
+  teamAiAuditorSafeModeEnabled: ['teamCompetitiveAiEnabled', 'teamAiAuditorSystemEnabled'],
+  teamAiAuditorSafeModeEscalatedIncidentThreshold: ['teamCompetitiveAiEnabled', 'teamAiAuditorSystemEnabled', 'teamAiAuditorSafeModeEnabled'],
+  decisionTransparencyVisibilityScope: ['decisionTransparencyEnabled'],
+  decisionTransparencyViewMode: ['decisionTransparencyEnabled'],
+  decisionTransparencyMaxHistoryRetained: ['decisionTransparencyEnabled'],
+  decisionTransparencyDetailLevel: ['decisionTransparencyEnabled'],
+  decisionTransparencyExplanationDepth: ['decisionTransparencyEnabled'],
+  decisionTransparencyTimelineLength: ['decisionTransparencyEnabled'],
+  decisionTransparencyDefaultGroupView: ['decisionTransparencyEnabled'],
+  decisionTransparencyMaxVisibleAiCards: ['decisionTransparencyEnabled'],
+  decisionTransparencyPerAiTimelineDensity: ['decisionTransparencyEnabled'],
+  decisionTransparencyPerAiTimelineLength: ['decisionTransparencyEnabled'],
+  gameActivityLedgerDetailLevel: ['gameActivityLedgerEnabled'],
+  gameActivityLedgerIncludeInSaveFile: ['gameActivityLedgerEnabled'],
+  gameActivityLedgerMaxEvents: ['gameActivityLedgerEnabled'],
+  gameActivityLedgerRetentionPolicy: ['gameActivityLedgerEnabled'],
+  gameActivityLedgerRecordingPaused: ['gameActivityLedgerEnabled'],
+  opponentGenomeId: ['aiTuningLabUiEnabled']
+};
+/** The 48 LAB cards (map §3) with the titles the LAB shows. */
+export const V110_LAB_CARDS: ReadonlyArray<{ id: string; title: string; group: string }> = [
+  { id: "ai_difficulty", title: "AI Difficulty & Engine", group: "ai_engine" },
+  { id: "ai_algorithms", title: "AI Thinking & Algorithms", group: "ai_engine" },
+  { id: "ai_builder", title: "AI Algorithm Builder", group: "ai_engine" },
+  { id: "ai_strategy_lab", title: "AI Strategy Lab & Tuning Sliders", group: "ai_engine" },
+  { id: "ai_adaptive", title: "Adaptive AI & Determinism", group: "ai_engine" },
+  { id: "team_brain", title: "Team Brain", group: "team" },
+  { id: "team_strategic_command", title: "Strategic Command & Overseer", group: "team" },
+  { id: "team_governor", title: "Economy Governor", group: "team" },
+  { id: "team_treasury", title: "Team Treasury", group: "team" },
+  { id: "team_governance", title: "Team Governance", group: "team" },
+  { id: "team_auditor", title: "AI Operations Auditor", group: "team" },
+  { id: "team_sequences", title: "Teammate Action Sequences", group: "team" },
+  { id: "team_plans", title: "Team Plans", group: "team" },
+  { id: "copilot_advanced", title: "Co-Pilot Advanced Permissions", group: "assistants" },
+  { id: "ai_assistant_surfaces", title: "Assistant Surfaces", group: "assistants" },
+  { id: "ai_communication", title: "AI Communication", group: "assistants" },
+  { id: "auto_mode", title: "Auto Mode", group: "automation" },
+  { id: "auto_mode_advanced", title: "Auto Mode Policies & Limits", group: "automation" },
+  { id: "action_approval", title: "AI Action Approval", group: "automation" },
+  { id: "action_requirements", title: "Action Requirements", group: "automation" },
+  { id: "rules_core", title: "Core Gameplay", group: "rules" },
+  { id: "rules_action_limits", title: "Action Limits & Action Points", group: "rules" },
+  { id: "rules_priority", title: "Priority Resolution", group: "rules" },
+  { id: "memory_ai", title: "AI Memory", group: "memory" },
+  { id: "memory_persistent", title: "Persistent AI Memory", group: "memory" },
+  { id: "replay_settings", title: "Replay & Analytics", group: "replay_diag" },
+  { id: "ledger_settings", title: "Ledger Configuration", group: "replay_diag" },
+  { id: "decision_transparency", title: "Decision Transparency", group: "replay_diag" },
+  { id: "diag2", title: "DIAG-2 Overlay & Telemetry", group: "replay_diag" },
+  { id: "settings_home", title: "Full Settings Hub", group: "settings" },
+  { id: "settings_quick", title: "Quick Setup & Presets", group: "settings" },
+  { id: "settings_interface", title: "Interface & Accessibility", group: "settings" },
+  { id: "settings_mechanics", title: "Mechanics Directory", group: "settings" },
+  { id: "ai_command_center", title: "AI Command Center", group: "ai_engine" },
+  { id: "team_overseer_dashboard", title: "Overseer Dashboard", group: "team" },
+  { id: "team_auditor_dashboard", title: "Auditor Dashboard", group: "team" },
+  { id: "guardian_center", title: "Guardian AI Center", group: "assistants" },
+  { id: "copilot_console", title: "Co-Pilot Console", group: "assistants" },
+  { id: "human_automation", title: "Human Player Automation", group: "automation" },
+  { id: "live_control_center", title: "Live Control Center", group: "automation" },
+  { id: "rules_determinism", title: "Determinism Audit", group: "rules" },
+  { id: "rules_whatif", title: "What-If Timelines", group: "rules" },
+  { id: "rules_balance", title: "Balance Sandbox", group: "rules" },
+  { id: "ledger_dashboard", title: "Game Activity Ledger", group: "replay_diag" },
+  { id: "auto_mode_diagnostics", title: "Diagnostics Drawer", group: "replay_diag" },
+  { id: "save_migration", title: "Save Migration", group: "replay_diag" },
+  { id: "ai_tuning_lab", title: "AI Tuning Lab", group: "ai_engine" },
+  { id: "ai_pipeline", title: "AI Action Pipeline Inspector", group: "ai_engine" }
+];
+/** The 29 settings the settings hub's own search cannot find (map §11.5): Find Anything finds each by key and by label. */
+export const V110_SETTINGS_SEARCH_MISSES: readonly string[] = ["opponentGenomeId", "replaySmartCheckpointsEnabled", "replayTurningPointDetectionEnabled", "replayDeterministicValidationEnabled", "replayWhatIfBranchingEnabled", "replayDeveloperDiagnosticsEnabled", "replayAutoOpenAtMatchEnd", "replayDetailLevel", "playerIntentOnboardingEnabled", "playerIntentOnboardingDismissed", "guidedLearning", "industriesEnabled", "infraNetworksEnabled", "megaprojectsEnabled", "nationalDevelopmentEnabled", "innovationEnabled", "systemicRiskEnabled", "nationalPrioritiesEnabled", "economicGeographyEnabled", "workforceHumanCapitalEnabled", "stateCapacityEnabled", "publicFinanceEnabled", "householdsEnabled", "playerIntentExplainRoutineActions", "playerIntentExplainMode", "teamIntelligenceOsEnabled", "teamOsAuthorityLevel", "teamOsEnemyEnabled", "teamOsFullInspectionEnabled"];
+
+// ---- Actions and screens: each with the call its own button makes (map §4 and §5) ------------------------------------------------
+const v110Ui = (patch: Readonly<Record<string, boolean | string>>): V110FindRoute => ({ kind: 'ui', patch });
+const v110Call = (call: V110FindCall): V110FindRoute => ({ kind: 'call', call });
+const v110Intel = (anchor: string, ask?: string): V110FindRoute => (ask ? { kind: 'layer', layer: 'intelligence', anchor, ask } : { kind: 'layer', layer: 'intelligence', anchor });
+const V110_IN_MATCH: V110FindNeeds = { match: true };
+const v110OnYourTurn = (firstRunAction: string, extra: Omit<V110FindNeeds, 'match' | 'humanTurn' | 'firstRunAction'> = {}): V110FindNeeds => ({ match: true, humanTurn: true, firstRunAction, ...extra });
+/** A place whose route is "go to this setting's control" (the index fills the route in from the setting's own entry). */
+export const V110_FIND_PLACE_SETTING_ROUTES: Readonly<Record<string, string>> = {
+  'screen:floating_widget_dock': 'dockSettings',
+  'screen:unified_interface_launcher': 'launcherSettings',
+  'screen:ai_command_center_widget': 'aiCommandCenterUiEnabled',
+  'screen:guardian_floating_button': 'showGuardianFloatingButton',
+  'screen:notification_toasts': 'notificationClearShortcut',
+  'screen:day_transition_overlay': 'showDayTransition',
+  'screen:narrative_decision_modal': 'narrativeEngineEnabled',
+  'screen:approval_dialog': 'autoModeEnabled',
+  'screen:safe_area_overlay': 'safeAreaPreviewSettings',
+  'screen:diag2_overlay': 'diag2OverlayEnabled',
+  'shortcut:tab-trap': 'accessibilitySettings',
+};
+export const V110_FIND_PLACES: readonly V110FindPlace[] = [
+  // Play actions
+  { id: 'action:end_turn', kind: 'action', title: 'End turn', where: 'Play screen › End Turn (Space)', route: v110Call('endTurn'), keywords: 'end day next day finish done pass space', needs: v110OnYourTurn('endTurn') },
+  { id: 'action:save_game', kind: 'action', title: 'Save the match now', where: 'Ctrl/⌘+S (Save / Load has the slots)', route: v110Call('saveGame'), keywords: 'quick save store keep progress ctrl s', needs: V110_IN_MATCH },
+  { id: 'action:leave_match', kind: 'action', title: 'Leave match', where: 'More › 🚪 Leave match', route: v110Call('openLeaveMatch'), keywords: 'quit exit main menu stop give up', needs: V110_IN_MATCH, surfaceId: 'leave_match_dialog', note: 'It asks first: save and leave, leave, or stay.' },
+  { id: 'action:clear_notifications', kind: 'action', title: 'Clear notifications', where: 'Ctrl+Shift+C', route: v110Call('clearNotifications'), keywords: 'dismiss toasts messages alerts' },
+  { id: 'action:ui_rescue', kind: 'action', title: 'Rescue the screen (close stuck windows)', where: 'Shift+Escape', route: v110Call('uiRescue'), keywords: 'stuck frozen broken reset layout panic emergency unstick' },
+  { id: 'action:toggle_map', kind: 'action', title: 'Map (show or hide)', where: 'Play screen › Map (G)', route: v110Call('toggleMap'), keywords: 'map regions australia states g', needs: V110_IN_MATCH },
+  { id: 'action:text_size', kind: 'action', title: 'Text size', where: 'Settings › Interface & Accessibility › ♿ Accessibility (A− / A+)', route: { kind: 'settings', tab: 'interfaceAcc', section: 'interface.accessibility', field: 'v101-text-scale-label' }, keywords: 'text size font bigger larger smaller zoom scale readable accessibility settings text scale multiplier' },
+  { id: 'action:ask_drawer', kind: 'action', title: 'Ask the Game AI drawer', where: 'Floating ✨ Ask Game AI button', route: v110Call('openAskDrawer'), keywords: 'ask chat question assistant drawer conversation', needs: { on: ['askGameAiUiEnabled'] }, surfaceId: 'ask_game_ai' },
+  // The play screen
+  { id: 'screen:layer_play', kind: 'screen', title: 'PLAY', where: 'Header › PLAY tab', route: { kind: 'layer', layer: 'play' }, keywords: 'play board game screen main card', needs: V110_IN_MATCH, surfaceId: 'base_game' },
+  { id: 'screen:game_hud', kind: 'screen', title: 'Header and status bar', where: 'Top of the play screen', route: { kind: 'layer', layer: 'play' }, keywords: 'hud status cash day turn header', needs: V110_IN_MATCH, surfaceId: 'game_hud', note: 'Always at the top of the play screen.' },
+  { id: 'screen:quick_actions', kind: 'screen', title: 'Quick actions bar', where: 'Play screen, above the play card', route: { kind: 'layer', layer: 'play' }, keywords: 'quick bar chips shortcuts dock', needs: V110_IN_MATCH, surfaceId: 'quick_actions', note: '✕ hides it; a small handle brings it back.' },
+  { id: 'screen:quick_actions_reopen_handle', kind: 'screen', title: 'Bring back the quick actions bar', where: 'Play screen, after ✕ Hide quick actions', route: { kind: 'layer', layer: 'play' }, keywords: 'quick bar handle restore show', needs: V110_IN_MATCH, surfaceId: 'quick_actions_reopen_handle', note: 'The handle appears where the bar was.' },
+  { id: 'screen:quick_actions_customizer', kind: 'screen', title: 'Customize quick actions', where: 'Quick bar ⋯ › ⚙️ Customize', route: v110Ui({ showQuickActionsCustomizer: true }), keywords: 'quick bar order pin chips', needs: V110_IN_MATCH, surfaceId: 'quick_actions_customizer' },
+  { id: 'screen:notification_toasts', kind: 'screen', title: 'Notification toasts', where: 'Top right of the screen', route: { kind: 'none' }, keywords: 'toast popup message alert', surfaceId: 'notification_toasts', note: 'Toasts appear by themselves; History keeps every one.' },
+  { id: 'screen:notification_drawer', kind: 'screen', title: 'Notification history', where: 'More › 📜 History (H)', route: v110Ui({ showNotifications: true }), keywords: 'history log messages notifications alerts h', needs: V110_IN_MATCH, surfaceId: 'notification_drawer' },
+  { id: 'screen:intel_ask', kind: 'screen', title: 'Ask (Intelligence)', where: '🧠 INTELLIGENCE › Ask', route: v110Intel('#v9-intel-ask'), keywords: 'ask question game intelligence advice', needs: V110_IN_MATCH, surfaceId: 'intelligence_tabs' },
+  { id: 'screen:intel_learn', kind: 'screen', title: 'Learn (Intelligence)', where: '🧠 INTELLIGENCE › Learn', route: v110Intel('#v9-intel-learn'), keywords: 'learn tips guided learning tutorial lessons', needs: V110_IN_MATCH, surfaceId: 'intelligence_tabs' },
+  { id: 'screen:intel_situations', kind: 'screen', title: 'Situations (Intelligence)', where: '🧠 INTELLIGENCE › Situations', route: v110Intel('#v9-intel-situations'), keywords: 'situations events cards', needs: V110_IN_MATCH, surfaceId: 'intelligence_tabs' },
+  { id: 'screen:intel_strategy', kind: 'screen', title: 'Strategy (Intelligence)', where: '🧠 INTELLIGENCE › Strategy', route: v110Intel('#v9-intel-strategy'), keywords: 'strategy plan mission goal', needs: V110_IN_MATCH, surfaceId: 'intelligence_tabs' },
+  { id: 'screen:intel_situation', kind: 'screen', title: 'Situation (Intelligence)', where: '🧠 INTELLIGENCE › Situation', route: v110Intel('#v9-intel-situation'), keywords: 'situation overview summary standing', needs: V110_IN_MATCH, surfaceId: 'intelligence_tabs' },
+  { id: 'screen:intel_world', kind: 'screen', title: 'World (Intelligence)', where: '🧠 INTELLIGENCE › World', route: v110Intel('#v9-intel-world'), keywords: 'world regions momentum factions', needs: V110_IN_MATCH, surfaceId: 'intelligence_tabs' },
+  { id: 'screen:intel_team', kind: 'screen', title: 'Team (Intelligence)', where: '🧠 INTELLIGENCE › Team', route: v110Intel('#v9-intel-team', 'What is my teammate doing?'), keywords: 'team teammate allies', needs: V110_IN_MATCH, surfaceId: 'intelligence_tabs' },
+  { id: 'screen:intel_rivals', kind: 'screen', title: 'Rivals (Intelligence)', where: '🧠 INTELLIGENCE › Rivals', route: v110Intel('#v9-intel-rivals', 'What is the opponent threatening?'), keywords: 'rival opponent enemy threat', needs: V110_IN_MATCH, surfaceId: 'intelligence_tabs' },
+  { id: 'screen:intel_diplomacy', kind: 'screen', title: 'Diplomacy (Intelligence)', where: '🧠 INTELLIGENCE › Diplomacy', route: { kind: 'layer', layer: 'intelligence', ask: 'What agreements do I have?' }, keywords: 'diplomacy agreements deals treaties', needs: V110_IN_MATCH, surfaceId: 'intelligence_tabs' },
+  { id: 'screen:intel_whatif', kind: 'screen', title: 'What-If (Intelligence)', where: '🧠 INTELLIGENCE › What-If', route: { kind: 'layer', layer: 'intelligence', ask: 'What if I end my turn now?' }, keywords: 'what if simulate preview end turn', needs: V110_IN_MATCH, surfaceId: 'intelligence_tabs' },
+  { id: 'screen:layer_intelligence', kind: 'screen', title: 'INTELLIGENCE', where: 'Header › 🧠 INTELLIGENCE tab', route: { kind: 'layer', layer: 'intelligence' }, keywords: 'intelligence advice brain analysis', needs: V110_IN_MATCH },
+  { id: 'screen:layer_lab', kind: 'screen', title: 'LAB', where: 'Header › 🧪 LAB tab', route: { kind: 'layer', layer: 'lab' }, keywords: 'lab inspectors self tests technical deep configuration', needs: V110_IN_MATCH, surfaceId: 'lab_inspectors' },
+  { id: 'screen:intent_all_actions', kind: 'screen', title: 'All actions (play card)', where: 'Play card › View All Actions', route: v110Ui({ experienceLayer: 'play', showIntentAllActions: true }), keywords: 'all actions list every move options', needs: V110_IN_MATCH, surfaceId: 'intent_panels' },
+  { id: 'screen:intent_change_goal', kind: 'screen', title: 'Change goal', where: 'Play card › Change Goal', route: v110Ui({ experienceLayer: 'play', showIntentChangeGoal: true }), keywords: 'goal intent objective change', needs: V110_IN_MATCH, surfaceId: 'intent_panels' },
+  { id: 'screen:intent_goal_planner', kind: 'screen', title: 'Goal planner', where: 'Play card › Goal Planner', route: v110Ui({ experienceLayer: 'play', showIntentGoalPlanner: true }), keywords: 'goal planner plan steps', needs: V110_IN_MATCH, surfaceId: 'intent_panels' },
+  { id: 'screen:intent_path', kind: 'screen', title: 'Path to your goal', where: 'Play card › Path', route: v110Ui({ experienceLayer: 'play', showIntentPath: true }), keywords: 'path route steps goal', needs: V110_IN_MATCH, surfaceId: 'intent_panels' },
+  { id: 'screen:intent_why_these', kind: 'screen', title: 'Why these actions', where: 'Play card › Why these', route: v110Ui({ experienceLayer: 'play', showIntentWhyThese: true }), keywords: 'why explain reasons recommendation', needs: V110_IN_MATCH, surfaceId: 'intent_panels' },
+  // The six action windows and Loans (docked in UX-5)
+  { id: 'screen:travel_modal', kind: 'screen', title: 'Travel', where: 'Play screen › ✈️ Travel (T)', route: v110Ui({ showTravelModal: true }), keywords: 'travel fly move go region explore trip t', needs: v110OnYourTurn('travel'), surfaceId: 'travel_modal' },
+  { id: 'screen:challenges_modal', kind: 'screen', title: 'Challenges', where: 'Play screen › 🎯 Challenges (C)', route: v110Ui({ showChallenges: true }), keywords: 'challenges bet wager compete c', needs: v110OnYourTurn('challenges'), surfaceId: 'challenges_modal' },
+  { id: 'screen:market_modal', kind: 'screen', title: 'Market (sell)', where: 'Play screen › 💰 Market (R)', route: v110Ui({ showMarket: true }), keywords: 'market sell inventory resources trade r', needs: v110OnYourTurn('market'), surfaceId: 'market_modal' },
+  { id: 'screen:resource_market_modal', kind: 'screen', title: 'Resource Market (buy)', where: 'Play screen › 🛍️ Resource Market (M)', route: v110Ui({ showResourceMarket: true }), keywords: 'resource market buy purchase stock m', needs: v110OnYourTurn('resourceMarket'), surfaceId: 'resource_market_modal' },
+  { id: 'screen:workshop_modal', kind: 'screen', title: 'Workshop', where: 'Play screen › 🔨 Workshop (W)', route: v110Ui({ showWorkshop: true }), keywords: 'workshop craft crafting make build w', needs: v110OnYourTurn('workshop'), surfaceId: 'workshop_modal' },
+  { id: 'screen:shop_modal', kind: 'screen', title: 'Shop', where: 'Play screen › 🛒 Shop (in shop regions)', route: v110Ui({ showShop: true }), keywords: 'shop equipment gear buy items', needs: v110OnYourTurn('shop', { on: ['equipmentShopEnabled'], facts: ['shopRegion'] }), surfaceId: 'shop_modal' },
+  { id: 'screen:investments_modal', kind: 'screen', title: 'Investments', where: 'Play screen › 🏦 Investments', route: v110Ui({ showInvestments: true }), keywords: 'investments invest stocks returns', needs: v110OnYourTurn('investments', { on: ['investmentsEnabled'] }), surfaceId: 'investments_modal' },
+  { id: 'screen:sabotage_modal', kind: 'screen', title: 'Sabotage', where: 'Play screen › Sabotage (against a rival)', route: v110Ui({ showSabotage: true }), keywords: 'sabotage attack hinder rival', needs: v110OnYourTurn('sabotage', { on: ['sabotageEnabled'], facts: ['competitiveMode'] }), surfaceId: 'sabotage_modal' },
+  { id: 'screen:advanced_loans_modal', kind: 'screen', title: 'Loans', where: 'More › 🏦 Loans (bank loans)', route: v110Ui({ showAdvancedLoans: true }), keywords: 'loans bank borrow debt credit repay', needs: v110OnYourTurn('loans', { on: ['advancedLoansEnabled'], facts: ['loansForPlayer'] }), surfaceId: 'advanced_loans_modal' },
+  { id: 'screen:progress_dashboard', kind: 'screen', title: 'Progress', where: 'Play screen › 📊 Progress (P)', route: v110Ui({ showProgress: true }), keywords: 'progress stats records score standing p', needs: { match: true, firstRunAction: 'progress' }, surfaceId: 'progress_dashboard' },
+  { id: 'screen:negotiation_center', kind: 'screen', title: 'Negotiations', where: 'More › 🤝 Negotiations (N)', route: v110Call('openNegotiations'), keywords: 'negotiations deals offers trade diplomacy n', needs: { match: true, firstRunAction: 'negotiations' }, surfaceId: 'negotiation_center' },
+  { id: 'screen:regional_contracts_modal', kind: 'screen', title: 'Contracts', where: 'Play screen › 📜 Contracts', route: v110Ui({ showRegionalContractsModal: true }), keywords: 'contracts jobs regional deliveries', needs: v110OnYourTurn('contracts'), surfaceId: 'regional_contracts_modal' },
+  // Windows of the play screen
+  { id: 'screen:help_shortcuts_modal', kind: 'screen', title: 'How to play & keyboard shortcuts', where: 'More › ❓ Help (?)', route: v110Ui({ showHelp: true }), keywords: 'help rules how to play keys shortcuts tutorial manual guide', surfaceId: 'help_shortcuts_modal' },
+  { id: 'screen:save_load_modal', kind: 'screen', title: 'Save / Load', where: 'Play screen › 💾 Save / Load', route: v110Ui({ showSaveLoadModal: true }), keywords: 'save load file slots export import backup restore', surfaceId: 'save_load_modal' },
+  { id: 'screen:load_preview_modal', kind: 'screen', title: 'Load preview', where: 'Save / Load › choose a file', route: v110Ui({ showSaveLoadModal: true }), keywords: 'load preview file open save', surfaceId: 'load_preview_modal', note: 'Shows what a save holds before it replaces the match; choose a file in Save / Load.' },
+  { id: 'screen:replay_viewer', kind: 'screen', title: 'Replay Studio', where: 'Save / Load › Open Replay Studio', route: v110Call('openReplayStudio'), keywords: 'replay watch rewind studio playback recording', surfaceId: 'replay_viewer' },
+  { id: 'screen:settings_hub', kind: 'screen', title: 'Settings', where: 'More › ⚙️ Settings', route: { kind: 'settings', tab: 'home' }, keywords: 'settings options preferences configuration setup', surfaceId: 'settings_hub' },
+  { id: 'screen:settings_simple_view', kind: 'screen', title: 'Settings › ✨ Simple', where: 'More › ⚙️ Settings', route: { kind: 'settings', tab: 'home' }, keywords: 'simple settings basic choices', surfaceId: 'settings_simple_view' },
+  { id: 'screen:settings_experience_view', kind: 'screen', title: 'Settings › 🎮 Game Experience', where: 'More › ⚙️ Settings › 🎮 Game Experience', route: { kind: 'settings', tab: 'home', press: '[data-testid="settings-view-experience"]' }, keywords: 'game experience profile plans preview', surfaceId: 'settings_experience_view' },
+  { id: 'screen:major_transition_confirmation_modal', kind: 'screen', title: 'Apply a Game Experience plan', where: 'Settings › 🎮 Game Experience › apply a plan', route: { kind: 'settings', tab: 'home', press: '[data-testid="settings-view-experience"]' }, keywords: 'plan apply confirm major change', surfaceId: 'major_transition_confirmation_modal', note: 'The confirmation appears when a plan you apply changes the match a lot.' },
+  { id: 'screen:settings_preset_manager', kind: 'screen', title: 'Settings presets', where: 'Settings › Presets › Manage', route: v110Call('openPresetManager'), keywords: 'presets save load profile manager', surfaceId: 'settings_preset_manager' },
+  { id: 'screen:settings_import_export', kind: 'screen', title: 'Import / export settings', where: 'Settings › Import / Export', route: v110Call('openImportExport'), keywords: 'import export settings file backup share', surfaceId: 'settings_import_export' },
+  { id: 'screen:settings_view_filters', kind: 'screen', title: 'Settings filters', where: 'Settings › ⚙️ Advanced Settings › Filters', route: v110Ui({ showSettings: true, settingsActiveTab: 'gameplay', showSettingsViewFiltersPanel: true }), keywords: 'filters changed only availability feature state', surfaceId: 'settings_view_filters' },
+  { id: 'screen:dependency_auto_fix_modal', kind: 'screen', title: 'Dependency auto-fix', where: 'Settings › ⚙️ Advanced Settings › ⚡ Auto-Fix All', route: { kind: 'settings', tab: 'gameplay' }, keywords: 'dependency auto fix requires needs switch', surfaceId: 'dependency_auto_fix_modal', note: 'Offered by the banner Settings shows when a switch needs another one that is off.' },
+  { id: 'screen:guardian_ai_center', kind: 'screen', title: 'Guardian AI Center', where: '🧪 LAB › Guardian AI Center', route: v110Ui({ showGuardianAiCenter: true }), keywords: 'guardian safety protection thresholds overrides audit', needs: V110_IN_MATCH, surfaceId: 'guardian_ai_center' },
+  { id: 'screen:guardian_status_panel', kind: 'screen', title: 'Guardian status panel', where: 'Play screen › 🛡️ Guardian', route: v110Ui({ showGuardianStatusPanel: true }), keywords: 'guardian status side panel protection', needs: { match: true, on: ['enableGuardianSidePanelAccess'] }, surfaceId: 'guardian_status_panel' },
+  { id: 'screen:guardian_floating_button', kind: 'screen', title: 'Guardian floating button', where: 'Guardian AI Center › floating button', route: { kind: 'none' }, keywords: 'guardian floating button shield', surfaceId: 'guardian_floating_button', note: 'Off by default: the Guardian AI Center switches it on.' },
+  { id: 'screen:ai_command_center_modal', kind: 'screen', title: 'AI Command Center', where: '🧪 LAB › AI Command Center (Alt+C)', route: v110Ui({ showAiCommandCenterModal: true }), keywords: 'ai command center dashboard alt c', needs: { match: true, on: ['aiCommandCenterUiEnabled'] }, surfaceId: 'ai_command_center_modal' },
+  { id: 'screen:ai_command_center_widget', kind: 'screen', title: 'AI Command Center widget', where: 'Floating widget, bottom right', route: { kind: 'none' }, keywords: 'ai command center compact widget floating', surfaceId: 'ai_command_center_widget', note: 'Off by default: switch on the AI Command Center (Interface & Accessibility).' },
+  { id: 'screen:floating_widget_dock', kind: 'screen', title: 'Floating Widget Dock', where: 'Bottom right of the play screen', route: { kind: 'none' }, keywords: 'dock widgets floating tools', surfaceId: 'floating_widget_dock', note: 'Off by default: switch it on under 🚀 Unified Launcher & Dock.' },
+  { id: 'screen:unified_interface_launcher', kind: 'screen', title: 'Unified Launcher', where: 'Play screen launcher button', route: { kind: 'none' }, keywords: 'launcher tools menu shortcuts', surfaceId: 'unified_interface_launcher', note: 'Off by default: switch it on under 🚀 Unified Launcher & Dock.' },
+  { id: 'screen:strategy_planner', kind: 'screen', title: 'Strategy Planner', where: '🚀 Launcher › 🎯 Strategy Planner', route: v110Ui({ showStrategyPlannerModal: true }), keywords: 'strategy planner plan turns goals alt s', needs: V110_IN_MATCH, surfaceId: 'strategy_planner', note: 'The Launcher and the Widget Dock open it too.' },
+  { id: 'screen:activity_ledger', kind: 'screen', title: 'Activity Ledger', where: 'Play screen › 🗺️ Region Ledger Log', route: v110Ui({ showGameActivityLedgerDashboard: true }), keywords: 'activity ledger log history events audit', needs: V110_IN_MATCH, surfaceId: 'activity_ledger' },
+  { id: 'screen:developer_diagnostics', kind: 'screen', title: 'Developer Diagnostics dashboard', where: '🚀 Launcher › Tools', route: v110Ui({ showDeveloperDiagnostics: true }), keywords: 'developer diagnostics debug dashboard', needs: V110_IN_MATCH, surfaceId: 'developer_diagnostics' },
+  { id: 'screen:diagnostics_drawer', kind: 'screen', title: 'Diagnostics drawer', where: '🧪 LAB › Diagnostics Drawer (Ctrl+Alt+D)', route: v110Call('openDiagnosticsDrawer'), keywords: 'diagnostics drawer auto mode co-pilot debug ctrl alt d', needs: V110_IN_MATCH, surfaceId: 'diagnostics_drawer' },
+  { id: 'screen:overseer_dashboard', kind: 'screen', title: 'Team AI Overseer dashboard', where: '🧪 LAB › Overseer Dashboard', route: v110Ui({ showOverseerDashboard: true }), keywords: 'overseer team ai directives interventions', needs: V110_IN_MATCH, surfaceId: 'overseer_dashboard' },
+  { id: 'screen:auditor_dashboard', kind: 'screen', title: 'AI Operations Auditor dashboard', where: '🧪 LAB › Auditor Dashboard', route: v110Ui({ showAuditorDashboard: true }), keywords: 'auditor incidents findings audit', needs: V110_IN_MATCH, surfaceId: 'auditor_dashboard' },
+  { id: 'screen:human_automation_dashboard', kind: 'screen', title: 'Human Automation dashboard', where: '🧪 LAB › Human Player Automation', route: v110Ui({ showHumanAutomationDashboard: true }), keywords: 'human automation rules scripts automate', needs: V110_IN_MATCH, surfaceId: 'human_automation_dashboard' },
+  { id: 'screen:live_control_center', kind: 'screen', title: 'Live Control Center', where: '🧪 LAB › Live Control Center', route: v110Ui({ showLiveControlCenter: true }), keywords: 'live control center systems toggles switches', needs: V110_IN_MATCH, surfaceId: 'live_control_center' },
+  { id: 'screen:copilot_console', kind: 'screen', title: 'Co-Pilot console', where: '🧪 LAB › Co-Pilot Console', route: v110Ui({ showCoPilotModal: true }), keywords: 'co-pilot copilot console assistant', needs: V110_IN_MATCH, surfaceId: 'copilot_console' },
+  { id: 'screen:copilot_recommendations', kind: 'screen', title: 'Co-Pilot recommendations', where: 'Co-Pilot panel › 📋 View Recommendations', route: v110Ui({ showCoPilotRecommendationsModal: true }), keywords: 'co-pilot copilot recommendations suggestions', needs: V110_IN_MATCH, surfaceId: 'copilot_recommendations' },
+  { id: 'screen:copilot_proposal', kind: 'screen', title: 'Co-Pilot proposal', where: 'Control bar › Review approval', route: { kind: 'none' }, keywords: 'co-pilot copilot proposal approve approval', surfaceId: 'copilot_proposal', note: 'Appears when the Co-Pilot asks before it acts; answer it in that window.' },
+  { id: 'screen:auto_mode_activity_panel', kind: 'screen', title: 'Auto Mode activity', where: 'Auto Mode', route: v110Ui({ showAutoModeActivityPanel: true }), keywords: 'auto mode activity real time ledger', needs: { match: true, on: ['autoModeEnabled'] }, surfaceId: 'auto_mode_activity_panel', note: 'V10.1 had no button for this window; Find Anything opens it.' },
+  { id: 'screen:approval_dialog', kind: 'screen', title: 'Auto Mode approvals', where: 'Appears when Auto Mode asks before acting', route: { kind: 'none' }, keywords: 'approval approve auto mode proposal', surfaceId: 'approval_dialog', note: 'Appears by itself when Auto Mode asks before it acts.' },
+  { id: 'screen:ai_tuning_lab', kind: 'screen', title: 'AI Tuning Lab', where: '🧪 LAB › AI Tuning Lab', route: v110Call('openTuningLab'), keywords: 'ai tuning lab genomes evolve compare opponent', needs: { match: true, on: ['aiTuningLabUiEnabled'] }, surfaceId: 'ai_tuning_lab' },
+  { id: 'screen:ai_pipeline_inspector', kind: 'screen', title: 'AI Action Pipeline Inspector', where: '🧪 LAB › AI Action Pipeline Inspector', route: v110Call('openPipelineInspector'), keywords: 'ai pipeline inspector validation decisions', needs: { match: true, on: ['aiPipelineInspectorEnabled'] }, surfaceId: 'ai_pipeline_inspector' },
+  { id: 'screen:infrastructure_projects_modal', kind: 'screen', title: 'Infrastructure projects', where: 'Map footer › 🏗️ Infra', route: v110Ui({ showInfrastructureProjectsModal: true }), keywords: 'infrastructure projects build fund', needs: { match: true, on: ['stateInfrastructureEnabled'] }, surfaceId: 'infrastructure_projects_modal' },
+  { id: 'screen:expeditions_relics_modal', kind: 'screen', title: 'Expeditions & relics', where: 'Map footer › 🏺 Expeditions', route: v110Ui({ showExpeditionsRelicsModal: true }), keywords: 'expeditions relics artifacts explore', needs: { match: true, on: ['expeditionsRelicsEnabled'] }, surfaceId: 'expeditions_relics_modal' },
+  { id: 'screen:what_if_timelines_modal', kind: 'screen', title: 'What-If timelines', where: '🧪 LAB › What-If Timelines', route: v110Ui({ showWhatIfTimelinesModal: true }), keywords: 'what if timelines branches simulate', needs: V110_IN_MATCH, surfaceId: 'what_if_timelines_modal' },
+  { id: 'screen:crisis_management_modal', kind: 'screen', title: 'Crisis management', where: 'Map footer › 🚨 Crisis', route: v110Ui({ showCrisisManagementModal: true }), keywords: 'crisis crises emergency chains', needs: { match: true, anyOn: ['dynamicCrisesEnabled', 'dynamicCrisisChainsEnabled'] }, surfaceId: 'crisis_management_modal' },
+  { id: 'screen:campaign_progression_modal', kind: 'screen', title: 'Campaign progression', where: 'Map footer › 📜 Campaign', route: v110Ui({ showCampaignProgressionModal: true }), keywords: 'campaign chapters progression story', needs: { match: true, on: ['campaignModeEnabled'] }, surfaceId: 'campaign_progression_modal' },
+  { id: 'screen:fog_of_war_intel_modal', kind: 'screen', title: 'Fog of war intel', where: 'Map footer › 🛰️ Intel', route: v110Ui({ showFogOfWarIntelModal: true }), keywords: 'fog of war intel scouting hidden', needs: { match: true, on: ['fogOfWarEnabled'] }, surfaceId: 'fog_of_war_intel_modal' },
+  { id: 'screen:scenario_builder_modal', kind: 'screen', title: 'Scenario builder', where: 'Play screen › 🛠️ Scenarios', route: v110Ui({ showScenarioBuilderModal: true }), keywords: 'scenario builder custom create', needs: V110_IN_MATCH, surfaceId: 'scenario_builder_modal' },
+  { id: 'screen:career_progression_modal', kind: 'screen', title: 'Career', where: 'Play screen › 👑 Career', route: v110Ui({ showCareerProgressionModal: true }), keywords: 'career progression level rank', needs: V110_IN_MATCH, surfaceId: 'career_progression_modal' },
+  { id: 'screen:ai_rivalry_modal', kind: 'screen', title: 'Diplomacy', where: 'Play screen › 🤝 Diplomacy', route: v110Ui({ showAiRivalryModal: true }), keywords: 'diplomacy rivalry relations rival ai', needs: V110_IN_MATCH, surfaceId: 'ai_rivalry_modal' },
+  { id: 'screen:ai_stats', kind: 'screen', title: 'Match standing', where: 'Play screen › 📊 Match standing ▸', route: v110Ui({ showAiStats: true }), keywords: 'standing score ai stats rival comparison who is winning', needs: V110_IN_MATCH, surfaceId: 'ai_stats' },
+  { id: 'screen:determinism_audit_modal', kind: 'screen', title: 'Determinism audit', where: 'Play screen › 🔍 Determinism', route: v110Ui({ showDeterminismAuditModal: true }), keywords: 'determinism audit replay check seed', needs: V110_IN_MATCH, surfaceId: 'determinism_audit_modal' },
+  { id: 'screen:save_migration_modal', kind: 'screen', title: 'Save migration', where: 'Play screen › 💾 Migration', route: v110Ui({ showSaveMigrationModal: true }), keywords: 'save migration upgrade version old save', needs: V110_IN_MATCH, surfaceId: 'save_migration_modal' },
+  { id: 'screen:end_game_modes', kind: 'screen', title: 'End-Game Modes', where: 'Quick bar › End-Game Modes 🏆', route: v110Ui({ showEndGameModes: true }), keywords: 'end game modes sandbox battle royale', needs: { match: true, facts: ['allChallengesCompleted'] }, surfaceId: 'end_game_modes' },
+  { id: 'screen:campaign_select_modal', kind: 'screen', title: 'Scenario picker', where: 'Main menu › 📜 Scenario Mode', route: v110Ui({ showCampaignSelect: true }), keywords: 'scenario mode picker difficulty campaign select', needs: { menu: true }, surfaceId: 'campaign_select_modal' },
+  { id: 'screen:main_menu', kind: 'screen', title: 'Main menu', where: 'More › 🚪 Leave match', route: v110Call('openLeaveMatch'), keywords: 'main menu home start new match theme dark light retro character name experience mode', needs: V110_IN_MATCH, surfaceId: 'main_menu', note: 'From a match the way back is Leave match; it asks first.' },
+  { id: 'screen:game_over_screen', kind: 'screen', title: 'Result screen', where: 'After the last day', route: { kind: 'none' }, keywords: 'result game over winner end screen', surfaceId: 'game_over_screen', note: 'Shown by itself when the last day ends.' },
+  { id: 'screen:confirmation_dialog', kind: 'screen', title: 'Action confirmations', where: 'Before travel, selling, a challenge or ending the day', route: { kind: 'none' }, keywords: 'confirm confirmation are you sure don\'t ask again', surfaceId: 'confirmation_dialog', note: 'Appears by itself before an action, unless you ticked "Don\'t ask again".' },
+  { id: 'screen:diplomatic_breach_prompt', kind: 'screen', title: 'Diplomatic breach', where: 'Appears when a deal is broken', route: { kind: 'none' }, keywords: 'breach broken deal diplomacy betrayal', surfaceId: 'diplomatic_breach_prompt', note: 'Appears by itself when a deal is broken.' },
+  { id: 'screen:narrative_decision_modal', kind: 'screen', title: 'Story decisions', where: 'Appears during a match', route: { kind: 'none' }, keywords: 'story narrative decision choice event', surfaceId: 'narrative_decision_modal', note: 'Appears by itself when the story has a decision for you (Narrative Engine on).' },
+  { id: 'screen:day_transition_overlay', kind: 'screen', title: 'Day transition', where: 'After End Turn', route: { kind: 'none' }, keywords: 'day transition overlay new day animation', surfaceId: 'day_transition_overlay', note: 'Appears after End Turn when Day Transition is on.' },
+  { id: 'screen:safe_area_overlay', kind: 'screen', title: 'Safe-area preview', where: 'Interface & Accessibility', route: { kind: 'none' }, keywords: 'safe area preview overlay notch widgets', surfaceId: 'safe_area_overlay' },
+  { id: 'screen:diag2_overlay', kind: 'screen', title: 'DIAG-2 overlay', where: 'Replay & Diagnostics', route: { kind: 'none' }, keywords: 'diag2 diagnostics overlay telemetry', surfaceId: 'diag2_overlay' },
+];
+
+// ---- The 17 shortcut groups of the map (§10) --------------------------------------------------------------------------------------
+export const V110_FIND_SHORTCUTS: readonly V110FindPlace[] = [
+  { id: 'shortcut:space', kind: 'shortcut', shortcutId: 'space', title: 'Space: end your turn', where: 'Play screen, no window open', route: v110Call('endTurn'), keywords: 'space bar key end turn', needs: v110OnYourTurn('endTurn') },
+  { id: 'shortcut:c-t-r-m-w', kind: 'shortcut', shortcutId: 'c-t-r-m-w', title: 'C T R M W: Challenges, Travel, Market, Resource Market, Workshop', where: 'Play screen', route: v110Ui({ showHelp: true }), keywords: 'keys letters c t r m w hotkeys' },
+  { id: 'shortcut:g', kind: 'shortcut', shortcutId: 'g', title: 'G: show or hide the map', where: 'Play screen', route: v110Call('toggleMap'), keywords: 'g key map', needs: V110_IN_MATCH },
+  { id: 'shortcut:n-h-p', kind: 'shortcut', shortcutId: 'n-h-p', title: 'N H P: Negotiations, History, Progress', where: 'Play screen', route: v110Ui({ showHelp: true }), keywords: 'keys letters n h p hotkeys' },
+  { id: 'shortcut:question', kind: 'shortcut', shortcutId: 'question', title: '?: how to play & keyboard shortcuts', where: 'Play screen and main menu', route: v110Ui({ showHelp: true }), keywords: 'question mark help key' },
+  { id: 'shortcut:escape', kind: 'shortcut', shortcutId: 'escape', title: 'Escape: close the window on top', where: 'Everywhere', route: v110Ui({ showHelp: true }), keywords: 'esc escape close back key', note: 'In a text field with text, the first press leaves the field; the next closes the window.' },
+  { id: 'shortcut:shift-escape', kind: 'shortcut', shortcutId: 'shift-escape', title: 'Shift+Escape: rescue the screen', where: 'Everywhere', route: v110Call('uiRescue'), keywords: 'shift escape rescue stuck reset key' },
+  { id: 'shortcut:ctrl-s', kind: 'shortcut', shortcutId: 'ctrl-s', title: 'Ctrl+S (⌘+S): save the match', where: 'Play screen', route: v110Call('saveGame'), keywords: 'ctrl s cmd s save key', needs: V110_IN_MATCH },
+  { id: 'shortcut:ctrl-shift-c', kind: 'shortcut', shortcutId: 'ctrl-shift-c', title: 'Ctrl+Shift+C: clear notifications', where: 'Play screen', route: v110Call('clearNotifications'), keywords: 'ctrl shift c clear notifications key', note: 'Settings › Notifications can make it Ctrl+Alt+C.' },
+  { id: 'shortcut:alt-c', kind: 'shortcut', shortcutId: 'alt-c', title: 'Alt+C: AI Command Center', where: 'Play screen', route: v110Ui({ showAiCommandCenterModal: true }), keywords: 'alt c command center key', needs: { match: true, on: ['aiCommandCenterUiEnabled'] } },
+  { id: 'shortcut:ctrl-k', kind: 'shortcut', shortcutId: 'ctrl-k', title: 'Ctrl/⌘+K: Find Anything', where: 'Everywhere', route: { kind: 'none' }, keywords: 'ctrl k cmd k find search palette key', note: 'Opens this box while Find Anything is on. With it off, Ctrl/⌘+K opens the Ask drawer when that is switched on.' },
+  { id: 'shortcut:ctrl-alt-d', kind: 'shortcut', shortcutId: 'ctrl-alt-d', title: 'Ctrl+Alt+D: diagnostics drawer', where: 'Everywhere', route: v110Ui({ showAutoModeDiagnosticsDrawer: true }), keywords: 'ctrl alt d diagnostics drawer key' },
+  { id: 'shortcut:slash-ctrl-f', kind: 'shortcut', shortcutId: 'slash-ctrl-f', title: '/ or Ctrl/⌘+F: search inside Settings', where: 'Settings', route: { kind: 'settings', tab: 'home' }, keywords: 'slash ctrl f search settings key', note: 'Inside Settings these keys jump to its own search box.' },
+  { id: 'shortcut:replay-keys', kind: 'shortcut', shortcutId: 'replay-keys', title: '← → Home End: step through a replay', where: 'Replay Studio', route: v110Call('openReplayStudio'), keywords: 'arrows home end replay step keys' },
+  { id: 'shortcut:layer-arrows', kind: 'shortcut', shortcutId: 'layer-arrows', title: '← →: move between PLAY, INTELLIGENCE and LAB', where: 'Header tabs', route: { kind: 'layer', layer: 'play' }, keywords: 'arrows tabs layers keys', needs: V110_IN_MATCH },
+  { id: 'shortcut:tab-trap', kind: 'shortcut', shortcutId: 'tab-trap', title: 'Tab: stays inside the open window', where: 'Any window', route: { kind: 'none' }, keywords: 'tab focus trap keyboard', note: 'Focus Trapping (Accessibility) switches it.' },
+  { id: 'shortcut:alt-s', kind: 'shortcut', shortcutId: 'alt-s', title: 'Alt+S: Strategy Planner (the key is not wired yet)', where: 'Play screen', route: v110Ui({ showStrategyPlannerModal: true }), keywords: 'alt s strategy planner key', needs: V110_IN_MATCH, note: 'The key itself does nothing in V10.1; this opens the planner the way the Launcher does.' },
+];
+
+// ---- Building the index -----------------------------------------------------------------------------------------------------------
+/** Lower case, ⌘ as cmd, every other mark a space (so ctrl+s, Ctrl/⌘+S and ctrl s all read the same), one space between words. */
+export function v110Normalize(text: string): string {
+  return String(text || '').toLowerCase().replace(/⌘/g, ' cmd ').replace(/[^a-z0-9?]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+/** A camelCase key in words: 'aiPipelineInspectorEnabled' -> 'ai pipeline inspector enabled'. */
+export function v110KeyWords(key: string): string {
+  return v110Normalize(String(key || '').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2'));
+}
+/** A readable label for a key nothing labels: 'aiPipelineInspectorEnabled' -> 'Ai pipeline inspector'. */
+function v110KeyAsLabel(key: string): string {
+  const words = v110KeyWords(key).replace(/ enabled$/, '').replace(/^v\d+ /, '');
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : key;
+}
+/** Every label the game gives a setting (field metadata, the Co-Pilot catalog, the Simple view, the control itself), most player-facing first. */
+export function v110SettingLabels(key: string): string[] {
+  const out: string[] = [];
+  const add = (label: unknown) => { const text = typeof label === 'string' ? label.replace(/\s+/g, ' ').trim() : ''; if (text && !out.includes(text)) out.push(text); };
+  add(SIMPLE_SETTINGS.find(row => row.key === key)?.label);
+  add(SETTINGS_HUB_FIELD_META[key]?.label);
+  add(SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(row => row.key === key)?.label);
+  add(V110_SETTING_LABELS[key]);
+  if (key === 'findAnythingEnabled') add(V110_FIND_LABEL);
+  if (out.length === 0) add(v110KeyAsLabel(key));
+  return out;
+}
+/** True when a setting (a dotted path reaches into an object setting) is a real true. */
+export function v110SettingOn(settings: Readonly<Record<string, unknown>> | null | undefined, path: string): boolean {
+  let value: unknown = settings || {};
+  for (const part of path.split('.')) value = value && typeof value === 'object' ? (value as Record<string, unknown>)[part] : undefined;
+  return value === true;
+}
+
+/** The section of the settings hub a section id names, with the rendered-only Balance Lab (it has no index entry). */
+type V110SectionRow = { id: string; tab: SettingsHubTabId; title: string; fieldKeys: readonly string[]; keywords?: string; tags?: readonly string[] };
+export const V110_BALANCE_LAB_SECTION: V110SectionRow = { id: 'advancedSystems.balanceLab', tab: 'replayDiag', title: '⚖️ Balance Lab', fieldKeys: [], keywords: 'balance lab simulate tune economy matchups' };
+function v110SectionRows(): V110SectionRow[] {
+  return [...SETTINGS_HUB_SECTION_INDEX.map(s => ({ id: s.id, tab: s.tab, title: s.title, fieldKeys: s.fieldKeys as readonly string[], keywords: s.keywords, tags: s.tags as readonly string[] })), V110_BALANCE_LAB_SECTION];
+}
+function v110SectionWhere(section: V110SectionRow): string {
+  return `Settings › ${SETTINGS_HUB_TAB_LABELS[section.tab] || section.tab} › ${section.title}`;
+}
+/** Where a route lands, in the words of the screen. */
+export function v110RouteWhere(route: V110FindRoute, sections: readonly V110SectionRow[] = v110SectionRows()): string {
+  switch (route.kind) {
+    case 'settings': {
+      const section = route.section ? sections.find(s => s.id === route.section) : undefined;
+      return section ? v110SectionWhere(section) : `Settings › ${SETTINGS_HUB_TAB_LABELS[route.tab] || route.tab}`;
+    }
+    case 'ui': {
+      const flag = Object.keys(route.patch).find(k => k.startsWith('show') && route.patch[k] === true) || '';
+      const place = V110_FIND_PLACES.find(p => p.route.kind === 'ui' && p.route.patch[flag] === true && Object.keys(p.route.patch).length === 1);
+      return place ? `${place.title} window` : 'A window of the play screen';
+    }
+    case 'layer': return route.layer === 'lab' ? '🧪 LAB' : route.layer === 'intelligence' ? '🧠 INTELLIGENCE' : 'PLAY';
+    case 'lab': return '🧪 LAB';
+    case 'ask': return '🧠 INTELLIGENCE › Ask';
+    case 'call': return 'Play screen';
+    default: return 'Not shown on any screen';
+  }
+}
+
+/** Notes a setting's result carries: no control of its own, only a reset, internal state, behind another switch, no effect in this version. */
+export function v110SettingNote(key: string, homeTitle: string | null): string | undefined {
+  const notes: string[] = [];
+  const verdict = V110_SETTING_VERDICTS[key];
+  if (key === 'aiDifficulty') notes.push('Not a switch: the rival\'s difficulty is part of the match. Change it under AI Difficulty, or pick it when you start a match.');
+  else if (key === 'deterministicRngActive') notes.push('No control of its own: only presets set it, and nothing in this version reads it.');
+  else if (verdict === 'no-control') notes.push('No control of its own: presets, imported settings and saves set it.');
+  else if (verdict === 'reset-only') notes.push(`No control of its own: only the reset button${homeTitle ? ` in ${homeTitle}` : ''} changes it.`);
+  else if (verdict === 'internal') notes.push('Kept by the game, not a choice: it has no control.');
+  const parents = V110_SETTING_PARENTS[key];
+  if (parents && parents.length) notes.push(`Shown when ${parents.map(p => v110SettingLabels(p)[0]).join(' and ')} ${parents.length > 1 ? 'are' : 'is'} on.`);
+  const inert = [...V99_INERT_SETTINGS, ...V101_INERT_SETTINGS].find(row => row.key === key);
+  if (inert) notes.push(`No effect in this version: ${inert.reason}`);
+  return notes.length ? notes.join(' ') : undefined;
+}
+
+/** The route of a setting's control: where V110_SETTING_ROUTES says its control really is, else its first section in the hub index (with the field highlighted). */
+export function v110SettingRoute(key: string, sections: readonly V110SectionRow[] = v110SectionRows()): V110FindRoute {
+  const override = V110_SETTING_ROUTES[key];
+  if (override) return override.kind === 'settings' && !override.field ? { ...override, field: key } : override;
+  const home = sections.find(s => s.fieldKeys.includes(key));
+  return home ? { kind: 'settings', tab: home.tab, section: home.id, field: key } : { kind: 'none' };
+}
+
+export interface V110FindIndexInput {
+  settingKeys: readonly string[];
+  sections: readonly V110SectionRow[];
+  places: readonly V110FindPlace[];
+  shortcuts: readonly V110FindPlace[];
+  labCards: ReadonlyArray<{ id: string; title: string; group: string }>;
+}
+export function v110DefaultIndexInput(): V110FindIndexInput {
+  return { settingKeys: Object.keys(DEFAULT_GAME_SETTINGS), sections: v110SectionRows(), places: V110_FIND_PLACES, shortcuts: V110_FIND_SHORTCUTS, labCards: V110_LAB_CARDS };
+}
+
+/** Builds the whole index: places, shortcuts, LAB cards, settings sections, then every setting. Pure and deterministic. */
+export function buildV110FindIndex(input: V110FindIndexInput = v110DefaultIndexInput()): V110FindEntry[] {
+  const out: V110FindEntry[] = [];
+  const push = (entry: Omit<V110FindEntry, 'order'>) => { out.push({ ...entry, order: out.length }); };
+  const placeEntry = (place: V110FindPlace) => {
+    const settingKey = V110_FIND_PLACE_SETTING_ROUTES[place.id];
+    const route = settingKey ? v110SettingRoute(settingKey, input.sections) : place.route;
+    const where = settingKey && route.kind === 'settings' ? v110RouteWhere(route, input.sections) : place.where;
+    push({
+      id: place.id, kind: place.kind, title: place.title, where, route,
+      keywords: v110Normalize(`${place.keywords || ''} ${place.surfaceId ? v110KeyWords(place.surfaceId) : ''} ${settingKey ? v110SettingLabels(settingKey).join(' ') : ''}`),
+      ...(place.note ? { note: place.note } : {}), ...(place.needs ? { needs: place.needs } : {}),
+      ...(place.surfaceId ? { surfaceId: place.surfaceId } : {}), ...(place.shortcutId ? { shortcutId: place.shortcutId } : {}),
+    });
+  };
+  input.places.forEach(placeEntry);
+  input.shortcuts.forEach(placeEntry);
+  input.labCards.forEach(card => {
+    const group = (LAB_GROUP_META as Record<string, { title: string } | undefined>)[card.group];
+    push({ id: `lab:${card.id}`, kind: 'lab', title: card.title, where: `🧪 LAB › ${group ? group.title : card.group}`, route: { kind: 'lab', cardId: card.id }, keywords: v110Normalize(`lab card ${card.id.replace(/_/g, ' ')} ${group ? group.title : ''}`), labCardId: card.id, needs: V110_IN_MATCH });
+  });
+  input.sections.forEach(section => {
+    push({ id: `section:${section.id}`, kind: 'section', title: section.title, where: `Settings › ${SETTINGS_HUB_TAB_LABELS[section.tab] || section.tab}`, route: { kind: 'settings', tab: section.tab, section: section.id },
+      keywords: v110Normalize(`${section.keywords || ''} ${(section.tags || []).join(' ')} ${section.id.replace(/[._]/g, ' ')} section`), sectionId: section.id });
+  });
+  input.settingKeys.forEach(key => {
+    const labels = v110SettingLabels(key);
+    const route = v110SettingRoute(key, input.sections);
+    const home = route.kind === 'settings' && route.section ? input.sections.find(s => s.id === route.section) || null : null;
+    const others = input.sections.filter(s => s.fieldKeys.includes(key) && s !== home);
+    const where = route.kind === 'none' ? 'Not shown in Settings' : v110RouteWhere(route, input.sections);
+    const note = v110SettingNote(key, home ? home.title : null) || (route.kind === 'none' ? 'Not shown in Settings.' : undefined);
+    const needs: V110FindNeeds | undefined = route.kind === 'ui' || route.kind === 'layer' ? V110_IN_MATCH : undefined;
+    push({
+      id: `setting:${key}`, kind: 'setting', title: labels[0], where, route,
+      keywords: v110Normalize(`${labels.join(' ')} ${key} ${v110KeyWords(key)} ${home ? home.title : ''} ${others.map(s => s.title).join(' ')} setting`),
+      settingKey: key, ...(note ? { note } : {}), ...(needs ? { needs } : {}), ...(home ? { sectionId: home.id } : {}),
+    });
+  });
+  return out;
+}
+
+let v110IndexCache: V110FindEntry[] | null = null;
+/** The index over the live registries (built once, on first use; the registries never change at run time). */
+export function v110FindIndex(): V110FindEntry[] {
+  if (!v110IndexCache) v110IndexCache = buildV110FindIndex();
+  return v110IndexCache;
+}
+
+// ---- Ranking ----------------------------------------------------------------------------------------------------------------------
+export const V110_FIND_MAX_RESULTS = 40;
+const V110_KIND_ORDER: Readonly<Record<V110FindKind, number>> = { ask: 0, action: 1, screen: 2, shortcut: 3, lab: 4, section: 5, setting: 6 };
+const V110_KIND_BONUS: Readonly<Record<V110FindKind, number>> = { ask: 0, action: 60, screen: 55, shortcut: 20, lab: 10, section: 8, setting: 0 }; // a window or action wins an equal match with a setting
+/** What the box shows before you type: the everyday actions and windows. */
+export const V110_FIND_SUGGESTED: readonly string[] = ['action:end_turn', 'screen:travel_modal', 'screen:challenges_modal', 'screen:market_modal', 'screen:resource_market_modal',
+  'screen:workshop_modal', 'screen:save_load_modal', 'screen:settings_hub', 'screen:help_shortcuts_modal', 'screen:progress_dashboard'];
+export interface V110FindHit { entry: V110FindEntry; score: number }
+const v110WordStarts = (text: string, token: string): boolean => text.startsWith(token) || text.includes(` ${token}`);
+
+interface V110PreparedQuery { q: string; tokens: string[]; compact: string }
+function v110PrepareQuery(query: string): V110PreparedQuery {
+  const q = v110Normalize(query);
+  return { q, tokens: q.split(' ').filter(Boolean), compact: q.replace(/ /g, '') };
+}
+interface V110EntryText { title: string; key: string; keyWords: string; where: string; hay: string }
+const V110_ENTRY_TEXT = new WeakMap<V110FindEntry, V110EntryText>();
+function v110EntryText(entry: V110FindEntry): V110EntryText {
+  const cached = V110_ENTRY_TEXT.get(entry);
+  if (cached) return cached;
+  const title = v110Normalize(entry.title);
+  const key = entry.settingKey ? entry.settingKey.toLowerCase() : '';
+  const keyWords = entry.settingKey ? v110KeyWords(entry.settingKey) : '';
+  const where = v110Normalize(entry.where);
+  const text: V110EntryText = { title, key, keyWords, where, hay: `${title} ${key} ${keyWords} ${where} ${entry.keywords}` };
+  V110_ENTRY_TEXT.set(entry, text);
+  return text;
+}
+function v110ScorePrepared(entry: V110FindEntry, pq: V110PreparedQuery): number {
+  if (!pq.q) return 0;
+  const t = v110EntryText(entry);
+  if (!pq.tokens.every(token => t.hay.includes(token))) return 0;
+  let score = 1;
+  if (t.key && (pq.compact === t.key || pq.q === t.keyWords)) score += 1000;
+  if (t.title === pq.q) score += 900;
+  else if (t.title.startsWith(pq.q)) score += 500;
+  else if (t.title.includes(pq.q)) score += 200;
+  pq.tokens.forEach(token => {
+    if (v110WordStarts(t.title, token)) score += 80; else if (t.title.includes(token)) score += 40;
+    if (t.key && t.key.includes(token) && !t.title.includes(token)) score += 30; // the key counts when the words of the title do not already
+    if (v110WordStarts(entry.keywords, token)) score += 15; else if (entry.keywords.includes(token)) score += 5;
+    if (t.where.includes(token)) score += 3;
+  });
+  return score + V110_KIND_BONUS[entry.kind];
+}
+/** One entry's score for a query (0 = no match: every word of the query must appear somewhere in the entry). */
+export function v110ScoreEntry(entry: V110FindEntry, query: string): number {
+  return v110ScorePrepared(entry, v110PrepareQuery(query));
+}
+
+/** True when the text reads like a question for the game (Ask ranks first then). */
+export function v110LooksLikeQuestion(query: string): boolean {
+  const q = String(query || '').trim().toLowerCase();
+  return q.endsWith('?') || /^(how|what|why|should|can|could|when|where|who|which|is|are|do|does|will|would|am i|tell me)\b/.test(q);
+}
+/** The Ask result for a query: "Ask the game" answers it on the Intelligence tab. */
+export function v110AskEntry(query: string): V110FindEntry {
+  const text = String(query || '').trim();
+  return { id: 'ask', kind: 'ask', title: `Ask the game: “${text}”`, where: '🧠 INTELLIGENCE › Ask', route: { kind: 'ask', query: text }, keywords: '', needs: V110_IN_MATCH, order: -1 };
+}
+
+/** The ranked results for a query. Empty query: the suggested actions and windows. Any text of two letters or more also offers "Ask the game". */
+export function v110FindSearch(index: readonly V110FindEntry[], query: string, limit: number = V110_FIND_MAX_RESULTS): V110FindHit[] {
+  const text = String(query || '').trim();
+  if (!v110Normalize(text)) {
+    return V110_FIND_SUGGESTED.map(id => index.find(entry => entry.id === id)).filter((entry): entry is V110FindEntry => Boolean(entry)).map(entry => ({ entry, score: 0 })).slice(0, limit);
+  }
+  const hits: V110FindHit[] = [];
+  const pq = v110PrepareQuery(text);
+  index.forEach(entry => { const score = v110ScorePrepared(entry, pq); if (score > 0) hits.push({ entry, score }); });
+  hits.sort((a, b) => (b.score - a.score) || (V110_KIND_ORDER[a.entry.kind] - V110_KIND_ORDER[b.entry.kind]) || (a.entry.order - b.entry.order));
+  const ranked = hits.slice(0, Math.max(0, limit - 1));
+  if (text.length >= 2) {
+    const ask = { entry: v110AskEntry(text), score: 0 };
+    return v110LooksLikeQuestion(text) ? [ask, ...ranked] : [...ranked, ask];
+  }
+  return ranked;
+}
+
+// ---- Can it open now? --------------------------------------------------------------------------------------------------------------
+export interface V110FindContext {
+  gameMode: string;
+  humanTurn: boolean;
+  settings: Readonly<Record<string, unknown>>;
+  facts?: Readonly<Partial<Record<V110FindFact, boolean>>>;
+  /** isFirstRunActionVisible for the guided first match (a button it still hides is not offered either). */
+  firstRunVisible?: (actionId: string) => boolean;
+  /** The live LAB card's availability (its own available / unavailableReason). */
+  lab?: (cardId: string) => { available: boolean; reason: string } | null;
+}
+export interface V110FindAvailability { available: boolean; reason: string; fallback: V110FindRoute | null; fallbackLabel: string }
+export const V110_FIND_REASONS = {
+  match: 'Start or load a match first.',
+  menu: 'On the main menu only.',
+  humanTurn: 'Wait for your turn.',
+  settingsHost: 'Settings open from the main menu or a match.',
+  firstRun: 'The guided first match shows this later.',
+  none: 'Nothing to open.',
+} as const;
+const V110_FACT_REASONS: Readonly<Record<V110FindFact, string>> = {
+  shopRegion: 'There is no shop in this region.',
+  competitiveMode: 'Only in a match against a rival.',
+  loansForPlayer: 'Bank loans are set to the AI only.',
+  allChallengesCompleted: 'Appears once every challenge is done.',
+  teamMode: 'Team Mode matches only.',
+};
+/** Whether a result can open now, and if not why (and, for a switch that is off, a route to that switch). */
+export function v110FindAvailability(entry: V110FindEntry, ctx: V110FindContext): V110FindAvailability {
+  const no = (reason: string, fallback: V110FindRoute | null = null, fallbackLabel: string = ''): V110FindAvailability => ({ available: false, reason, fallback, fallbackLabel });
+  const needs = entry.needs || {};
+  if (entry.route.kind === 'none') return no(entry.note || V110_FIND_REASONS.none);
+  if (needs.menu && ctx.gameMode !== 'menu') return no(V110_FIND_REASONS.menu);
+  const matchOnly = needs.match || entry.route.kind === 'layer' || entry.route.kind === 'ask' || entry.route.kind === 'lab';
+  if (matchOnly && ctx.gameMode !== 'game') return no(V110_FIND_REASONS.match);
+  if (entry.route.kind === 'settings' && ctx.gameMode !== 'game' && ctx.gameMode !== 'menu') return no(V110_FIND_REASONS.settingsHost);
+  for (const path of needs.on || []) {
+    if (!v110SettingOn(ctx.settings, path)) {
+      const key = path.split('.')[0];
+      const label = v110SettingLabels(key)[0];
+      return no(`Off: switch on ${label} first.`, v110SettingRoute(key), label);
+    }
+  }
+  if (needs.anyOn && needs.anyOn.length && !needs.anyOn.some(path => v110SettingOn(ctx.settings, path))) {
+    const key = needs.anyOn[0].split('.')[0];
+    const label = v110SettingLabels(key)[0];
+    return no(`Off: switch on ${needs.anyOn.map(p => v110SettingLabels(p.split('.')[0])[0]).join(' or ')} first.`, v110SettingRoute(key), label);
+  }
+  for (const fact of needs.facts || []) if (!(ctx.facts && ctx.facts[fact] === true)) return no(V110_FACT_REASONS[fact]);
+  if (needs.humanTurn && !ctx.humanTurn) return no(V110_FIND_REASONS.humanTurn);
+  if (needs.firstRunAction && ctx.firstRunVisible && !ctx.firstRunVisible(needs.firstRunAction)) return no(V110_FIND_REASONS.firstRun);
+  if (entry.route.kind === 'lab' && ctx.lab) {
+    const card = ctx.lab(entry.route.cardId);
+    if (card && !card.available) return no(card.reason || V110_FIND_REASONS.none);
+  }
+  return { available: true, reason: '', fallback: null, fallbackLabel: '' };
+}
+
+export interface V110FindResult { entry: V110FindEntry; score: number; availability: V110FindAvailability }
+/** Search and availability together: what the dialog lists. */
+export function v110FindResults(index: readonly V110FindEntry[], query: string, ctx: V110FindContext, limit: number = V110_FIND_MAX_RESULTS): V110FindResult[] {
+  return v110FindSearch(index, query, limit).map(hit => ({ ...hit, availability: v110FindAvailability(hit.entry, ctx) }));
+}
+
+// ---- Opening a result: the same calls the buttons make -----------------------------------------------------------------------------
+export interface V110FindRouter {
+  updateUiState: (patch: Record<string, unknown>) => void;
+  navigateToSettings: (tab: SettingsHubTabId, sectionId?: string, options?: { fieldKey?: string }) => void;
+  setExperienceLayer: (layer: ExperienceLayer) => void;
+  calls: Readonly<Record<V110FindCall, () => void>>;
+  labEntries: () => readonly LabEntry[];
+  ask: (query: string) => void;
+  notify: (message: string) => void;
+  /** Runs after the next paint (the page needs to draw the window or layer first). */
+  afterPaint: (fn: () => void) => void;
+  /** Scrolls to the element and returns true when it is on the page. */
+  scrollTo: (selector: string) => boolean;
+  /** Presses the button and returns true when it is on the page. */
+  press: (selector: string) => boolean;
+}
+/** Closes Find Anything and opens the route through the game's own handler. Returns what it did (for the live region and the tests). */
+export function v110RunRoute(route: V110FindRoute, router: V110FindRouter): string {
+  switch (route.kind) {
+    case 'ui':
+      router.updateUiState({ ...route.patch, showFindAnything: false });
+      return 'opened';
+    case 'settings':
+      router.updateUiState({ showFindAnything: false });
+      router.navigateToSettings(route.tab, route.section, route.field ? { fieldKey: route.field } : undefined);
+      if (route.press) { const selector = route.press; router.afterPaint(() => { if (!router.press(selector)) router.afterPaint(() => { router.press(selector); }); }); }
+      return 'settings';
+    case 'layer': {
+      router.updateUiState({ showFindAnything: false });
+      router.setExperienceLayer(route.layer);
+      const { anchor, ask } = route;
+      if (anchor || ask) router.afterPaint(() => { if (anchor && router.scrollTo(anchor)) return; if (ask) router.ask(ask); });
+      return 'layer';
+    }
+    case 'call':
+      router.updateUiState({ showFindAnything: false });
+      router.calls[route.call]();
+      return 'called';
+    case 'lab': {
+      router.updateUiState({ showFindAnything: false });
+      const card = router.labEntries().find(entry => entry.id === route.cardId);
+      if (!card) { router.notify('That LAB card is not in this version.'); return 'missing'; }
+      if (card.available === false) { router.notify(card.unavailableReason || 'Not available yet.'); return 'unavailable'; }
+      card.onOpen();
+      return 'lab';
+    }
+    case 'ask':
+      router.updateUiState({ showFindAnything: false });
+      router.ask(route.query);
+      return 'asked';
+    default:
+      return 'nothing';
+  }
+}
+
+// ---- The keys --------------------------------------------------------------------------------------------------------------------------
+/** Ctrl/⌘+K (no Shift, no Alt): the key that opens Find Anything. */
+export function v110IsFindKey(e: { key: string; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean; altKey?: boolean }): boolean {
+  return (e.ctrlKey === true || e.metaKey === true) && e.shiftKey !== true && e.altKey !== true && String(e.key || '').toLowerCase() === 'k';
+}
+/** Q5: the old Ctrl/⌘+K (the Ask drawer) works only while Find Anything is off; with Find Anything on, Ask is one of its results. */
+export function v110AskDrawerKeyActive(settings: { readonly askGameAiUiEnabled?: unknown; readonly findAnythingEnabled?: unknown } | null | undefined): boolean {
+  return Boolean(settings?.askGameAiUiEnabled ?? false) && !v110FindAnythingOn(settings);
+}
+/** Moving through the list: ↑ ↓ wrap around, Page Up / Page Down jump five and stop at the ends. Any other key leaves it. */
+export function v110FindKeyStep(key: string, active: number, count: number): number {
+  if (count <= 0) return 0;
+  const at = Math.min(Math.max(0, active), count - 1);
+  if (key === 'ArrowDown') return (at + 1) % count;
+  if (key === 'ArrowUp') return (at - 1 + count) % count;
+  if (key === 'PageDown') return Math.min(count - 1, at + 5);
+  if (key === 'PageUp') return Math.max(0, at - 5);
+  return at;
+}
+/** What the live region says about the list. */
+export function v110FindStatus(results: readonly V110FindResult[], query: string): string {
+  if (!String(query || '').trim()) return `${results.length} suggestions. Type to search.`;
+  const found = results.filter(r => r.entry.kind !== 'ask').length;
+  return found === 0 ? 'Nothing matches. Ask the game, or try fewer letters.' : `${found} result${found === 1 ? '' : 's'}.`;
+}
+
+// ---- The dialog ----------------------------------------------------------------------------------------------------------------------
+export const V110_FIND_KIND_LABELS: Readonly<Record<V110FindKind, string>> = { action: 'Action', screen: 'Screen', setting: 'Setting', section: 'Settings section', shortcut: 'Shortcut', lab: 'LAB card', ask: 'Ask' };
+export const V110_FIND_LISTBOX_ID = 'v110-find-listbox';
+export const v110FindOptionId = (index: number): string => `v110-find-opt-${index}`;
+/** The theme classes the dialog uses (resolveThemeStyles provides them). */
+export interface V110FindTheme { card: string; border: string; input: string; buttonSecondary: string; shadow: string; text?: string; textMuted?: string; badgeWarning?: string }
+export interface V110FindViewProps {
+  query: string;
+  results: readonly V110FindResult[];
+  activeIndex: number;
+  status: string;
+  theme: V110FindTheme;
+  zIndex: number;
+  /** v101DialogProps('find_anything', trapFocus): role, aria-modal, labelled-by, focus in on open and back on close. */
+  dialogProps: React.HTMLAttributes<HTMLDivElement> & React.RefAttributes<HTMLDivElement>;
+  onQuery: (query: string) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  onPick: (index: number) => void;
+  onHover: (index: number) => void;
+  onClose: () => void;
+}
+/**
+ * Find Anything's dialog: a combobox over a listbox, drawn from plain elements only (no hooks, no child components), so it can be
+ * checked without a renderer. The input owns the keyboard (↑ ↓ Enter Esc); a click picks; a result that cannot open says why.
+ */
+export function V110FindAnythingView(p: V110FindViewProps): React.ReactElement {
+  const active = p.results.length > 0 ? Math.min(Math.max(0, p.activeIndex), p.results.length - 1) : -1;
+  return (
+    <div className="fixed inset-0 flex items-start justify-center p-4 pt-[8vh] bg-black/60" style={{ zIndex: p.zIndex }} data-testid="v110-find-backdrop"
+      onMouseDown={e => { if (e.target === e.currentTarget) p.onClose(); }}>
+      <div {...p.dialogProps} onKeyDown={p.onKeyDown} className={`${p.theme.card} ${p.theme.text || ''} ${p.theme.border} border rounded-xl w-full max-w-xl ${p.theme.shadow} flex flex-col max-h-[80dvh] overflow-hidden`} data-testid="v110-find">
+        <div className="flex items-center justify-between gap-2 px-4 pt-3">
+          <h2 id={v101DialogTitleId('find_anything')} className="font-bold text-base">🔎 Find Anything</h2>
+          <button type="button" onClick={p.onClose} aria-label="Close Find Anything" className={`${p.theme.buttonSecondary} px-2 py-1 rounded text-xs`} data-testid="v110-find-close">✕</button>
+        </div>
+        <div className="px-4 py-2">
+          <input
+            type="text"
+            role="combobox"
+            aria-expanded={p.results.length > 0}
+            aria-controls={V110_FIND_LISTBOX_ID}
+            aria-autocomplete="list"
+            aria-activedescendant={active >= 0 ? v110FindOptionId(active) : undefined}
+            aria-label="Find an action, screen, setting, shortcut or LAB card"
+            placeholder="Type an action, a window, a setting, a key…"
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            value={p.query}
+            onChange={e => p.onQuery(e.target.value)}
+            className={`${p.theme.input} w-full px-3 py-2 rounded-lg text-sm`}
+            data-testid="v110-find-input"
+          />
+        </div>
+        <div role="status" aria-live="polite" className="sr-only" data-testid="v110-find-status">{p.status}</div>
+        <ul role="listbox" id={V110_FIND_LISTBOX_ID} aria-label="Results" className="overflow-y-auto px-2 pb-2 space-y-0.5" data-testid="v110-find-results">
+          {p.results.map((r, i) => (
+            <li
+              key={r.entry.id}
+              id={v110FindOptionId(i)}
+              role="option"
+              aria-selected={i === active}
+              aria-disabled={r.availability.available ? undefined : true}
+              onMouseDown={e => e.preventDefault()}
+              onMouseMove={() => { if (i !== active) p.onHover(i); }}
+              onClick={() => p.onPick(i)}
+              className={`px-3 py-2 rounded-lg cursor-pointer ${i === active ? 'ring-2 ring-sky-500 bg-sky-500/10' : ''} ${r.availability.available ? '' : 'opacity-75'}`}
+              data-testid={`v110-find-result-${r.entry.id}`}
+            >
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className="text-[10px] uppercase tracking-wide font-semibold opacity-70 shrink-0">{V110_FIND_KIND_LABELS[r.entry.kind]}</span>
+                <span className="font-semibold text-sm">{r.entry.title}</span>
+              </div>
+              <div className={`text-xs ${p.theme.textMuted || 'opacity-75'}`}>{r.entry.where}{r.entry.settingKey ? <span className="font-mono opacity-70"> · {r.entry.settingKey}</span> : null}</div>
+              {r.entry.note && <div className="text-xs opacity-90">{r.entry.note}</div>}
+              {!r.availability.available && r.availability.reason !== r.entry.note && (
+                <div className="text-xs font-semibold" data-testid={`v110-find-reason-${r.entry.id}`}>
+                  {r.availability.reason}{r.availability.fallback ? ' Enter opens that switch.' : ''}
+                </div>
+              )}
+            </li>
+          ))}
+          {p.results.length === 0 && <li role="presentation" className="px-3 py-2 text-xs opacity-75">Nothing matches. Try fewer letters.</li>}
+        </ul>
+        <div className="px-4 py-2 text-[11px] opacity-70 border-t border-current border-opacity-10">↑ ↓ move · Enter opens · Esc closes</div>
+      </div>
+    </div>
+  );
+}
+
+/** The header's 🔎 Find button (drawn only while Find Anything is on). */
+export function V110FindButton({ onOpen, className }: { onOpen: () => void; className: string }): React.ReactElement {
+  return (
+    <button type="button" onClick={onOpen} className={className} aria-label="Find Anything (Ctrl+K)" aria-keyshortcuts="Control+K Meta+K" title="Find Anything (Ctrl/⌘+K)" data-testid="v110-find-button">
+      🔎 Find
+    </button>
+  );
+}
+
+/** The body of Settings › Interface & Accessibility › 🔎 Find Anything. Stateless; the caller writes through its tracked setter. */
+export function V110FindSettingsBody({ on, onToggle, onClassName, offClassName }: { on: boolean; onToggle: () => void; onClassName: string; offClassName: string }): React.ReactElement {
+  return (
+    <div className="space-y-3 text-xs" data-testid="v110-find-settings">
+      <div id="settings-field-findAnythingEnabled" data-setting-key="findAnythingEnabled" className="flex items-center justify-between gap-3">
+        <div>
+          <div className="font-semibold text-sm">{V110_FIND_LABEL}</div>
+          <div className="opacity-75">{V110_FIND_DESCRIPTION} (Off by default)</div>
+        </div>
+        <button type="button" id="v110-setting-findAnythingEnabled" data-testid="v110-setting-findAnythingEnabled" aria-pressed={on} aria-label={`${V110_FIND_LABEL}: ${on ? 'on' : 'off'}`}
+          onClick={onToggle} className={`px-4 py-2 rounded font-semibold shrink-0 ${on ? onClassName : offClassName}`}>
+          {on ? 'ON' : 'OFF'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---- Wiring it into the game ------------------------------------------------------------------------------------------------------------
+export interface V110FindAnythingProps {
+  settings: GameSettingsState;
+  /** The interface flag that keeps the dialog open (uiState.showFindAnything). */
+  open: boolean;
+  context: V110FindContext;
+  router: Omit<V110FindRouter, 'afterPaint' | 'scrollTo' | 'press'>;
+  theme: V110FindTheme;
+  trapFocus: boolean;
+  /** A decision is waiting (a confirmation, Leave match?): Ctrl/⌘+K does not open over it. */
+  blocked: boolean;
+}
+export interface V110FindAnythingHandle { on: boolean; open: () => void; node: React.ReactElement | null }
+
+function v110AfterPaint(fn: () => void): void {
+  try {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(() => { setTimeout(fn, 0); });
+    else setTimeout(fn, 0);
+  } catch { /* a page that cannot schedule just skips the scroll */ }
+}
+function v110ScrollTo(selector: string): boolean {
+  try {
+    const el = typeof document !== 'undefined' ? document.querySelector(selector) : null;
+    if (!el) return false;
+    el.scrollIntoView({ behavior: v101ScrollBehavior(), block: 'start' });
+    return true;
+  } catch { return false; }
+}
+function v110Press(selector: string): boolean {
+  try {
+    const el = typeof document !== 'undefined' ? document.querySelector(selector) : null;
+    if (!(el instanceof HTMLElement)) return false;
+    el.click();
+    return true;
+  } catch { return false; }
+}
+
+/**
+ * Find Anything for the AustraliaGame component: the dialog (while `open`), Ctrl/⌘+K, and the router built from the game's own
+ * handlers. Off (findAnythingEnabled not true): no key listener, no dialog, nothing rendered.
+ */
+export function useV110FindAnything(props: V110FindAnythingProps): V110FindAnythingHandle {
+  const on = v110FindAnythingOn(props.settings);
+  const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
+  const latest = useRef(props);
+  latest.current = props;
+  const visible = on && props.open;
+
+  const setOpen = useCallback((next: boolean) => {
+    if (next) { setQuery(''); setActiveIndex(0); }
+    latest.current.router.updateUiState({ showFindAnything: next });
+  }, []);
+  const openFinder = useCallback(() => {
+    const p = latest.current;
+    if (!v110FindAnythingOn(p.settings)) return;
+    if (p.blocked) { p.router.notify('Answer the open question first, then press Ctrl/⌘+K again.'); return; }
+    setOpen(true);
+  }, [setOpen]);
+
+  useEffect(() => {
+    if (!on) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (!v110IsFindKey(e)) return;
+      e.preventDefault();
+      if (latest.current.open) setOpen(false); else openFinder();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [on, openFinder, setOpen]);
+
+  const results = useMemo(() => (visible ? v110FindResults(v110FindIndex(), query, props.context) : []), [visible, query, props.context]);
+
+  if (!visible) return { on, open: openFinder, node: null };
+
+  const router: V110FindRouter = { ...props.router, afterPaint: v110AfterPaint, scrollTo: v110ScrollTo, press: v110Press };
+  const pick = (index: number) => {
+    const result = results[index];
+    if (!result) return;
+    if (result.availability.available) { v110RunRoute(result.entry.route, router); return; }
+    if (result.availability.fallback) { v110RunRoute(result.availability.fallback, router); return; }
+    props.router.notify(result.availability.reason);
+  };
+  const dialogProps = v101DialogProps('find_anything', props.trapFocus);
+  const trap = dialogProps.onKeyDown;
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape' && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); setOpen(false); return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'PageDown' || e.key === 'PageUp') {
+      e.preventDefault(); e.stopPropagation();
+      setActiveIndex(v110FindKeyStep(e.key, activeIndex, results.length));
+      return;
+    }
+    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); pick(Math.min(activeIndex, results.length - 1)); return; }
+    if (trap) trap(e);
+  };
+  const node = (
+    <V110FindAnythingView
+      query={query}
+      results={results}
+      activeIndex={activeIndex}
+      status={v110FindStatus(results, query)}
+      theme={props.theme}
+      zIndex={globalUISurfaceManager.getZIndex('find_anything') + 5}
+      dialogProps={{ ...dialogProps, onKeyDown: undefined }}
+      onQuery={q => { setQuery(q); setActiveIndex(0); }}
+      onKeyDown={onKeyDown}
+      onPick={pick}
+      onHover={setActiveIndex}
+      onClose={() => setOpen(false)}
+    />
+  );
+  return { on, open: openFinder, node };
+}
+
+// ---- Q8: the LAB reports a skipped check as skipped ------------------------------------------------------------------------------------
+/** True for a row that did not run its check: it says so (skipped: true, a 'skipped' status, or a detail that starts with SKIPPED). */
+export function v110RowSkipped(row: { skipped?: unknown; status?: unknown; detail?: unknown } | null | undefined): boolean {
+  if (!row) return false;
+  return row.skipped === true || row.status === 'skipped' || row.status === 'SKIPPED' || /^\s*SKIPPED\b/.test(String(row.detail ?? ''));
+}
+/** The row the LAB shows when its async suites were not started (a rival turn was running): skipped, not passed. */
+export function v110LabAsyncSkipRow(): V9SelfTestResult {
+  return { id: 'gi-async:skipped', name: 'Game Intelligence async suites', passed: false, skipped: true, detail: 'SKIPPED: a turn is running; they would rewind the live match\'s random draws. Press Run again between turns.' };
+}
+/**
+ * What a V10.1 rendered-markup check returns when the runner has no static renderer (the in-game LAB has none). Those checks
+ * used to return true there, a silent pass; their suites now record the row with this note (raw passed: true, as before, so
+ * the release check reads them as V10.1 did) and the LAB (v101SuiteRows) reports it as skipped. A function: hoisted.
+ */
+export function v110RenderSkipNote(): string { return 'SKIPPED: no static renderer in this runner, so the rendered markup was not checked (the plain checks before it ran).'; }
+/** True for the note above (or any SKIPPED: note): such a row did not run its check. */
+export function v110IsSkipNote(value: unknown): boolean { return typeof value === 'string' && /^SKIPPED:/.test(value); }
+/** The LAB marks the source-scan checks that recorded a skip (v101SkipSourceScan: the component text is unreadable in this build) as skipped too. */
+export function v110MarkSourceScanSkips(rows: readonly V9SelfTestResult[], skips: readonly string[]): V9SelfTestResult[] {
+  if (skips.length === 0) return [...rows];
+  return rows.map(row => (skips.some(id => row.id === id || row.id.startsWith(`${id}_`)) ? { ...row, passed: false, skipped: true, detail: row.detail || 'SKIPPED: the component text is not readable in this build, so the source scan did not run.' } : row));
+}
+/** The LAB's totals: a skipped row is counted as skipped, never as a pass. */
+export function v110LabTotals(rows: readonly V9SelfTestResult[]): { total: number; passed: number; skipped: number; failed: number } {
+  let passed = 0; let skipped = 0; let failed = 0;
+  rows.forEach(row => { if (row.skipped === true) skipped += 1; else if (row.passed) passed += 1; else failed += 1; });
+  return { total: rows.length, passed, skipped, failed };
+}
+
+// ---- Suite v110fa ------------------------------------------------------------------------------------------------------------------------
+/** Walks a React element tree built from plain elements (no renderer needed) and calls `visit` on every element. */
+export function v110WalkElements(node: React.ReactNode, visit: (type: string, props: Record<string, unknown>) => void): void {
+  if (node === null || node === undefined || typeof node === 'boolean' || typeof node === 'string' || typeof node === 'number') return;
+  if (Array.isArray(node)) { node.forEach(child => v110WalkElements(child as React.ReactNode, visit)); return; }
+  if (!React.isValidElement(node)) return;
+  const props = (node.props || {}) as Record<string, unknown>;
+  visit(typeof node.type === 'string' ? node.type : 'component', props);
+  v110WalkElements(props.children as React.ReactNode, visit);
+}
+
+export function runV110FindAnythingSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  // A check that could not run returns a text starting with SKIPPED: it is reported as skipped (passed: false, skipped: true), never as a pass.
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try {
+      const r = fn();
+      if (r !== true && /^SKIPPED\b/.test(r)) results.push({ id, name, passed: false, skipped: true, detail: r });
+      else results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) });
+    } catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  const clone = (v: SaveGameData): SaveGameData => JSON.parse(JSON.stringify(v));
+  const stamped = (gameVersion: string, extra: Record<string, unknown> = {}): SaveGameData => {
+    const f = clone(createV95SaveFixture());
+    f.metadata = { ...f.metadata, gameVersion };
+    f.gameState = { ...(f.gameState as unknown as Record<string, unknown>), ...extra } as unknown as SaveGameData['gameState'];
+    return f;
+  };
+  const gsOf = (d: SaveGameData): Record<string, unknown> => d.gameState as unknown as Record<string, unknown>;
+  const index = buildV110FindIndex();
+  const byId = new Map(index.map(entry => [entry.id, entry]));
+  const settingEntry = (key: string) => byId.get(`setting:${key}`);
+  const keys = Object.keys(DEFAULT_GAME_SETTINGS);
+  const v101Rows: ReadonlyArray<V101SurfaceFlagEntry> = [
+    { flags: ['showSettings'], surfaceId: 'settings_hub' },
+    { flags: ['showHelp', 'showAskGameAi'], surfaceId: 'ask_game_ai' },
+    { flags: ['showGameActivityLedgerDashboard', 'showActivityLedger', 'showAutoModeActivityPanel'], surfaceId: 'activity_ledger' },
+    { flags: ['showHumanAutomationDashboard', 'showLiveControlCenter'], surfaceId: 'human_automation_dashboard' },
+    { flags: ['showCampaignProgressionModal', 'showProgress'], surfaceId: 'campaign_progression_modal' },
+    { flags: ['showApprovalDialog', 'showApprovalModal', 'showApprovalsDialog', 'showAutoModeProposalModal'], surfaceId: 'approval_dialog' },
+  ];
+  const matchCtx = (over: Partial<V110FindContext> = {}): V110FindContext => ({ gameMode: 'game', humanTurn: true, settings: createDefaultGameSettings() as unknown as Record<string, unknown>, facts: { shopRegion: true, competitiveMode: true, loansForPlayer: true }, ...over });
+
+  // ---- 1. Foundations --------------------------------------------------------------------------------------------------------------
+  check('v110fa_01_version', 'GAME_VERSION is 11.0.0, the label reads V11.0, a new save stamps it and the schemas stay 7.1', () =>
+    (GAME_VERSION === '11.0.0' && GAME_VERSION_LABEL === 'V11.0' && createV95SaveFixture().metadata.gameVersion === '11.0.0'
+      && VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.SETTINGS_SCHEMA_VERSION === '7.1') || `${GAME_VERSION} / ${GAME_VERSION_LABEL}`);
+  check('v110fa_02_rules_stamp_unchanged', 'The rules stamp stays 1010: a new match is stamped as in V10.1 whether Find Anything is on or off', () => {
+    const withFind: GameSettingsState = { ...createDefaultGameSettings(), findAnythingEnabled: true };
+    const stamps = [v101RulesVersionForNewMatch({}), v101RulesVersionForNewMatch(withFind), v101RulesVersionForNewMatch({ classicRulesV100: true })];
+    return (V101_RULES_VERSION === 1010 && json(stamps) === json([1010, 1010, 1000])) || json(stamps);
+  });
+  check('v110fa_03_whats_new', "What's New leads with V11.0 and keeps the V10.1 entry with its own label written out", () =>
+    (V110_CHANGELOG[0].startsWith('V11.0 - ') && V101_CHANGELOG[0].startsWith('V10.1 - ') && V100_CHANGELOG[0].startsWith('V10.0 - ')
+      && new Set(V110_CHANGELOG).size === V110_CHANGELOG.length && V110_CHANGELOG.length >= 4) || json([V110_CHANGELOG[0], V101_CHANGELOG[0]]));
+  check('v110fa_04_rung_changes_nothing', 'The 11.0 rung returns the very same save (changed: false); the ladder runs it for a 10.1.0 save and changes nothing', () => {
+    const v101 = stamped('10.1.0', { rulesVersion: 1010 });
+    const step = migrateSaveTo1100(v101);
+    const ladder = runSaveMigrationLadder(v101, '10.1.0');
+    const current = runSaveMigrationLadder(v101, '11.0.0');
+    return (step.data === v101 && !step.changed && ladder.data === v101 && !ladder.changed && current.data === v101 && gsOf(ladder.data).rulesVersion === 1010) || json({ step: step.changed, ladder: ladder.changed });
+  });
+  check('v110fa_05_v101_save_loads', 'A V10.1 save loads under V11.0 with its 1010 stamp (still a V10.1 match), upgraded, nothing fatal', () => {
+    const tx = prepareSaveLoadTransaction(json(stamped('10.1.0', { rulesVersion: 1010 })));
+    if (!tx.ok || !tx.data) return `not loadable: ${tx.report.fatalErrors.join(' | ')}`;
+    const upgraded = v95MigrateSaveForLoad(tx.data);
+    return (readRulesVersion(upgraded.data.gameState) === 1010 && isV101Match(upgraded.data.gameState) && upgraded.migrated && upgraded.data.metadata.gameVersion === '11.0.0') || json({ stamp: readRulesVersion(upgraded.data.gameState), migrated: upgraded.migrated });
+  });
+  check('v110fa_06_old_saves_play_move_for_move', 'Real V9.7, V9.8 and V10.0 saves play the same days move for move with Find Anything on as with it off', () => {
+    const wrong: string[] = [];
+    Object.keys(V101FX_OLD_SAVES).forEach(name => {
+      const off = JSON.parse(V101FX_OLD_SAVES[name]) as SaveGameData;
+      const on = JSON.parse(V101FX_OLD_SAVES[name]) as SaveGameData;
+      (on.gameSettings as unknown as Record<string, unknown>).findAnythingEnabled = true;
+      const a = v101fxPlayDays(off, 2); const b = v101fxPlayDays(on, 2);
+      if (a.error || b.error || json(a) !== json(b) || a.humanActions + a.rivalActions === 0) wrong.push(`${name}: ${json({ a, b })}`.slice(0, 300));
+    });
+    return wrong.length === 0 || wrong.join('; ');
+  });
+  check('v110fa_07_switch_defaults_off', 'Find Anything is off by default, only a real true turns it on, and it is read with === true', () => {
+    const d = createDefaultGameSettings();
+    const junk = sanitizeGameSettings({ ...d, findAnythingEnabled: 'yes' } as unknown as Partial<GameSettingsState>);
+    const one = sanitizeGameSettings({ ...d, findAnythingEnabled: 1 } as unknown as Partial<GameSettingsState>);
+    const on = sanitizeGameSettings({ ...d, findAnythingEnabled: true });
+    return (DEFAULT_GAME_SETTINGS.findAnythingEnabled === false && junk.findAnythingEnabled === false && one.findAnythingEnabled === false && on.findAnythingEnabled === true
+      && !v110FindAnythingOn(d) && !v110FindAnythingOn({ findAnythingEnabled: 'true' }) && !v110FindAnythingOn(null) && v110FindAnythingOn({ findAnythingEnabled: true })) || json({ junk: junk.findAnythingEnabled, one: one.findAnythingEnabled });
+  });
+  check('v110fa_08_switch_is_a_profile_setting', 'Find Anything is a profile setting: remembered between visits, never written into or read back from a save', () => {
+    const save: SaveGameData = JSON.parse(json(createV95SaveFixture()));
+    (save.gameSettings as unknown as Record<string, unknown>).findAnythingEnabled = true;
+    const restored = validateSaveDataCore(save).gameSettings as unknown as Record<string, unknown>;
+    return (V95_PROFILE_SCOPED_SETTING_KEYS.includes('findAnythingEnabled') && !(V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('findAnythingEnabled')
+      && V99_PERSISTED_PROFILE_SETTING_KEYS.includes('findAnythingEnabled') && !('findAnythingEnabled' in restored)) || json({ restored: restored.findAnythingEnabled });
+  });
+  check('v110fa_09_switch_is_filed_under_its_goal', 'Q7: the switch has one hub section, under Interface & Accessibility, with no version in its title, and the catalog describes it', () => {
+    const sections = SETTINGS_HUB_SECTION_INDEX.filter(s => (s.fieldKeys as readonly string[]).includes('findAnythingEnabled'));
+    const catalog = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(row => row.key === 'findAnythingEnabled');
+    return (sections.length === 1 && sections[0].id === V110_FIND_SECTION_ID && sections[0].tab === 'interfaceAcc' && sections[0].title === V110_FIND_SECTION_TITLE
+      && !/v\d|new in/i.test(sections[0].title) && Boolean(catalog) && catalog!.label === V110_FIND_LABEL && catalog!.defaultValue === false && isV110SettingKeyName('findAnythingEnabled')) || json({ sections: sections.map(s => s.id), catalog: Boolean(catalog) });
+  });
+  check('v110fa_10_suite_registered', 'v110fa is registered once, quick tier, after the V10.1 suites, and the suite manifest is whole', () => {
+    const ids = V95_EXISTING_SUITES.map(s => s.id);
+    const spec = V95_EXISTING_SUITES.filter(s => s.id === 'v110fa');
+    const problems = v101CheckSuiteManifest(V95_EXISTING_SUITES);
+    return (spec.length === 1 && spec[0].tier === 'quick' && spec[0].label.startsWith('V11.0 ') && ids.indexOf('v110fa') > ids.indexOf('v101en') && json(V110_SUITE_IDS) === json(['v110fa'])
+      && V101_SUITE_MANIFEST.some(([fn, where]) => fn === 'runV110FindAnythingSelfTests' && where === 'v110fa') && problems.length === 0) || json({ spec: spec.length, problems });
+  });
+
+  // ---- 2. Q4: an id for every window (the walk over the map's surface ids) -----------------------------------------------------
+  check('v110fa_11_map_surfaces_kept', 'Walk: all 61 surfaces of the map are still in the registry, each with its id', () => {
+    const missing = V110_MAP_SURFACE_IDS.filter(id => !UI_SURFACE_REGISTRY[id] || UI_SURFACE_REGISTRY[id].id !== id);
+    return (V110_MAP_SURFACE_IDS.length === 61 && missing.length === 0) || `missing: ${missing.join(', ')}`;
+  });
+  check('v110fa_12_map_windows_have_ids', 'Walk: all 28 windows the map found without an id have one (27 new, and the Ask drawer keeps ask_game_ai); Find Anything has its own', () => {
+    const resolved = V110_MAP_WINDOW_IDS.map(id => V110_MAP_WINDOW_ID_ALIASES[id] || id);
+    const missing = resolved.filter(id => !UI_SURFACE_REGISTRY[id]);
+    const added = Object.keys(v110SurfaceRegistryAdditions());
+    const clash = added.filter(id => V110_MAP_SURFACE_IDS.includes(id));
+    return (V110_MAP_WINDOW_IDS.length === 28 && missing.length === 0 && added.length === 28 && added.includes('find_anything') && clash.length === 0
+      && Object.keys(UI_SURFACE_REGISTRY).length === 61 + 28) || json({ missing, added: added.length, clash, total: Object.keys(UI_SURFACE_REGISTRY).length });
+  });
+  check('v110fa_13_unused_ids_marked', 'The 8 ids nothing in V10.1 opens are kept and marked "not used in V10.1"; Find Anything never offers them', () => {
+    const unmarked = V110_UNUSED_SURFACE_IDS.filter(id => !UI_SURFACE_REGISTRY[id] || UI_SURFACE_REGISTRY[id].note !== V110_UNUSED_SURFACE_NOTE);
+    const marked = Object.keys(UI_SURFACE_REGISTRY).filter(id => UI_SURFACE_REGISTRY[id].note === V110_UNUSED_SURFACE_NOTE);
+    const offered = index.filter(entry => entry.surfaceId && V110_UNUSED_SURFACE_IDS.includes(entry.surfaceId)).map(entry => entry.id);
+    return (V110_UNUSED_SURFACE_IDS.length === 8 && unmarked.length === 0 && marked.length === 8 && offered.length === 0) || json({ unmarked, marked: marked.length, offered });
+  });
+  check('v110fa_14_table_off_is_v101', 'With Find Anything off the surface manager gets V10.1\'s table (the very same array) and the very same interface state', () => {
+    const ui = { showHelp: true };
+    return (v110SurfaceFlagTable(v101Rows, false) === v101Rows && v110SyncState(ui, { findAnythingEnabled: false }) === ui && v110SyncState(ui, null) === ui
+      && json(v110SyncState(ui, { findAnythingEnabled: true })) === json({ showHelp: true, v110SurfaceIds: true })) || 'off is not V10.1';
+  });
+  check('v110fa_15_table_on_splits_shared_ids', 'With it on, each of the 5 shared ids keeps one window: Help, Progress, Live Control Center and the Auto Mode panel get their own rows; the approval id keeps its one live window', () => {
+    const on = v110SurfaceFlagTable(v101Rows, true);
+    const rowOf = (flag: string) => on.filter(row => row.flags.includes(flag)).map(row => row.surfaceId);
+    const want: Array<[string, string]> = [['showHelp', 'help_shortcuts_modal'], ['showAskGameAi', 'ask_game_ai'], ['showProgress', 'progress_dashboard'], ['showCampaignProgressionModal', 'campaign_progression_modal'],
+      ['showLiveControlCenter', 'live_control_center'], ['showHumanAutomationDashboard', 'human_automation_dashboard'], ['showAutoModeActivityPanel', 'auto_mode_activity_panel'], ['showGameActivityLedgerDashboard', 'activity_ledger'],
+      ['showAutoModeProposalModal', 'approval_dialog'], ['showAdvancedLoans', 'advanced_loans_modal'], ['showFindAnything', 'find_anything'], ['showSettings', 'settings_hub']];
+    const wrong = want.filter(([flag, id]) => json(rowOf(flag)) !== json([id]));
+    return (wrong.length === 0 && V110_SHARED_SURFACE_SPLITS.length === 5 && on.length === v101Rows.length + 4 + V110_TRACKED_WINDOW_ROWS.length) || json({ wrong, rows: on.length });
+  });
+  check('v110fa_16_manager_follows_the_split', 'A surface manager given the V11.0 table opens Help as help_shortcuts_modal (and as ask_game_ai without it), and Escape clears the right flag', () => {
+    const sink = v101SurfaceFlagSink.current;
+    try {
+      const a = new GlobalUISurfaceManager();
+      a.syncWithUIState({ showHelp: true, v110SurfaceIds: true });
+      const withIds = a.getState().activeBlockingModal;
+      const patch = v101EscapeFlagPatch('help_shortcuts_modal', V110_ESCAPE_FLAGS.help_shortcuts_modal, { showHelp: true });
+      const b = new GlobalUISurfaceManager();
+      b.syncWithUIState({ showHelp: true });
+      const without = b.getState().activeBlockingModal;
+      return (withIds === 'help_shortcuts_modal' && without === 'ask_game_ai' && json(patch) === json({ showHelp: false })) || json({ withIds, without, patch });
+    } finally { v101SurfaceFlagSink.current = sink; }
+  });
+  check('v110fa_17_escape_and_stacking_ids', 'Every id Escape can close in the V11.0 table is a registry id, and a split window reads its stacking from its own id only while Find Anything is on', () => {
+    const on = v110SurfaceFlagTable(v101Rows, true);
+    const bad = Object.entries(V110_ESCAPE_FLAGS).filter(([id, flag]) => !UI_SURFACE_REGISTRY[id] || !on.some(row => row.surfaceId === id && row.flags.includes(flag)));
+    const ids = [v110WindowSurfaceId('help_shortcuts_modal', null), v110WindowSurfaceId('help_shortcuts_modal', { findAnythingEnabled: true }), v110WindowSurfaceId('progress_dashboard', {}),
+      v110WindowSurfaceId('live_control_center', { findAnythingEnabled: true }), v110WindowSurfaceId('auto_mode_activity_panel', {}), v110WindowSurfaceId('travel_modal', {})];
+    return (bad.length === 0 && json(ids) === json(['ask_game_ai', 'help_shortcuts_modal', 'campaign_progression_modal', 'live_control_center', 'activity_ledger', 'travel_modal'])) || json({ bad, ids });
+  });
+
+  // ---- 3. The walk over every setting, section, shortcut and LAB card ------------------------------------------------------------
+  check('v110fa_18_every_setting_indexed', 'Walk: each of the map\'s 599 settings and the new switch has exactly one entry, and every key of DEFAULT_GAME_SETTINGS is covered', () => {
+    const settingIds = index.filter(entry => entry.kind === 'setting').map(entry => entry.settingKey || '');
+    const missing = [...V110_MAP_SETTING_KEYS, 'findAnythingEnabled'].filter(key => settingIds.filter(id => id === key).length !== 1);
+    const uncovered = keys.filter(key => !settingIds.includes(key));
+    return (V110_MAP_SETTING_KEYS.length === 599 && keys.length === 600 && missing.length === 0 && uncovered.length === 0 && settingIds.length === keys.length) || json({ missing: missing.slice(0, 10), uncovered });
+  });
+  check('v110fa_19_every_setting_found_by_key', 'Every one of the 600 settings is the first result when you type its key', () => {
+    const wrong = keys.filter(key => { const top = v110FindSearch(index, key, 5)[0]; return !top || top.entry.id !== `setting:${key}`; });
+    return wrong.length === 0 || `${wrong.length} keys not first: ${wrong.slice(0, 12).join(', ')}`;
+  });
+  check('v110fa_20_every_setting_found_by_label', 'Every one of the 600 settings is in the results when you type its label (every label the game gives it)', () => {
+    const wrong: string[] = [];
+    keys.forEach(key => v110SettingLabels(key).forEach(label => { if (!v110FindSearch(index, label, 100000).some(hit => hit.entry.id === `setting:${key}`)) wrong.push(`${key} (${label})`); }));
+    return wrong.length === 0 || `${wrong.length}: ${wrong.slice(0, 10).join(', ')}`;
+  });
+  check('v110fa_21_the_settings_search_misses_are_found', 'The 29 settings the settings hub\'s own search misses are each found by key (first) and by label (in the top 10)', () => {
+    const wrong = V110_SETTINGS_SEARCH_MISSES.filter(key => {
+      const byKey = v110FindSearch(index, key, 5)[0];
+      const byLabel = v110FindSearch(index, v110SettingLabels(key)[0], 10).some(hit => hit.entry.id === `setting:${key}`);
+      return !byKey || byKey.entry.id !== `setting:${key}` || !byLabel;
+    });
+    return (V110_SETTINGS_SEARCH_MISSES.length === 29 && wrong.length === 0) || `${V110_SETTINGS_SEARCH_MISSES.length} listed; wrong: ${wrong.join(', ')}`;
+  });
+  check('v110fa_22_no_control_says_so', 'A setting with no control of its own says so in its result, one behind another switch names that switch, and an inactive one says it has no effect', () => {
+    const verdictKeys = Object.keys(V110_SETTING_VERDICTS);
+    const silent = verdictKeys.filter(key => { const note = settingEntry(key)?.note || ''; return !/No control of its own|Kept by the game|Not a switch/.test(note); });
+    const parents = Object.keys(V110_SETTING_PARENTS).filter(key => !/Shown when .+ (is|are) on\./.test(settingEntry(key)?.note || ''));
+    const inert = [...V99_INERT_SETTINGS, ...V101_INERT_SETTINGS].filter(row => !/No effect in this version/.test(settingEntry(row.key)?.note || '')).map(row => row.key);
+    const nowhere = index.filter(entry => entry.kind === 'setting' && entry.route.kind === 'none' && !entry.note).map(entry => entry.id);
+    return (verdictKeys.length >= 50 && silent.length === 0 && parents.length === 0 && inert.length === 0 && nowhere.length === 0) || json({ silent, parents: parents.slice(0, 5), inert, nowhere });
+  });
+  check('v110fa_23_every_section_indexed', 'Walk: all 87 sections of the map and the new Find Anything section are results that open on their own tab', () => {
+    const wanted = [...V110_MAP_SECTION_IDS, V110_FIND_SECTION_ID];
+    const wrong = wanted.filter(id => { const e = byId.get(`section:${id}`); return !e || e.route.kind !== 'settings' || e.route.section !== id; });
+    return (V110_MAP_SECTION_IDS.length === 87 && wrong.length === 0) || `wrong: ${wrong.join(', ')}`;
+  });
+  check('v110fa_24_every_surface_findable', 'Walk: every map surface (but the 8 unused) and every map window is the target of at least one result', () => {
+    const targets = new Set(index.map(entry => entry.surfaceId).filter((id): id is string => Boolean(id)));
+    const surfaces = V110_MAP_SURFACE_IDS.filter(id => !V110_UNUSED_SURFACE_IDS.includes(id) && !targets.has(id));
+    const windows = V110_MAP_WINDOW_IDS.map(id => V110_MAP_WINDOW_ID_ALIASES[id] || id).filter(id => !targets.has(id));
+    return (surfaces.length === 0 && windows.length === 0) || json({ surfaces, windows });
+  });
+  check('v110fa_25_every_shortcut_indexed', 'Walk: the 17 shortcut groups of the map are results', () => {
+    const missing = V110_MAP_SHORTCUT_IDS.filter(id => !index.some(entry => entry.kind === 'shortcut' && entry.shortcutId === id));
+    return (V110_MAP_SHORTCUT_IDS.length === 17 && missing.length === 0) || `missing: ${missing.join(', ')}`;
+  });
+  check('v110fa_26_every_lab_card_indexed', 'Walk: the 48 LAB cards of the map are results that open through the card itself, with the LAB\'s own titles', () => {
+    const missing = V110_MAP_LAB_CARD_IDS.filter(id => { const e = byId.get(`lab:${id}`); return !e || e.route.kind !== 'lab' || e.route.cardId !== id; });
+    const titles = V110_LAB_CARDS.filter(card => byId.get(`lab:${card.id}`)?.title !== card.title).map(card => card.id);
+    return (V110_MAP_LAB_CARD_IDS.length === 48 && V110_LAB_CARDS.length === 48 && missing.length === 0 && titles.length === 0) || json({ missing, titles });
+  });
+  check('v110fa_27_routes_are_real', 'Every route names a real tab and section, a real handler, a real LAB card, and only flags the surface manager or the play screen already use', () => {
+    const sectionIds = new Set([...SETTINGS_HUB_SECTION_INDEX.map(s => s.id), V110_BALANCE_LAB_SECTION.id]);
+    const sink = v101SurfaceFlagSink.current;
+    let table: ReadonlyArray<V101SurfaceFlagEntry> = [];
+    try { new GlobalUISurfaceManager().syncWithUIState({ v110SurfaceIds: true }); table = v101SurfaceFlagSink.current || []; } finally { v101SurfaceFlagSink.current = sink; }
+    if (table.length < 50) return `the V11.0 table has ${table.length} rows`;
+    const knownFlags = new Set([...table.flatMap(row => row.flags), ...V99_MATCH_DIALOG_FLAGS,
+      'experienceLayer', 'settingsActiveTab', 'showIntentAllActions', 'showIntentChangeGoal', 'showIntentGoalPlanner', 'showIntentPath', 'showIntentWhyThese', 'showSettingsViewFiltersPanel',
+      'showQuickActionsCustomizer', 'showGuardianAiCenter', 'showAiCommandCenterModal', 'showSaveLoadModal', 'showGameActivityLedgerDashboard', 'showDeveloperDiagnostics', 'showOverseerDashboard',
+      'showAuditorDashboard', 'showHumanAutomationDashboard', 'showCoPilotModal', 'showCoPilotRecommendationsModal', 'showAutoModeActivityPanel', 'showStrategyPlannerModal', 'showAutoModeDiagnosticsDrawer']);
+    const bad: string[] = [];
+    [...index, v110AskEntry('x')].forEach(entry => {
+      const r = entry.route;
+      if (r.kind === 'settings' && (!SETTINGS_HUB_TAB_ORDER.includes(r.tab) || (r.section && !sectionIds.has(r.section)))) bad.push(entry.id);
+      if (r.kind === 'ui' && Object.keys(r.patch).some(flag => !knownFlags.has(flag))) bad.push(`${entry.id}:${Object.keys(r.patch).join('+')}`);
+      if (r.kind === 'call' && !V110_FIND_CALLS.includes(r.call)) bad.push(entry.id);
+      if (r.kind === 'lab' && !V110_LAB_CARDS.some(card => card.id === r.cardId)) bad.push(entry.id);
+    });
+    const ids = index.map(entry => entry.id);
+    return (bad.length === 0 && new Set(ids).size === ids.length) || json({ bad: bad.slice(0, 10), duplicates: ids.length - new Set(ids).size });
+  });
+
+  // ---- 4. Ranking, Ask and availability ------------------------------------------------------------------------------------------------
+  check('v110fa_28_ranking_is_deterministic', 'The same query gives the same list every time; the everyday words land on the window or action itself', () => {
+    const top = (q: string) => (v110FindSearch(index, q)[0]?.entry.id || '');
+    const twice = ['travel', 'loan', 'sound', 'ai', 'save'].every(q => json(v110FindSearch(index, q).map(h => h.entry.id)) === json(v110FindSearch(buildV110FindIndex(), q).map(h => h.entry.id)));
+    const want: Array<[string, string]> = [['travel', 'screen:travel_modal'], ['end turn', 'action:end_turn'], ['challenges', 'screen:challenges_modal'], ['workshop', 'screen:workshop_modal'],
+      ['settings', 'screen:settings_hub'], ['ctrl+s', 'shortcut:ctrl-s'], ['find anything', 'section:interface.findAnything'], ['findAnythingEnabled', 'setting:findAnythingEnabled'],
+      ['loan', 'screen:advanced_loans_modal'], ['map', 'action:toggle_map'], ['rival', 'screen:intel_rivals'], ['text size', 'action:text_size'], ['co-pilot', 'screen:copilot_console']];
+    const wrong = want.filter(([q, id]) => top(q) !== id).map(([q]) => `${q} -> ${top(q)}`);
+    return (twice && wrong.length === 0) || json({ twice, wrong });
+  });
+  check('v110fa_29_ask_is_a_result', 'Ask is a result: a question comes first as "Ask the game", other text offers it last, an empty box shows the suggestions instead', () => {
+    const question = v110FindSearch(index, 'How do I make money fast?');
+    const plain = v110FindSearch(index, 'market');
+    const empty = v110FindSearch(index, '');
+    return (question[0].entry.kind === 'ask' && question[0].entry.route.kind === 'ask' && question[0].entry.route.query === 'How do I make money fast?'
+      && plain[plain.length - 1].entry.kind === 'ask' && plain[0].entry.kind !== 'ask' && !empty.some(h => h.entry.kind === 'ask')
+      && json(empty.map(h => h.entry.id)) === json(V110_FIND_SUGGESTED)) || json({ q: question[0].entry.id, last: plain[plain.length - 1].entry.id, empty: empty.length });
+  });
+  check('v110fa_30_availability_says_why', 'A result that cannot open now says why: no match yet, not your turn, a switch that is off (then it offers that switch), the guided first match', () => {
+    const travel = byId.get('screen:travel_modal')!; const shop = byId.get('screen:shop_modal')!; const help = byId.get('screen:help_shortcuts_modal')!;
+    const menu = v110FindAvailability(travel, matchCtx({ gameMode: 'menu' }));
+    const rival = v110FindAvailability(travel, matchCtx({ humanTurn: false }));
+    const off = v110FindAvailability(shop, matchCtx());
+    const firstRun = v110FindAvailability(travel, matchCtx({ firstRunVisible: id => id !== 'travel' }));
+    const ask = v110FindAvailability(v110AskEntry('why?'), matchCtx({ gameMode: 'menu' }));
+    const end = v110FindAvailability(byId.get('screen:settings_hub')!, matchCtx({ gameMode: 'end' }));
+    const okHelp = v110FindAvailability(help, matchCtx({ gameMode: 'menu' }));
+    const shopRoute = off.fallback && off.fallback.kind === 'settings' ? off.fallback.field : '';
+    return (!menu.available && menu.reason === V110_FIND_REASONS.match && !rival.available && rival.reason === V110_FIND_REASONS.humanTurn && !off.available && /Off: switch on/.test(off.reason)
+      && shopRoute === 'equipmentShopEnabled' && !firstRun.available && firstRun.reason === V110_FIND_REASONS.firstRun && !ask.available && !end.available && okHelp.available
+      && v110FindAvailability(travel, matchCtx()).available) || json({ menu, rival, off, firstRun, end: end.reason, help: okHelp.available });
+  });
+  check('v110fa_31_router_uses_the_buttons_calls', 'Opening a result goes through the game\'s own handlers: interface flags, navigateToSettings, the named call, the LAB card\'s onOpen, the Ask box', () => {
+    const log: string[] = [];
+    const calls = Object.fromEntries(V110_FIND_CALLS.map(c => [c, () => { log.push(`call:${c}`); }])) as unknown as Record<V110FindCall, () => void>;
+    const router: V110FindRouter = {
+      updateUiState: patch => log.push(`ui:${json(patch)}`),
+      navigateToSettings: (tab, section, options) => log.push(`settings:${tab}:${section || ''}:${options?.fieldKey || ''}`),
+      setExperienceLayer: layer => log.push(`layer:${layer}`),
+      calls,
+      labEntries: () => [{ id: 'a', group: 'ai_engine', title: 'A', description: '', onOpen: () => log.push('lab:a') }, { id: 'b', group: 'ai_engine', title: 'B', description: '', onOpen: () => log.push('lab:b'), available: false, unavailableReason: 'needs B' }],
+      ask: q => log.push(`ask:${q}`),
+      notify: m => log.push(`notify:${m}`),
+      afterPaint: fn => fn(),
+      scrollTo: sel => { log.push(`scroll:${sel}`); return sel === '#here'; },
+      press: sel => { log.push(`press:${sel}`); return true; },
+    };
+    v110RunRoute({ kind: 'ui', patch: { showTravelModal: true } }, router);
+    v110RunRoute(byId.get('setting:totalDays')!.route, router);
+    v110RunRoute({ kind: 'call', call: 'endTurn' }, router);
+    v110RunRoute({ kind: 'lab', cardId: 'a' }, router);
+    v110RunRoute({ kind: 'lab', cardId: 'b' }, router);
+    v110RunRoute({ kind: 'ask', query: 'why?' }, router);
+    v110RunRoute({ kind: 'layer', layer: 'intelligence', anchor: '#gone', ask: 'fallback?' }, router);
+    v110RunRoute({ kind: 'settings', tab: 'home', press: '[data-testid="x"]' }, router);
+    const totalDays = byId.get('setting:totalDays')!.route;
+    const want = [`ui:${json({ showTravelModal: true, showFindAnything: false })}`, `ui:${json({ showFindAnything: false })}`,
+      `settings:${totalDays.kind === 'settings' ? `${totalDays.tab}:${totalDays.section}` : ''}:totalDays`, `ui:${json({ showFindAnything: false })}`, 'call:endTurn',
+      `ui:${json({ showFindAnything: false })}`, 'lab:a', `ui:${json({ showFindAnything: false })}`, 'notify:needs B', `ui:${json({ showFindAnything: false })}`, 'ask:why?',
+      `ui:${json({ showFindAnything: false })}`, 'layer:intelligence', 'scroll:#gone', 'ask:fallback?', `ui:${json({ showFindAnything: false })}`, 'settings:home::', 'press:[data-testid="x"]'];
+    return json(log) === json(want) || json(log);
+  });
+  check('v110fa_32_dialog_is_a_combobox_in_a_dialog', 'The dialog is a labelled modal dialog; the box is a combobox that controls a listbox, points at the active option, and a live region reads the count', () => {
+    const res = v110FindResults(index, 'market', matchCtx());
+    const el = V110FindAnythingView({ query: 'market', results: res, activeIndex: 1, status: v110FindStatus(res, 'market'), theme: { card: '', border: '', input: '', buttonSecondary: '', shadow: '' }, zIndex: 605,
+      dialogProps: { role: 'dialog', 'aria-modal': true, 'aria-labelledby': v101DialogTitleId('find_anything') }, onQuery: () => undefined, onKeyDown: () => undefined, onPick: () => undefined, onHover: () => undefined, onClose: () => undefined });
+    const found: Array<{ type: string; props: Record<string, unknown> }> = [];
+    v110WalkElements(el, (type, props) => found.push({ type, props }));
+    const dialog = found.find(f => f.props.role === 'dialog');
+    const heading = found.find(f => f.type === 'h2');
+    const box = found.find(f => f.props.role === 'combobox');
+    const list = found.find(f => f.props.role === 'listbox');
+    const options = found.filter(f => f.props.role === 'option');
+    const live = found.find(f => f.props.role === 'status');
+    return (Boolean(dialog && heading && box && list && live) && dialog!.props['aria-modal'] === true && dialog!.props['aria-labelledby'] === heading!.props.id
+      && box!.props['aria-controls'] === list!.props.id && box!.props['aria-activedescendant'] === v110FindOptionId(1) && box!.props['aria-expanded'] === true
+      && options.length === res.length && options.filter(o => o.props['aria-selected'] === true).length === 1 && options[1].props.id === v110FindOptionId(1)
+      && !found.some(f => f.type === 'component') && /result/.test(String(live!.props.children))) || json({ dialog: Boolean(dialog), options: options.length, live: live ? String(live.props.children) : null });
+  });
+  check('v110fa_33_keyboard_moves_through_the_list', 'Down and Up wrap round the list; Page Down and Page Up jump five and stop at the ends; an empty list stays at 0', () => {
+    const steps = [v110FindKeyStep('ArrowDown', 0, 3), v110FindKeyStep('ArrowDown', 2, 3), v110FindKeyStep('ArrowUp', 0, 3), v110FindKeyStep('PageDown', 1, 4), v110FindKeyStep('PageUp', 2, 9),
+      v110FindKeyStep('PageDown', 2, 40), v110FindKeyStep('ArrowDown', 0, 0), v110FindKeyStep('x', 7, 3)];
+    return json(steps) === json([1, 0, 2, 3, 0, 7, 0, 2]) || json(steps);
+  });
+  check('v110fa_34_ctrl_k_follows_the_switch', 'Q5: Ctrl/⌘+K (not with Shift or Alt) is Find Anything\'s key; the Ask drawer keeps Ctrl/⌘+K only while Find Anything is off', () => {
+    const keysOk = v110IsFindKey({ key: 'k', ctrlKey: true }) && v110IsFindKey({ key: 'K', metaKey: true }) && !v110IsFindKey({ key: 'k', ctrlKey: true, shiftKey: true })
+      && !v110IsFindKey({ key: 'k', ctrlKey: true, altKey: true }) && !v110IsFindKey({ key: 'k' }) && !v110IsFindKey({ key: 's', ctrlKey: true });
+    const ask = [v110AskDrawerKeyActive({ askGameAiUiEnabled: true }), v110AskDrawerKeyActive({ askGameAiUiEnabled: true, findAnythingEnabled: true }), v110AskDrawerKeyActive({}), v110AskDrawerKeyActive({ findAnythingEnabled: true })];
+    return (keysOk && json(ask) === json([true, false, false, false])) || json({ keysOk, ask });
+  });
+  check('v110fa_35_no_clock_no_random', 'Find Anything reads no clock and draws no random number: its functions name none, and searching leaves every random stream where it was', () => {
+    const fns: Array<(...args: never[]) => unknown> = [buildV110FindIndex, v110FindSearch, v110ScoreEntry, v110FindAvailability, v110RunRoute, v110SurfaceFlagTable, v110SettingRoute, v110SettingNote, migrateSaveTo1100];
+    const text = fns.map(fn => String(fn)).join('\n');
+    if (!/v110Normalize|v110FindSearch|kind/.test(text)) return 'SKIPPED: the function text is not readable in this build';
+    const banned = ['Math.random', 'Date.now', 'performance.now', 'new Date(', 'drawGameplayRandom', 'createSeededRng'].filter(word => text.includes(word));
+    const before = json(captureRngState());
+    v110FindSearch(buildV110FindIndex(), 'travel'); v110FindResults(index, 'loans', matchCtx());
+    return (banned.length === 0 && json(captureRngState()) === before) || json({ banned, rng: json(captureRngState()) === before });
+  });
+  check('v110fa_36_find_switch_is_findable_and_off', 'Find Anything itself is findable (by "find", "search", "ctrl k" and its key), and with it off the hook renders nothing and listens to no key', () => {
+    const tops = ['find anything', 'ctrl k', 'findAnythingEnabled'].map(q => v110FindSearch(index, q, 3).map(h => h.entry.id));
+    const ok = tops[0].includes('section:interface.findAnything') && tops[1].includes('shortcut:ctrl-k') && tops[2][0] === 'setting:findAnythingEnabled';
+    return (ok && !v110FindAnythingOn(createDefaultGameSettings())) || json(tops);
+  });
+  check('v110fa_37_suggestions_and_status', 'The empty box shows the ten everyday results, the live region counts results, and "nothing matches" offers Ask', () => {
+    const empty = v110FindResults(index, '', matchCtx());
+    const none = v110FindResults(index, 'zzqqxx', matchCtx());
+    return (empty.length === 10 && /10 suggestions/.test(v110FindStatus(empty, '')) && none.length === 1 && none[0].entry.kind === 'ask' && /Nothing matches/.test(v110FindStatus(none, 'zzqqxx'))) || json({ empty: empty.length, none: none.map(r => r.entry.id) });
+  });
+
+  // ---- 5. Q8: skipped is skipped -----------------------------------------------------------------------------------------------------------
+  check('v110fa_38_lab_counts_skips_as_skipped', 'Q8: the LAB list marks a row that did not run as skipped (never a pass) and counts it apart from passes and failures', () => {
+    const rows = v101SuiteRows([{ id: 'a', name: 'a', passed: true, detail: '' }, { id: 'b', name: 'b', passed: true, detail: 'SKIPPED: no renderer' }, { id: 'c', name: 'c', passed: false, detail: 'no' }, { id: 'd', name: 'd', status: 'skipped' }]);
+    const totals = v110LabTotals(rows);
+    return (rows[1].skipped === true && rows[1].passed === false && rows[3].skipped === true && rows[0].skipped !== true && json(totals) === json({ total: 4, passed: 1, skipped: 2, failed: 1 })
+      && v110RowSkipped({ detail: ' SKIPPED: x' }) && !v110RowSkipped({ detail: 'skip vs error' })) || json({ rows, totals });
+  });
+  check('v110fa_39_async_skip_row_is_skipped', 'Q8: when a turn is running the LAB\'s async suites are not started, and their one row says skipped (not passed)', () => {
+    const row = v110LabAsyncSkipRow();
+    const lab = v110LabTotals([row]);
+    return (row.skipped === true && row.passed === false && /^SKIPPED/.test(row.detail) && row.id === 'gi-async:skipped' && lab.skipped === 1 && lab.passed === 0 && lab.failed === 0) || json(row);
+  });
+  check('v110fa_40_render_skips_are_reported', 'Q8: without a static renderer the V10.1 rendered-markup checks say SKIPPED instead of passing silently, and the LAB counts them as skipped', () => {
+    const g = globalThis as { __v101RenderStatic?: unknown };
+    const saved = g.__v101RenderStatic;
+    let rows: V9SelfTestResult[] = [];
+    try { delete g.__v101RenderStatic; rows = v101SuiteRows(runIsolatedSuite(() => runV101WorldSelfTests())); }
+    finally { if (saved !== undefined) g.__v101RenderStatic = saved; }
+    const skipped = rows.filter(r => r.skipped === true);
+    const failed = rows.filter(r => !r.passed && r.skipped !== true);
+    const marked = v110MarkSourceScanSkips([{ id: 'v99ps_e51_x', name: 'scan', passed: true, detail: '' }, { id: 'v99ps_e510', name: 'other', passed: true, detail: '' }], ['v99ps_e51']);
+    return (skipped.length >= 5 && failed.length === 0 && skipped.every(r => !r.passed && v110IsSkipNote(r.detail)) && marked[0].skipped === true && marked[1].skipped !== true && v110IsSkipNote(v110RenderSkipNote()))
+      || json({ skipped: skipped.length, failed: failed.map(r => r.id), marked });
+  });
+  check('v110fa_41_map_walk_complete', 'The walk covers the whole map: 61 surfaces, 28 windows, 87 sections, 599 settings, 17 shortcuts and 48 LAB cards, each present in the game', () => {
+    const counts = [V110_MAP_SURFACE_IDS.length, V110_MAP_WINDOW_IDS.length, V110_MAP_SECTION_IDS.length, V110_MAP_SETTING_KEYS.length, V110_MAP_SHORTCUT_IDS.length, V110_MAP_LAB_CARD_IDS.length];
+    const sectionIds = new Set([...SETTINGS_HUB_SECTION_INDEX.map(s => s.id), V110_BALANCE_LAB_SECTION.id]);
+    const gone = [...V110_MAP_SECTION_IDS.filter(id => !sectionIds.has(id)), ...V110_MAP_SETTING_KEYS.filter(key => !(key in DEFAULT_GAME_SETTINGS))];
+    return (json(counts) === json([61, 28, 87, 599, 17, 48]) && gone.length === 0) || json({ counts, gone: gone.slice(0, 10) });
+  });
+  return results;
+}
 
 // ============================================================================
 // SECTION 21: MAIN COMPONENT
@@ -227614,7 +229768,8 @@ function dispatchGameSettingsChange(
 	              approval_dialog: 'showApprovalDialog',
 	              narrative_decision_modal: 'showNarrativeDecision', // V10.1 (SECTION 20BJ): derived flag; the popup itself is closed below
 	              treasury_requests_dialog: 'showTreasuryRequestsDialog',
-	              governor_exception_dialog: 'showGovernorExceptionDialog'
+	              governor_exception_dialog: 'showGovernorExceptionDialog',
+	              ...V110_ESCAPE_FLAGS // V11.0 (SECTION 20BL, Q4): the ids the V11.0 table adds (only ever active while Find Anything is on)
 	            };
 	            const flag = flagNameMap[activeSurfaceIdBefore];
 	            if (flag) {
@@ -227711,8 +229866,8 @@ function dispatchGameSettingsChange(
   useEffect(() => {
     // V10.1 (SECTION 20BJ): the story-decision popup lives in the match state, not in uiState: tell the surface manager it is open (V10.1 matches), so shortcuts stand down and Escape / the rescue can close it.
     const v101NarrativeOpen = isV101Match(gameState) && gameState.narrativePopup?.isOpen === true && Boolean(gameState.narrativePopup?.currentDecision);
-    globalUISurfaceManager.syncWithUIState(v101NarrativeOpen ? { ...uiState, showNarrativeDecision: true } : uiState);
-  }, [uiState, gameState.rulesVersion, gameState.narrativePopup?.isOpen, gameState.narrativePopup?.currentDecision]);
+    globalUISurfaceManager.syncWithUIState(v110SyncState(v101NarrativeOpen ? { ...uiState, showNarrativeDecision: true } : uiState, gameSettings)); // V11.0 (SECTION 20BL): asks for the V11.0 table only while Find Anything is on
+  }, [uiState, gameState.rulesVersion, gameState.narrativePopup?.isOpen, gameState.narrativePopup?.currentDecision, gameSettings.findAnythingEnabled]);
 
   useEffect(() => {
     if (uiState.pendingMode && ['ai', 'grand_tour', 'team_human_ai_vs_ai_ai', 'team_ai_vs_ai'].includes(uiState.pendingMode)) {
@@ -227747,7 +229902,7 @@ function dispatchGameSettingsChange(
 
   // Optional Keyboard Shortcut (Ctrl+K / Cmd+K) for Ask Game AI
   useEffect(() => {
-    if (!(gameSettings.askGameAiUiEnabled ?? false)) return;
+    if (!v110AskDrawerKeyActive(gameSettings)) return; // V11.0 (SECTION 20BM, Q5): was askGameAiUiEnabled alone; with Find Anything on, Ctrl/⌘+K opens Find Anything and Ask is one of its results
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault?.();
@@ -227758,7 +229913,7 @@ function dispatchGameSettingsChange(
     return () => window.removeEventListener('keydown', handleKeyDown);
     // useAskGameAIState returns a new object literal every render; depending on
     // it re-bound this listener on every single render.
-  }, [askAI.toggleDrawer, gameSettings.askGameAiUiEnabled]);
+  }, [askAI.toggleDrawer, gameSettings.askGameAiUiEnabled, gameSettings.findAnythingEnabled]); // V11.0 (SECTION 20BM): re-checked when Find Anything is switched
 
 
   const handleSettingsSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -256099,8 +258254,17 @@ function dispatchGameSettingsChange(
               </SettingsSection>
               <SettingsSection id="interface.changelog" tab="interfaceAcc" title="What's New" chips={['UX only']}>
                 {/* V10.1 (SECTION 20BA): the current release leads the list (its label derives from VERSION_CONSTANTS); V10.0 and V9.9 follow. */}
+                {/* V11.0 (SECTION 20BL): V11.0 now leads the list; V10.1's entry keeps its own version written out. */}
+                <div className="mb-3 pb-3 border-b border-current border-opacity-10" data-testid="v110-whats-new">
+                  <div className="text-sm font-semibold mb-1">{V110_CHANGELOG[0]} <span className="text-xs font-normal opacity-60">· v{VERSION_CONSTANTS.GAME_VERSION}</span></div>
+                  <div className="text-xs opacity-80">
+                    {V110_CHANGELOG.slice(1).map(item => (
+                      <div key={item}>- {item}</div>
+                    ))}
+                  </div>
+                </div>
                 <div className="mb-3 pb-3 border-b border-current border-opacity-10" data-testid="v101-whats-new">
-                  <div className="text-sm font-semibold mb-1">{V101_CHANGELOG[0]} <span className="text-xs font-normal opacity-60">· v{VERSION_CONSTANTS.GAME_VERSION}</span></div>
+                  <div className="text-sm font-semibold mb-1">{V101_CHANGELOG[0]} <span className="text-xs font-normal opacity-60">· v10.1.0</span>{/* V11.0 (SECTION 20BL): V10.1's version written out */}</div>
                   <div className="text-xs opacity-80">
                     {V101_CHANGELOG.slice(1).map(item => (
                       <div key={item}>- {item}</div>
@@ -256569,6 +258733,22 @@ function dispatchGameSettingsChange(
                     telemetry keep running, so nothing about the match changes.
                   </div>
                 </div>
+              </SettingsSection>
+
+              {/* V11.0 (SECTION 20BM, Q7): Find Anything's switch, filed under its goal (no version in the title). */}
+              <SettingsSection
+                id={V110_FIND_SECTION_ID}
+                tab="interfaceAcc"
+                title={V110_FIND_SECTION_TITLE}
+                chips={['Off by default']}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === V110_FIND_SECTION_ID)!.fieldKeys}
+              >
+                <V110FindSettingsBody
+                  on={gameSettings.findAnythingEnabled === true}
+                  onToggle={() => updateGameSetting('findAnythingEnabled', gameSettings.findAnythingEnabled !== true, { settingLabel: V110_FIND_LABEL, section: 'Interface → Find Anything', source: 'direct_player_change' })}
+                  onClassName={`${themeStyles.success} text-white`}
+                  offClassName={themeStyles.buttonSecondary}
+                />
               </SettingsSection>
 
               <SettingsSection
@@ -265795,7 +267975,7 @@ function dispatchGameSettingsChange(
     const activeAutomationsList = humanAutomations || [];
 
     return (
-      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto" style={{ zIndex: globalUISurfaceManager.getZIndex("human_automation_dashboard") }} onClick={() => updateUiState({ showLiveControlCenter: false })}>
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto" style={{ zIndex: globalUISurfaceManager.getZIndex(v110WindowSurfaceId('live_control_center', gameSettings)) }} onClick={() => updateUiState({ showLiveControlCenter: false })}>{/* V11.0 (SECTION 20BL, Q4): its own id while Find Anything is on (was "human_automation_dashboard") */}
         <div className="bg-slate-900 border border-sky-500/40 rounded-xl shadow-2xl max-w-5xl w-full text-white" style={{ height: 'calc(100dvh - 2rem)', maxHeight: 'calc(100dvh - 2rem)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
           {/* Header */}
           <div className="p-4 bg-slate-950 border-b border-sky-500/20 flex flex-wrap items-center justify-between gap-3">
@@ -267253,7 +269433,7 @@ function dispatchGameSettingsChange(
     
     return (
       <div
-        className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "campaign_progression_modal") ? "bg-black bg-opacity-50" : "bg-transparent"} flex items-center justify-center p-4 overflow-hidden`} style={{ zIndex: globalUISurfaceManager.getZIndex("campaign_progression_modal") }}
+        className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === v110WindowSurfaceId('progress_dashboard', gameSettings)) ? "bg-black bg-opacity-50" : "bg-transparent"} flex items-center justify-center p-4 overflow-hidden`} style={{ zIndex: globalUISurfaceManager.getZIndex(v110WindowSurfaceId('progress_dashboard', gameSettings)) }} /* V11.0 (SECTION 20BL, Q4): its own id while Find Anything is on (was "campaign_progression_modal") */
         onClick={() => updateUiState({ showProgress: false })}
       >
         <div
@@ -268236,6 +270416,10 @@ function dispatchGameSettingsChange(
 
             {/* V9.9 (SECTION 20AT): the main menu can reach the settings (the same hub a match opens). */}
             <V99MenuSettingsButton isDark={isDark} onOpen={() => updateUiState({ showSettings: true })} />
+            {/* V11.0 (SECTION 20BM): Find Anything's button on the main menu too (only while it is on; Ctrl/⌘+K works here as well) */}
+            {v110Find.on && (
+              <V110FindButton onOpen={v110Find.open} className={`w-full py-3 rounded-xl font-semibold transition-all duration-300 ${isDark ? 'bg-gray-700/80 hover:bg-gray-600 text-gray-200 border border-gray-600' : 'bg-white/80 hover:bg-white text-gray-700 border border-gray-200 shadow-sm'}`} />
+            )}
           </div>
 
           {/* Inline Difficulty Selection Panel */}
@@ -269603,6 +271787,11 @@ function dispatchGameSettingsChange(
             lastDeltas={takeoverSession?.lastExecutionResult?.verifiedDeltas || null}
           />
         </div>
+        {v110Find.on && (
+          <div className="shrink-0 self-start">{/* V11.0 (SECTION 20BM): Find Anything's button (Ctrl/⌘+K) */}
+            <V110FindButton onOpen={v110Find.open} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg text-sm font-semibold`} />
+          </div>
+        )}
       </div>
     );
 
@@ -281364,6 +283553,60 @@ function dispatchGameSettingsChange(
     );
   };
 
+  // V11.0 (SECTION 20BM): Find Anything (off by default). The router is the game's own handlers, the same ones the buttons call.
+  const v110Find = useV110FindAnything({
+    settings: gameSettings,
+    open: uiState.showFindAnything === true,
+    context: (() => {
+      let labs: LabEntry[] | null = null;
+      return {
+        gameMode: String(gameState.gameMode),
+        humanTurn: gameState.gameMode === 'game' && isHumanPlayerTurn(gameState),
+        settings: gameSettings as unknown as Record<string, unknown>,
+        facts: {
+          shopRegion: EQUIPMENT_SHOP_REGIONS.includes(player.currentRegion),
+          competitiveMode: isCompetitiveMode,
+          loansForPlayer: gameSettings.advancedLoansAccessMode !== 'ai_only',
+          allChallengesCompleted: gameState.allChallengesCompleted === true,
+          teamMode: Boolean(isTeamMode),
+        },
+        firstRunVisible: (actionId: string) => isFirstRunActionVisible(wp8State, actionId),
+        lab: (cardId: string) => {
+          labs = labs || buildV9LabEntries();
+          const card = labs.find(entry => entry.id === cardId);
+          return card ? { available: card.available !== false, reason: card.unavailableReason || '' } : null;
+        },
+      };
+    })(),
+    router: {
+      updateUiState: patch => updateUiState(patch),
+      navigateToSettings: (tab, sectionId, options) => navigateToSettings(tab, sectionId, options),
+      setExperienceLayer,
+      calls: {
+        endTurn: () => handleEndTurn(),
+        saveGame: () => { handleSaveGame(); },
+        clearNotifications: () => clearAllNotifications(),
+        uiRescue: () => handleExecuteUiRescue({ type: 'full_rescue', source: 'find_anything' }),
+        toggleMap: () => updateUiState({ showMap: !uiState.showMap }),
+        openNegotiations: () => setNegotiationCenterOpen(true),
+        openTuningLab: () => setShowTuningLab(true),
+        openPipelineInspector: () => setShowAiPipelineInspector(true),
+        openReplayStudio: () => openReplayStudio(),
+        openLeaveMatch: () => v99OpenLeaveMatch(),
+        openPresetManager: () => { navigateToSettings('home'); setShowPresetManagerModal(true); },
+        openImportExport: () => { navigateToSettings('home'); setShowImportExportModal(true); },
+        openAskDrawer: () => { if (!askAI.isOpen) askAI.toggleDrawer(); },
+        openDiagnosticsDrawer: () => updateUiState({ showSettings: true, settingsActiveTab: 'replayDiag', showAutoModeDiagnosticsDrawer: true }),
+      },
+      labEntries: () => buildV9LabEntries(),
+      ask: query => { void submitIntelligenceQuery(query); },
+      notify: message => addNotification(message, 'info'),
+    },
+    theme: themeStyles,
+    trapFocus: gameSettings.accessibilitySettings?.trapFocusInModals !== false,
+    blocked: confirmationDialog.isOpen || v99LeaveMatchOpen,
+  });
+
   // Resume-hang diagnostics: last passive effect declared in this component, so it runs after every
   // other effect keyed on the resumed turn. Clears the pending flag set in finishTeamAiTurn.
   useEffect(() => {
@@ -281439,6 +283682,7 @@ function dispatchGameSettingsChange(
           onOpenRules={wp7Kit.fn('v101HelpOpenRulesOutsideMatch', () => { updateUiState({ showHelp: false }); openMechanicsEntry('win'); })} /* V10.1 (SECTION 20BE) */
         />
       )}
+      {v110Find.node /* V11.0 (SECTION 20BM): Find Anything's dialog (null while it is off or closed) */}
       {v99LeaveMatchOpen && gameState.gameMode === "game" && (
         <V99LeaveMatchDialog
           prompt={describeLeaveMatchWithRecovery(describeLeaveMatch({ day: Number(gameState.day) || 1, totalDays: Number(gameSettings.totalDays) || 1, unsavedProgress: v99UnsavedProgress, rivalTurn: saveTimingForTurn(gameState) === 'after_rival_turn', firstRunActive: Boolean(wp8State?.active), campaignChapter: wp98ChapterBindingRef.current ? wp98ChapterBindingRef.current.chapterIndex + 1 : null }), v99mr.coverage, v99mr.status.day) /* V9.9 (SECTION 20AV): with autosave on, say what Resume match brings back */}
@@ -281490,7 +283734,7 @@ function dispatchGameSettingsChange(
       )}
 
       {uiState.showAutoModeActivityPanel && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4" style={{ zIndex: globalUISurfaceManager.getZIndex("activity_ledger") }}>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4" style={{ zIndex: globalUISurfaceManager.getZIndex(v110WindowSurfaceId('auto_mode_activity_panel', gameSettings)) }}>{/* V11.0 (SECTION 20BL, Q4): its own id while Find Anything is on (was "activity_ledger") */}
           <div className="bg-slate-900 border border-sky-500/50 rounded-2xl w-full max-w-4xl p-6 shadow-2xl overflow-hidden max-h-[calc(100dvh-2rem)]">
             <div className="flex justify-between items-center pb-3 border-b border-slate-800">
               <h3 className="text-lg font-bold text-white flex items-center gap-2"><span>📜</span> Auto Mode Real-Time Activity Ledger</h3>
