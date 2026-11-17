@@ -1,0 +1,1212 @@
+{
+ "settingsTabs": [
+  {
+   "tab": "home",
+   "steps": [
+    "⋯ More",
+    "⚙️Settings",
+    "⚙️ Advanced Settings"
+   ],
+   "simpleSeenFirst": true,
+   "sectionsVisible": [
+    "home.dashboard"
+   ],
+   "sectionsBeforeTab": null,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "home",
+    "showSettings": true,
+    "target": null,
+    "flags": [
+     "showSettings"
+    ]
+   }
+  },
+  {
+   "tab": "quickSetup",
+   "steps": [
+    "⋯ More",
+    "⚙️Settings",
+    "⚙️ Advanced Settings",
+    "Quick Setup & Presets"
+   ],
+   "simpleSeenFirst": true,
+   "sectionsVisible": [
+    "quickSetup.core",
+    "quickSetup.presets"
+   ],
+   "sectionsBeforeTab": 1,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "quickSetup",
+    "showSettings": true,
+    "target": null,
+    "flags": [
+     "showSettings"
+    ]
+   }
+  },
+  {
+   "tab": "mechanicsDir",
+   "steps": [
+    "⋯ More",
+    "⚙️Settings",
+    "⚙️ Advanced Settings",
+    "Mechanics Directory"
+   ],
+   "simpleSeenFirst": true,
+   "sectionsVisible": [
+    "teamModeAi.overview",
+    "mechanicsDirectory.directory"
+   ],
+   "sectionsBeforeTab": 1,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "mechanicsDir",
+    "showSettings": true,
+    "target": null,
+    "flags": [
+     "showSettings"
+    ]
+   }
+  },
+  {
+   "tab": "gameplay",
+   "steps": [
+    "⋯ More",
+    "⚙️Settings",
+    "⚙️ Advanced Settings",
+    "Gameplay & Rules"
+   ],
+   "simpleSeenFirst": true,
+   "sectionsVisible": [
+    "gameplay.v101",
+    "gameplay.v100",
+    "gameplay.v99",
+    "gameplay.core",
+    "gameplay.actionLimits",
+    "gameplay.actionOverride",
+    "gameplay.challengeRules",
+    "gameplay.expansions",
+    "gameplay.matchVariety",
+    "gameplay.scenarioMode",
+    "gameplay.rivalryCampaign"
+   ],
+   "sectionsBeforeTab": 1,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "gameplay",
+    "showSettings": true,
+    "target": null,
+    "flags": [
+     "showSettings"
+    ]
+   }
+  },
+  {
+   "tab": "economy",
+   "steps": [
+    "⋯ More",
+    "⚙️Settings",
+    "⚙️ Advanced Settings",
+    "Economy & Money"
+   ],
+   "simpleSeenFirst": true,
+   "sectionsVisible": [
+    "economy.winCondition",
+    "economy.matchShape",
+    "economy.loans"
+   ],
+   "sectionsBeforeTab": 1,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "economy",
+    "showSettings": true,
+    "target": null,
+    "flags": [
+     "showSettings"
+    ]
+   }
+  },
+  {
+   "tab": "competition",
+   "steps": [
+    "⋯ More",
+    "⚙️Settings",
+    "⚙️ Advanced Settings",
+    "Competition & Regions"
+   ],
+   "simpleSeenFirst": true,
+   "sectionsVisible": [
+    "competition.regionControl",
+    "competition.regionalStanding",
+    "competition.externalTerritories",
+    "competition.negotiations",
+    "competition.competitiveActions"
+   ],
+   "sectionsBeforeTab": 1,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "competition",
+    "showSettings": true,
+    "target": null,
+    "flags": [
+     "showSettings"
+    ]
+   }
+  },
+  {
+   "tab": "aiTeams",
+   "steps": [
+    "⋯ More",
+    "⚙️Settings",
+    "⚙️ Advanced Settings",
+    "AI & Team Operations"
+   ],
+   "simpleSeenFirst": true,
+   "sectionsVisible": [
+    "ai.settings",
+    "aiStrategyLab.main",
+    "aiTeams.strategySliders",
+    "aiTeams.coPilot",
+    "teamModeAi.teamBrain",
+    "teamModeAi.competitiveAi",
+    "teamModeAi.actionOverrides",
+    "teamModeAi.sharedActionBank",
+    "teamModeAi.actionLending",
+    "teamModeAi.teamPlans",
+    "teamModeAi.reservations",
+    "teamModeAi.threatTargeting",
+    "teamModeAi.endgameAcceleration",
+    "teamModeAi.emergencyActions",
+    "teamModeAi.teamInitiative",
+    "teamModeAi.comboBonuses",
+    "teamModeAi.cashVault",
+    "teamModeAi.performanceSync2",
+    "teamModeAi.parallelPlanning",
+    "teamModeAi.actionSequences",
+    "teamModeAi.aiThinkingAlgorithm",
+    "teamModeAi.algorithmBuilder",
+    "ai.memory",
+    "ai.persistentMemory",
+    "ai.opponentMind",
+    "ai.communication",
+    "ai.adaptive"
+   ],
+   "sectionsBeforeTab": 1,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "aiTeams",
+    "showSettings": true,
+    "target": null,
+    "flags": [
+     "showSettings"
+    ]
+   }
+  },
+  {
+   "tab": "automation",
+   "steps": [
+    "⋯ More",
+    "⚙️Settings",
+    "⚙️ Advanced Settings",
+    "Automation & Scripts"
+   ],
+   "simpleSeenFirst": true,
+   "sectionsVisible": [
+    "teamModeAi.actionApproval",
+    "teamModeAi.actionRequirements",
+    "advancedSystems.humanAutomation",
+    "autoMode.main",
+    "autoMode.advanced"
+   ],
+   "sectionsBeforeTab": 1,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "automation",
+    "showSettings": true,
+    "target": null,
+    "flags": [
+     "showSettings"
+    ]
+   }
+  },
+  {
+   "tab": "oversight",
+   "steps": [
+    "⋯ More",
+    "⚙️Settings",
+    "⚙️ Advanced Settings",
+    "Governance & Oversight"
+   ],
+   "simpleSeenFirst": true,
+   "sectionsVisible": [
+    "teamModeAi.economyGovernor",
+    "teamModeAi.treasury",
+    "teamModeAi.overseer",
+    "teamModeAi.governanceControlSurface",
+    "teamModeAi.auditor",
+    "advancedSystems.priority"
+   ],
+   "sectionsBeforeTab": 1,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "oversight",
+    "showSettings": true,
+    "target": null,
+    "flags": [
+     "showSettings"
+    ]
+   }
+  },
+  {
+   "tab": "replayDiag",
+   "steps": [
+    "⋯ More",
+    "⚙️Settings",
+    "⚙️ Advanced Settings",
+    "Replay & Diagnostics"
+   ],
+   "simpleSeenFirst": true,
+   "sectionsVisible": [
+    "advancedSystems.decisionTransparency",
+    "advancedSystems.gameActivityLedger",
+    "advancedSystems.aiPipelineInspector",
+    "advancedSystems.diag2Overlay",
+    "advancedSystems.coPilotStartPhase",
+    "advancedSystems.postMatchDebrief",
+    "advancedSystems.replaySafety",
+    "advancedSystems.balanceLab"
+   ],
+   "sectionsBeforeTab": 1,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "replayDiag",
+    "showSettings": true,
+    "target": null,
+    "flags": [
+     "showSettings"
+    ]
+   }
+  },
+  {
+   "tab": "interfaceAcc",
+   "steps": [
+    "⋯ More",
+    "⚙️Settings",
+    "⚙️ Advanced Settings",
+    "Interface & Accessibility"
+   ],
+   "simpleSeenFirst": true,
+   "sectionsVisible": [
+    "interface.appearance",
+    "interface.mapSound",
+    "interface.changelog",
+    "interface.firstRun",
+    "interface.uxAssist",
+    "interface.startScreen",
+    "interface.floatingUi",
+    "interface.aiAssistants",
+    "interface.launcherDock",
+    "interface.quickActionsVisibility",
+    "interface.uiRescue",
+    "interface.safeAreaPreview",
+    "interface.accessibility",
+    "interface.layoutPresets",
+    "interface.modalSizes",
+    "interface.categoryNavigation",
+    "interface.notifications"
+   ],
+   "sectionsBeforeTab": 1,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "interfaceAcc",
+    "showSettings": true,
+    "target": null,
+    "flags": [
+     "showSettings"
+    ]
+   }
+  }
+ ],
+ "simple": {
+  "simpleSeenFirst": true
+ },
+ "lab": [
+  {
+   "i": 0,
+   "card": "AI Difficulty & Engine Rival and teammate AI difficulty, market modifi",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "aiTeams",
+    "showSettings": true,
+    "target": "ai.settings",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 27,
+   "firstSection": "ai.settings",
+   "focusedSection": null
+  },
+  {
+   "i": 1,
+   "card": "AI Thinking & Algorithms Planner algorithms, search depth and thinking",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "aiTeams",
+    "showSettings": true,
+    "target": "teamModeAi.aiThinkingAlgorithm",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 27,
+   "firstSection": "ai.settings",
+   "focusedSection": null
+  },
+  {
+   "i": 2,
+   "card": "AI Algorithm Builder Compose custom AI thinking pipelines.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "aiTeams",
+    "showSettings": true,
+    "target": "teamModeAi.algorithmBuilder",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 27,
+   "firstSection": "ai.settings",
+   "focusedSection": null
+  },
+  {
+   "i": 3,
+   "card": "AI Strategy Lab & Tuning Sliders Strategy presets and weight sliders.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "aiTeams",
+    "showSettings": true,
+    "target": "aiStrategyLab.main",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 27,
+   "firstSection": "ai.settings",
+   "focusedSection": null
+  },
+  {
+   "i": 4,
+   "card": "Adaptive AI & Determinism Comeback logic, opponent models, projected o",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "aiTeams",
+    "showSettings": true,
+    "target": "ai.adaptive",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 27,
+   "firstSection": "ai.settings",
+   "focusedSection": null
+  },
+  {
+   "i": 5,
+   "card": "AI Tuning Lab Enable the AI Tuning Lab UI in Settings → AI & Teams to ",
+   "disabled": true,
+   "clicked": false,
+   "state": {
+    "surface": null,
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": []
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 6,
+   "card": "AI Command Center Enable the AI Command Center UI in Settings → Interf",
+   "disabled": true,
+   "clicked": false,
+   "state": {
+    "surface": null,
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": []
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 7,
+   "card": "AI Action Pipeline Inspector Enable the AI Action Pipeline Inspector i",
+   "disabled": true,
+   "clicked": false,
+   "state": {
+    "surface": null,
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": []
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 8,
+   "card": "Team Brain Team-level planning brain for AI teammates.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "aiTeams",
+    "showSettings": true,
+    "target": "teamModeAi.teamBrain",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 27,
+   "firstSection": "ai.settings",
+   "focusedSection": null
+  },
+  {
+   "i": 9,
+   "card": "Strategic Command & Overseer Team directives and the Adaptive Overseer",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "oversight",
+    "showSettings": true,
+    "target": "teamModeAi.overseer",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 6,
+   "firstSection": "teamModeAi.economyGovernor",
+   "focusedSection": null
+  },
+  {
+   "i": 10,
+   "card": "Overseer Dashboard Live Overseer directives and interventions.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "overseer_dashboard",
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": [
+     "showOverseerDashboard"
+    ]
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 11,
+   "card": "Economy Governor Team spending governor rules.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "oversight",
+    "showSettings": true,
+    "target": "teamModeAi.economyGovernor",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 6,
+   "firstSection": "teamModeAi.economyGovernor",
+   "focusedSection": null
+  },
+  {
+   "i": 12,
+   "card": "Team Treasury Shared treasury rules and funding requests.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "oversight",
+    "showSettings": true,
+    "target": "teamModeAi.treasury",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 6,
+   "firstSection": "teamModeAi.economyGovernor",
+   "focusedSection": null
+  },
+  {
+   "i": 13,
+   "card": "Team Governance Votes, vetoes and the governance control surface.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "oversight",
+    "showSettings": true,
+    "target": "teamModeAi.governanceControlSurface",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 6,
+   "firstSection": "teamModeAi.economyGovernor",
+   "focusedSection": null
+  },
+  {
+   "i": 14,
+   "card": "AI Operations Auditor Auditor rules and incident thresholds.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "oversight",
+    "showSettings": true,
+    "target": "teamModeAi.auditor",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 6,
+   "firstSection": "teamModeAi.economyGovernor",
+   "focusedSection": null
+  },
+  {
+   "i": 15,
+   "card": "Auditor Dashboard Auditor incidents and findings.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "auditor_dashboard",
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": [
+     "showAuditorDashboard"
+    ]
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 16,
+   "card": "Teammate Action Sequences Multi-step teammate sequences.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "aiTeams",
+    "showSettings": true,
+    "target": "teamModeAi.actionSequences",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 27,
+   "firstSection": "ai.settings",
+   "focusedSection": null
+  },
+  {
+   "i": 17,
+   "card": "Team Plans Team plan coordination settings.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "aiTeams",
+    "showSettings": true,
+    "target": "teamModeAi.teamPlans",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 27,
+   "firstSection": "ai.settings",
+   "focusedSection": null
+  },
+  {
+   "i": 18,
+   "card": "Co-Pilot Advanced Permissions Technical authority modes, spending caps",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "aiTeams",
+    "showSettings": true,
+    "target": "aiTeams.coPilot",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 27,
+   "firstSection": "ai.settings",
+   "focusedSection": null
+  },
+  {
+   "i": 19,
+   "card": "Guardian AI Center Guardian thresholds, categories, overrides and audi",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "guardian_ai_center",
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": [
+     "showGuardianAiCenter"
+    ]
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 20,
+   "card": "Assistant Surfaces Floating Ask-the-Game drawer, command widgets and a",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "interfaceAcc",
+    "showSettings": true,
+    "target": "interface.aiAssistants",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 17,
+   "firstSection": "interface.appearance",
+   "focusedSection": null
+  },
+  {
+   "i": 21,
+   "card": "AI Communication Proactive intelligence, speakers and autonomy level.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "aiTeams",
+    "showSettings": true,
+    "target": "ai.communication",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 27,
+   "firstSection": "ai.settings",
+   "focusedSection": null
+  },
+  {
+   "i": 22,
+   "card": "Co-Pilot Console The classic Co-Pilot console and recommendation list.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": null,
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": [
+     "showCoPilotModal"
+    ]
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 23,
+   "card": "Auto Mode Adaptive Match Manager.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "automation",
+    "showSettings": true,
+    "target": "autoMode.main",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 5,
+   "firstSection": "teamModeAi.actionApproval",
+   "focusedSection": null
+  },
+  {
+   "i": 24,
+   "card": "Auto Mode Policies & Limits Advanced Auto Mode boundaries.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "automation",
+    "showSettings": true,
+    "target": "autoMode.advanced",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 5,
+   "firstSection": "teamModeAi.actionApproval",
+   "focusedSection": null
+  },
+  {
+   "i": 25,
+   "card": "Human Player Automation Your own automation rules and run history.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "human_automation_dashboard",
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": [
+     "showHumanAutomationDashboard"
+    ]
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 26,
+   "card": "AI Action Approval Which AI actions require approval.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "automation",
+    "showSettings": true,
+    "target": "teamModeAi.actionApproval",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 5,
+   "firstSection": "teamModeAi.actionApproval",
+   "focusedSection": null
+  },
+  {
+   "i": 27,
+   "card": "Action Requirements Prerequisites AI actions must satisfy.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "automation",
+    "showSettings": true,
+    "target": "teamModeAi.actionRequirements",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 5,
+   "firstSection": "teamModeAi.actionApproval",
+   "focusedSection": null
+  },
+  {
+   "i": 28,
+   "card": "Live Control Center Every live system toggle in one place.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "human_automation_dashboard",
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": [
+     "showLiveControlCenter"
+    ]
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 29,
+   "card": "Core Gameplay Match length, actions per day and core rules.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "gameplay",
+    "showSettings": true,
+    "target": "gameplay.core",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 11,
+   "firstSection": "gameplay.v101",
+   "focusedSection": null
+  },
+  {
+   "i": 30,
+   "card": "Action Limits & Action Points Action point budgets and costs.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "gameplay",
+    "showSettings": true,
+    "target": "gameplay.actionLimits",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 11,
+   "firstSection": "gameplay.v101",
+   "focusedSection": null
+  },
+  {
+   "i": 31,
+   "card": "Priority Resolution How competing systems are resolved.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "oversight",
+    "showSettings": true,
+    "target": "advancedSystems.priority",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 6,
+   "firstSection": "teamModeAi.economyGovernor",
+   "focusedSection": null
+  },
+  {
+   "i": 32,
+   "card": "Determinism Audit Verify deterministic replays.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "determinism_audit_modal",
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": [
+     "showDeterminismAuditModal"
+    ]
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 33,
+   "card": "What-If Timelines Branching simulations.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "what_if_timelines_modal",
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": [
+     "showWhatIfTimelinesModal"
+    ]
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 34,
+   "card": "Balance Sandbox Balance tools inside the Activity Ledger dashboard.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "activity_ledger",
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": [
+     "showGameActivityLedgerDashboard"
+    ]
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 35,
+   "card": "AI Memory In-match AI memory.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "aiTeams",
+    "showSettings": true,
+    "target": "ai.memory",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 27,
+   "firstSection": "ai.settings",
+   "focusedSection": null
+  },
+  {
+   "i": 36,
+   "card": "Persistent AI Memory Cross-match memory, backups and deletion.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "aiTeams",
+    "showSettings": true,
+    "target": "ai.persistentMemory",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 27,
+   "firstSection": "ai.settings",
+   "focusedSection": null
+  },
+  {
+   "i": 37,
+   "card": "Replay & Analytics Replay recording, safety and debrief analytics.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "replayDiag",
+    "showSettings": true,
+    "target": "advancedSystems.replaySafety",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 8,
+   "firstSection": "advancedSystems.decisionTransparency",
+   "focusedSection": null
+  },
+  {
+   "i": 38,
+   "card": "Game Activity Ledger Every recorded event, story and replay comparison",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "activity_ledger",
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": [
+     "showGameActivityLedgerDashboard"
+    ]
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 39,
+   "card": "Ledger Configuration What the Activity Ledger records and saves.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "replayDiag",
+    "showSettings": true,
+    "target": "advancedSystems.gameActivityLedger",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 8,
+   "firstSection": "advancedSystems.decisionTransparency",
+   "focusedSection": null
+  },
+  {
+   "i": 40,
+   "card": "Decision Transparency AI reasoning traces and timelines.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "replayDiag",
+    "showSettings": true,
+    "target": "advancedSystems.decisionTransparency",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 8,
+   "firstSection": "advancedSystems.decisionTransparency",
+   "focusedSection": null
+  },
+  {
+   "i": 41,
+   "card": "Diagnostics Drawer Auto Mode / Co-Pilot diagnostics (Ctrl+Alt+D).",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": null,
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": [
+     "showAutoModeDiagnosticsDrawer"
+    ]
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 42,
+   "card": "DIAG-2 Overlay & Telemetry On-screen diagnostic telemetry overlay.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "replayDiag",
+    "showSettings": true,
+    "target": "advancedSystems.diag2Overlay",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 8,
+   "firstSection": "advancedSystems.decisionTransparency",
+   "focusedSection": null
+  },
+  {
+   "i": 43,
+   "card": "Save Migration Save schema and migration details.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "save_migration_modal",
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": [
+     "showSaveMigrationModal"
+    ]
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 44,
+   "card": "Full Settings Hub Every setting, with search and presets.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "home",
+    "showSettings": true,
+    "target": null,
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  },
+  {
+   "i": 45,
+   "card": "Quick Setup & Presets Presets and quick match setup.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "quickSetup",
+    "showSettings": true,
+    "target": null,
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 2,
+   "firstSection": "quickSetup.core",
+   "focusedSection": null
+  },
+  {
+   "i": 46,
+   "card": "Interface & Accessibility Theme, motion, focus and accessibility.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "interfaceAcc",
+    "showSettings": true,
+    "target": "interface.accessibility",
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 17,
+   "firstSection": "interface.appearance",
+   "focusedSection": null
+  },
+  {
+   "i": 47,
+   "card": "Mechanics Directory Glossary of every game mechanic.",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": "settings_hub",
+    "tab": "mechanicsDir",
+    "showSettings": true,
+    "target": null,
+    "flags": [
+     "showSettings"
+    ]
+   },
+   "sectionsVisible": 2,
+   "firstSection": "teamModeAi.overview",
+   "focusedSection": null
+  },
+  {
+   "i": 48,
+   "card": "Run V9 + Game Intelligence 2.1 self-tests",
+   "disabled": false,
+   "clicked": true,
+   "state": {
+    "surface": null,
+    "tab": "home",
+    "showSettings": false,
+    "target": null,
+    "flags": []
+   },
+   "sectionsVisible": 0,
+   "firstSection": null,
+   "focusedSection": null
+  }
+ ],
+ "tabLabels": {}
+}

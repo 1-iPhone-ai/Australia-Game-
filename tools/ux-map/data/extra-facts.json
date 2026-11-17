@@ -1,0 +1,1547 @@
+{
+ "labCards": [
+  {
+   "id": "ai_difficulty",
+   "labGroup": "ai_engine",
+   "title": "AI Difficulty & Engine",
+   "tab": "aiTeams",
+   "section": "ai.settings",
+   "flag": null
+  },
+  {
+   "id": "ai_algorithms",
+   "labGroup": "ai_engine",
+   "title": "AI Thinking & Algorithms",
+   "tab": "aiTeams",
+   "section": "teamModeAi.aiThinkingAlgorithm",
+   "flag": null
+  },
+  {
+   "id": "ai_builder",
+   "labGroup": "ai_engine",
+   "title": "AI Algorithm Builder",
+   "tab": "aiTeams",
+   "section": "teamModeAi.algorithmBuilder",
+   "flag": null
+  },
+  {
+   "id": "ai_strategy_lab",
+   "labGroup": "ai_engine",
+   "title": "AI Strategy Lab & Tuning Sliders",
+   "tab": "aiTeams",
+   "section": "aiStrategyLab.main",
+   "flag": null
+  },
+  {
+   "id": "ai_adaptive",
+   "labGroup": "ai_engine",
+   "title": "Adaptive AI & Determinism",
+   "tab": "aiTeams",
+   "section": "ai.adaptive",
+   "flag": null
+  },
+  {
+   "id": "team_brain",
+   "labGroup": "team",
+   "title": "Team Brain",
+   "tab": "aiTeams",
+   "section": "teamModeAi.teamBrain",
+   "flag": null
+  },
+  {
+   "id": "team_strategic_command",
+   "labGroup": "team",
+   "title": "Strategic Command & Overseer",
+   "tab": "oversight",
+   "section": "teamModeAi.overseer",
+   "flag": null
+  },
+  {
+   "id": "team_governor",
+   "labGroup": "team",
+   "title": "Economy Governor",
+   "tab": "oversight",
+   "section": "teamModeAi.economyGovernor",
+   "flag": null
+  },
+  {
+   "id": "team_treasury",
+   "labGroup": "team",
+   "title": "Team Treasury",
+   "tab": "oversight",
+   "section": "teamModeAi.treasury",
+   "flag": null
+  },
+  {
+   "id": "team_governance",
+   "labGroup": "team",
+   "title": "Team Governance",
+   "tab": "oversight",
+   "section": "teamModeAi.governanceControlSurface",
+   "flag": null
+  },
+  {
+   "id": "team_auditor",
+   "labGroup": "team",
+   "title": "AI Operations Auditor",
+   "tab": "oversight",
+   "section": "teamModeAi.auditor",
+   "flag": null
+  },
+  {
+   "id": "team_sequences",
+   "labGroup": "team",
+   "title": "Teammate Action Sequences",
+   "tab": "aiTeams",
+   "section": "teamModeAi.actionSequences",
+   "flag": null
+  },
+  {
+   "id": "team_plans",
+   "labGroup": "team",
+   "title": "Team Plans",
+   "tab": "aiTeams",
+   "section": "teamModeAi.teamPlans",
+   "flag": null
+  },
+  {
+   "id": "copilot_advanced",
+   "labGroup": "assistants",
+   "title": "Co-Pilot Advanced Permissions",
+   "tab": "aiTeams",
+   "section": "aiTeams.coPilot",
+   "flag": null
+  },
+  {
+   "id": "ai_assistant_surfaces",
+   "labGroup": "assistants",
+   "title": "Assistant Surfaces",
+   "tab": "interfaceAcc",
+   "section": "interface.aiAssistants",
+   "flag": null
+  },
+  {
+   "id": "ai_communication",
+   "labGroup": "assistants",
+   "title": "AI Communication",
+   "tab": "aiTeams",
+   "section": "ai.communication",
+   "flag": null
+  },
+  {
+   "id": "auto_mode",
+   "labGroup": "automation",
+   "title": "Auto Mode",
+   "tab": "automation",
+   "section": "autoMode.main",
+   "flag": null
+  },
+  {
+   "id": "auto_mode_advanced",
+   "labGroup": "automation",
+   "title": "Auto Mode Policies & Limits",
+   "tab": "automation",
+   "section": "autoMode.advanced",
+   "flag": null
+  },
+  {
+   "id": "action_approval",
+   "labGroup": "automation",
+   "title": "AI Action Approval",
+   "tab": "automation",
+   "section": "teamModeAi.actionApproval",
+   "flag": null
+  },
+  {
+   "id": "action_requirements",
+   "labGroup": "automation",
+   "title": "Action Requirements",
+   "tab": "automation",
+   "section": "teamModeAi.actionRequirements",
+   "flag": null
+  },
+  {
+   "id": "rules_core",
+   "labGroup": "rules",
+   "title": "Core Gameplay",
+   "tab": "gameplay",
+   "section": "gameplay.core",
+   "flag": null
+  },
+  {
+   "id": "rules_action_limits",
+   "labGroup": "rules",
+   "title": "Action Limits & Action Points",
+   "tab": "gameplay",
+   "section": "gameplay.actionLimits",
+   "flag": null
+  },
+  {
+   "id": "rules_priority",
+   "labGroup": "rules",
+   "title": "Priority Resolution",
+   "tab": "oversight",
+   "section": "advancedSystems.priority",
+   "flag": null
+  },
+  {
+   "id": "memory_ai",
+   "labGroup": "memory",
+   "title": "AI Memory",
+   "tab": "aiTeams",
+   "section": "ai.memory",
+   "flag": null
+  },
+  {
+   "id": "memory_persistent",
+   "labGroup": "memory",
+   "title": "Persistent AI Memory",
+   "tab": "aiTeams",
+   "section": "ai.persistentMemory",
+   "flag": null
+  },
+  {
+   "id": "replay_settings",
+   "labGroup": "replay_diag",
+   "title": "Replay & Analytics",
+   "tab": "replayDiag",
+   "section": "advancedSystems.replaySafety",
+   "flag": null
+  },
+  {
+   "id": "ledger_settings",
+   "labGroup": "replay_diag",
+   "title": "Ledger Configuration",
+   "tab": "replayDiag",
+   "section": "advancedSystems.gameActivityLedger",
+   "flag": null
+  },
+  {
+   "id": "decision_transparency",
+   "labGroup": "replay_diag",
+   "title": "Decision Transparency",
+   "tab": "replayDiag",
+   "section": "advancedSystems.decisionTransparency",
+   "flag": null
+  },
+  {
+   "id": "diag2",
+   "labGroup": "replay_diag",
+   "title": "DIAG-2 Overlay & Telemetry",
+   "tab": "replayDiag",
+   "section": "advancedSystems.diag2Overlay",
+   "flag": null
+  },
+  {
+   "id": "settings_home",
+   "labGroup": "settings",
+   "title": "Full Settings Hub",
+   "tab": "home",
+   "section": null,
+   "flag": null
+  },
+  {
+   "id": "settings_quick",
+   "labGroup": "settings",
+   "title": "Quick Setup & Presets",
+   "tab": "quickSetup",
+   "section": null,
+   "flag": null
+  },
+  {
+   "id": "settings_interface",
+   "labGroup": "settings",
+   "title": "Interface & Accessibility",
+   "tab": "interfaceAcc",
+   "section": "interface.accessibility",
+   "flag": null
+  },
+  {
+   "id": "settings_mechanics",
+   "labGroup": "settings",
+   "title": "Mechanics Directory",
+   "tab": "mechanicsDir",
+   "section": null,
+   "flag": null
+  },
+  {
+   "id": "ai_command_center",
+   "labGroup": "ai_engine",
+   "title": "AI Command Center",
+   "tab": null,
+   "section": null,
+   "flag": "showAiCommandCenterModal",
+   "available": "Boolean(gameSettings.aiCommandCenterUiEnabled"
+  },
+  {
+   "id": "team_overseer_dashboard",
+   "labGroup": "team",
+   "title": "Overseer Dashboard",
+   "tab": null,
+   "section": null,
+   "flag": "showOverseerDashboard",
+   "available": "always"
+  },
+  {
+   "id": "team_auditor_dashboard",
+   "labGroup": "team",
+   "title": "Auditor Dashboard",
+   "tab": null,
+   "section": null,
+   "flag": "showAuditorDashboard",
+   "available": "always"
+  },
+  {
+   "id": "guardian_center",
+   "labGroup": "assistants",
+   "title": "Guardian AI Center",
+   "tab": null,
+   "section": null,
+   "flag": "showGuardianAiCenter",
+   "available": "always"
+  },
+  {
+   "id": "copilot_console",
+   "labGroup": "assistants",
+   "title": "Co-Pilot Console",
+   "tab": null,
+   "section": null,
+   "flag": "showCoPilotModal",
+   "available": "always"
+  },
+  {
+   "id": "human_automation",
+   "labGroup": "automation",
+   "title": "Human Player Automation",
+   "tab": null,
+   "section": null,
+   "flag": "showHumanAutomationDashboard",
+   "available": "always"
+  },
+  {
+   "id": "live_control_center",
+   "labGroup": "automation",
+   "title": "Live Control Center",
+   "tab": null,
+   "section": null,
+   "flag": "showLiveControlCenter",
+   "available": "always"
+  },
+  {
+   "id": "rules_determinism",
+   "labGroup": "rules",
+   "title": "Determinism Audit",
+   "tab": null,
+   "section": null,
+   "flag": "showDeterminismAuditModal",
+   "available": "always"
+  },
+  {
+   "id": "rules_whatif",
+   "labGroup": "rules",
+   "title": "What-If Timelines",
+   "tab": null,
+   "section": null,
+   "flag": "showWhatIfTimelinesModal",
+   "available": "always"
+  },
+  {
+   "id": "rules_balance",
+   "labGroup": "rules",
+   "title": "Balance Sandbox",
+   "tab": null,
+   "section": null,
+   "flag": "showGameActivityLedgerDashboard",
+   "available": "always"
+  },
+  {
+   "id": "ledger_dashboard",
+   "labGroup": "replay_diag",
+   "title": "Game Activity Ledger",
+   "tab": null,
+   "section": null,
+   "flag": "showGameActivityLedgerDashboard",
+   "available": "always"
+  },
+  {
+   "id": "auto_mode_diagnostics",
+   "labGroup": "replay_diag",
+   "title": "Diagnostics Drawer",
+   "tab": null,
+   "section": null,
+   "flag": "showAutoModeDiagnosticsDrawer",
+   "available": "always"
+  },
+  {
+   "id": "save_migration",
+   "labGroup": "replay_diag",
+   "title": "Save Migration",
+   "tab": null,
+   "section": null,
+   "flag": "showSaveMigrationModal",
+   "available": "always"
+  },
+  {
+   "id": "ai_tuning_lab",
+   "labGroup": "ai_engine",
+   "title": "AI Tuning Lab",
+   "flag": "setShowTuningLab(true) [own state]",
+   "available": "Boolean(gameSettings.aiTuningLabUiEnabled)"
+  },
+  {
+   "id": "ai_pipeline",
+   "labGroup": "ai_engine",
+   "title": "AI Action Pipeline Inspector",
+   "flag": "setShowAiPipelineInspector(true) [own state]",
+   "available": "Boolean(gameSettings.aiPipelineInspectorEnabled)"
+  }
+ ],
+ "surfaceToday": {
+  "base_game": {
+   "text": "The play screen itself",
+   "clicks": "0",
+   "prefer": true
+  },
+  "game_hud": {
+   "text": "Header and HUD of the play screen",
+   "clicks": "0",
+   "prefer": true
+  },
+  "floating_widget_dock": {
+   "text": "Off by default (`dockSettings.enabled`): turn on in Settings › Interface › 🚀 Unified Launcher & Dock (4 + 1), then always on screen (d)",
+   "clicks": "5 (d)",
+   "prefer": true
+  },
+  "guardian_floating_button": {
+   "text": "Off by default: needs `showGuardianFloatingButton` and Guardian itself on (`guardianAiSettings.enabled`; the auto-hide rule hides it otherwise). Then 🛡️ Guardian opens the Guardian AI Center (m)",
+   "clicks": "on screen after 2 switches (m)",
+   "prefer": true
+  },
+  "ai_command_center_widget": {
+   "text": "Off by default (`aiCommandCenterUiEnabled` + `commandCenterSettings.showCompactFloatingWidget`) (d)",
+   "clicks": "6 (d)",
+   "prefer": true
+  },
+  "quick_actions": {
+   "text": "Quick bar above the play card, always shown (✕ hides it)",
+   "clicks": "0",
+   "prefer": true
+  },
+  "quick_actions_reopen_handle": {
+   "text": "Appears after ✕ Hide quick actions (m)",
+   "clicks": "1",
+   "prefer": true
+  },
+  "notification_toasts": {
+   "text": "Toast lane, always present",
+   "clicks": "0",
+   "prefer": true
+  },
+  "unified_interface_launcher": {
+   "text": "Off by default (`launcherSettings.enabled`); on screen once on (m)",
+   "clicks": "0 after switch (m)",
+   "prefer": true
+  },
+  "guardian_status_panel": {
+   "text": "Needs `enableGuardianSidePanelAccess` (off): the Guardian floating button with the side-panel opening style, or the action-bar Guardian entry (d)",
+   "clicks": "6+ (d)",
+   "prefer": true
+  },
+  "guardian_side_panel": {
+   "text": "Never: its flag `showGuardianSidePanel` is never set; the Guardian button’s side-panel style opens the Status Panel instead",
+   "clicks": "never",
+   "prefer": true
+  },
+  "developer_diagnostics_drawer": {
+   "text": "Never: `showDeveloperDiagnosticsDrawer` is never set. The real Diagnostics Drawer (Ctrl+Alt+D, LAB card) uses the unregistered flag `showAutoModeDiagnosticsDrawer`",
+   "clicks": "never",
+   "prefer": true
+  },
+  "settings_hub": {
+   "text": "⋯ More › ⚙️ Settings (m, opens the Simple view); 1 click via a Guided Learning tip’s Learn More (contextual, m); the 4 More shortcuts and 33 LAB cards open it on a tab (2, m)",
+   "clicks": "2",
+   "prefer": true
+  },
+  "major_transition_confirmation_modal": {
+   "text": "Settings › 🎮 Game Experience › apply a plan with a major change (d)",
+   "clicks": "4+ (d)",
+   "prefer": true
+  },
+  "ai_command_center_modal": {
+   "text": "Off by default (`aiCommandCenterUiEnabled`): then LAB › AI Command Center (m) or Alt+C",
+   "clicks": "2 after switch (m)",
+   "prefer": true
+  },
+  "strategy_planner": {
+   "text": "Only from the Unified Launcher or the Widget Dock, both off by default: 🚀 Launcher › 🎯 Strategy Planner (m)",
+   "clicks": "2 after switch (m)",
+   "prefer": true
+  },
+  "infrastructure_projects_modal": {
+   "text": "Off by default (`stateInfrastructureEnabled`): map footer 🏗️ Infra (m)",
+   "clicks": "1 after switch (m)",
+   "prefer": true
+  },
+  "expeditions_relics_modal": {
+   "text": "Off by default (`expeditionsRelicsEnabled`): map footer 🏺 Expeditions (m)",
+   "clicks": "1 after switch (m)",
+   "prefer": true
+  },
+  "crisis_management_modal": {
+   "text": "Off by default (`dynamicCrisesEnabled` or `dynamicCrisisChainsEnabled`): map footer 🚨 Crisis (m)",
+   "clicks": "1 after switch (m)",
+   "prefer": true
+  },
+  "fog_of_war_intel_modal": {
+   "text": "Off by default (`fogOfWarEnabled`): map footer 🛰️ Intel (m)",
+   "clicks": "1 after switch (m)",
+   "prefer": true
+  },
+  "shop_modal": {
+   "text": "Off by default (`equipmentShopEnabled`): 🛒 Shop on the play screen, usable in shop regions (m)",
+   "clicks": "1 after switch (m)",
+   "prefer": true
+  },
+  "investments_modal": {
+   "text": "Off by default (`investmentsEnabled`): 🏦 Investments in the action bar (m)",
+   "clicks": "1 after switch (m)",
+   "prefer": true
+  },
+  "sabotage_modal": {
+   "text": "Off by default (`sabotageEnabled`), competitive modes only: Sabotage on the play screen (m); also ⋯ More › Sabotage",
+   "clicks": "1 after switch (m)",
+   "prefer": true
+  },
+  "stats_modal": {
+   "text": "Never drawn: `showStats` is set only by an Ask-the-Game-AI deep link and nothing renders it",
+   "clicks": "never",
+   "prefer": true
+  },
+  "end_game_modes": {
+   "text": "Quick bar entry that appears once every challenge is completed (event) (d)",
+   "clicks": "event",
+   "prefer": true
+  },
+  "narrative_decision_modal": {
+   "text": "Event: a story decision in a V10.1 match with the Narrative Engine on (`narrativeEngineEnabled`, off) (d)",
+   "clicks": "event",
+   "prefer": true
+  },
+  "approval_dialog": {
+   "text": "Event: an Auto Mode proposal that needs approval (`autoModeEnabled`, off), via `showAutoModeProposalModal` (d)",
+   "clicks": "event",
+   "prefer": true
+  },
+  "treasury_requests_dialog": {
+   "text": "Never: none of its three flags is set anywhere in game code",
+   "clicks": "never",
+   "prefer": true
+  },
+  "governor_exception_dialog": {
+   "text": "Never: none of its three flags is set anywhere in game code",
+   "clicks": "never",
+   "prefer": true
+  },
+  "guardian_warning_modal": {
+   "text": "Never: `showGuardianWarningModal` is set only by a self-test; Guardian warnings show inline (GuardianInlineWarning)",
+   "clicks": "never",
+   "prefer": true
+  },
+  "dependency_auto_fix_modal": {
+   "text": "Settings › ⚙️ Advanced Settings › ⚡ Auto-Fix All in the dependency banner (shown when a switch needs another that is off) (d)",
+   "clicks": "4 (d)",
+   "prefer": true
+  },
+  "day_transition_overlay": {
+   "text": "Event: after End Turn when `showDayTransition` is on (off by default) (d)",
+   "clicks": "event",
+   "prefer": true
+  },
+  "double_or_nothing_modal": {
+   "text": "Never: Double or Nothing is offered inline after a win (`doubleOrNothingEnabled`), no modal sets this flag",
+   "clicks": "never",
+   "prefer": true
+  },
+  "rescue_emergency_overlay": {
+   "text": "Never: nothing opens it; Shift+Esc runs the UI rescue directly",
+   "clicks": "never",
+   "prefer": true
+  },
+  "replay_viewer": {
+   "text": "Needs a replay first (recording is opt-in, `aiReplayRecordingEnabled`): Save / Load › Open Replay Studio, What-If › Open Replay Studio Branches, the result screen’s Watch replay, a replay file, or auto-open at match end (d). Not tracked by the surface manager (own state `showReplayViewer`)",
+   "clicks": "2 after a recording (d)",
+   "prefer": true
+  },
+  "developer_diagnostics": {
+   "text": "Only from the Unified Launcher / Widget Dock (Tools) or the Dev Diagnostics widget (`diagnosticsSettings.showDevDiagnosticsWidget`), all off by default (d)",
+   "clicks": "2 after switch (d)",
+   "prefer": true
+  },
+  "campaign_select_modal": {
+   "text": "Main menu › 📜 Scenario Mode (the scenario picker); from a match: ⋯ More › 🚪 Leave match › Leave without saving › 📜 Scenario Mode (d; the menu route is m)",
+   "clicks": "4",
+   "prefer": true
+  },
+  "campaign_progression_modal": {
+   "text": "📊 Progress (P) opens the Progress dashboard, which shares this id (m). The Campaign Progression window itself: map footer 📜 Campaign once `campaignModeEnabled` is on (1, m)",
+   "clicks": "1",
+   "prefer": true
+  },
+  "what_if_timelines_modal": {
+   "also": "map footer ⏳ Timelines once `whatIfTimelinesEnabled` is on (1, m)"
+  }
+ },
+ "unregistered": [
+  {
+   "id": "help_shortcuts_modal",
+   "what": "How to play & keyboard shortcuts (KeyboardShortcutsHelpModal)",
+   "opener": "More › ❓ Help; ? key (match and menu)",
+   "clicks": "2 / key",
+   "state": "`showHelp` — mapped to the `ask_game_ai` id (shared)",
+   "home": "Find Anything \"Help\" result + still a window",
+   "pkg": "UX-2"
+  },
+  {
+   "id": "progress_dashboard",
+   "what": "Progress dashboard (stats, records, AI stats link)",
+   "opener": "Action bar 📊 Progress; P",
+   "clicks": "1 / key",
+   "state": "`showProgress` — mapped to `campaign_progression_modal` (shared)",
+   "home": "Window; own id",
+   "pkg": "UX-2"
+  },
+  {
+   "id": "live_control_center",
+   "what": "Live Control Center (every live system toggle)",
+   "opener": "LAB › Live Control Center; 5 \"Open Live Control Center\" buttons in Settings",
+   "clicks": "2",
+   "state": "`showLiveControlCenter` — mapped to `human_automation_dashboard` (shared)",
+   "home": "Window; own id",
+   "pkg": "UX-2"
+  },
+  {
+   "id": "advanced_loans_modal",
+   "what": "Advanced (bank) loans",
+   "opener": "⋯ More › 🏦 Loans once `advancedLoansEnabled` is on (access mode not AI-only) (m); Ask deep link",
+   "clicks": "2 after switch (m)",
+   "state": "`showAdvancedLoans`",
+   "home": "Docked panel extra tab \"Loans\" (Q3)",
+   "pkg": "UX-5 · UX-4"
+  },
+  {
+   "id": "ai_tuning_lab",
+   "what": "AI Tuning Lab (evolve and compare AI genomes; \"Set opponent\")",
+   "opener": "LAB › AI Tuning Lab (disabled until `aiTuningLabUiEnabled`)",
+   "clicks": "2 after switch (m)",
+   "state": "own useState `showTuningLab`",
+   "home": "Window",
+   "pkg": "UX-2 · UX-4"
+  },
+  {
+   "id": "ai_pipeline_inspector",
+   "what": "AI Action Pipeline Inspector",
+   "opener": "LAB card (needs `aiPipelineInspectorEnabled`); Team Mode map footer",
+   "clicks": "2 after switch (m)",
+   "state": "own useState `showAiPipelineInspector` (Escape has a special fallback)",
+   "home": "Window",
+   "pkg": "UX-2 · UX-4"
+  },
+  {
+   "id": "copilot_console",
+   "what": "Co-Pilot Console (classic console and recommendation list)",
+   "opener": "LAB › Co-Pilot Console; compact Co-Pilot panel 💬 Ask Co-Pilot",
+   "clicks": "2",
+   "state": "`showCoPilotModal`",
+   "home": "Window",
+   "pkg": "UX-2"
+  },
+  {
+   "id": "copilot_recommendations",
+   "what": "Co-Pilot recommendations list",
+   "opener": "Compact Co-Pilot panel 📋 View Recommendations (Co-Pilot on)",
+   "clicks": "after switch",
+   "state": "`showCoPilotRecommendationsModal`",
+   "home": "Window",
+   "pkg": "UX-2"
+  },
+  {
+   "id": "copilot_proposal",
+   "what": "Co-Pilot proposal awaiting your approval",
+   "opener": "Control bar Review approval; a decision card",
+   "clicks": "event",
+   "state": "`showCoPilotProposalModal`",
+   "home": "Stays a blocking decision",
+   "pkg": "UX-6"
+  },
+  {
+   "id": "diagnostics_drawer",
+   "what": "Diagnostics Drawer (Auto Mode / Co-Pilot)",
+   "opener": "LAB › Diagnostics Drawer; Ctrl+Alt+D",
+   "clicks": "2 / key",
+   "state": "`showAutoModeDiagnosticsDrawer` (or setting `autoModeDiagnosticsDrawerOpen`)",
+   "home": "Drawer; take the `developer_diagnostics_drawer` id",
+   "pkg": "UX-2"
+  },
+  {
+   "id": "auto_mode_activity_panel",
+   "what": "Auto Mode activity panel",
+   "opener": "none — rendered when `showAutoModeActivityPanel` is true but nothing sets it",
+   "clicks": "never",
+   "state": "`showAutoModeActivityPanel` (alias of `activity_ledger`)",
+   "home": "Decide: wire to Auto Mode or drop (Q4)",
+   "pkg": "UX-2"
+  },
+  {
+   "id": "leave_match_dialog",
+   "what": "Leave match? (Save & leave / Leave / Stay)",
+   "opener": "More › 🚪 Leave match",
+   "clicks": "2",
+   "state": "own useState `v99LeaveMatchOpen`",
+   "home": "Stays a blocking decision",
+   "pkg": "UX-6"
+  },
+  {
+   "id": "confirmation_dialog",
+   "what": "Action confirmations (travel, sell, challenge, end day) with \"don’t ask again\"",
+   "opener": "Before those actions, unless switched off",
+   "clicks": "event",
+   "state": "confirmation state + `dontAskAgain`",
+   "home": "Stays a blocking decision",
+   "pkg": "UX-6"
+  },
+  {
+   "id": "load_preview_modal",
+   "what": "Load preview (what a save file holds before it replaces the match)",
+   "opener": "Save / Load › choose a file",
+   "clicks": "event",
+   "state": "load preview state",
+   "home": "Stays a blocking decision",
+   "pkg": "UX-6"
+  },
+  {
+   "id": "settings_simple_view",
+   "what": "Settings › ✨ Simple (22 choices)",
+   "opener": "More › ⚙️ Settings (opens here)",
+   "clicks": "2",
+   "state": "SettingsExperienceShell viewMode",
+   "home": "Replaced by ⭐ Essentials",
+   "pkg": "UX-3"
+  },
+  {
+   "id": "settings_experience_view",
+   "what": "Settings › 🎮 Game Experience (profile, plans, preview)",
+   "opener": "More › Settings › 🎮 Game Experience",
+   "clicks": "3",
+   "state": "SettingsExperienceShell viewMode",
+   "home": "Group 🧭 Help, screen & sound (plans) — kept",
+   "pkg": "UX-3"
+  },
+  {
+   "id": "settings_preset_manager",
+   "what": "Preset Manager",
+   "opener": "Settings › presets › Manage",
+   "clicks": "4+",
+   "state": "`showPresetManagerModal`",
+   "home": "⭐ Essentials presets row",
+   "pkg": "UX-3"
+  },
+  {
+   "id": "settings_import_export",
+   "what": "Import / export settings",
+   "opener": "Settings › Import/Export",
+   "clicks": "4+",
+   "state": "`showImportExportModal`",
+   "home": "Settings footer",
+   "pkg": "UX-3"
+  },
+  {
+   "id": "settings_view_filters",
+   "what": "Settings filters panel (state, feature, availability)",
+   "opener": "Settings › Advanced › Filters",
+   "clicks": "4",
+   "state": "`showSettingsViewFiltersPanel`",
+   "home": "Inside UX-3 search",
+   "pkg": "UX-3"
+  },
+  {
+   "id": "main_menu",
+   "what": "Main menu (theme, character, name, experience, 6 modes, Save / Load, Settings)",
+   "opener": "First launch after the tutorial; More › 🚪 Leave match › Leave",
+   "clicks": "3",
+   "state": "`gameState.gameMode === \"menu\"`",
+   "home": "Unchanged screen",
+   "pkg": "UX-6"
+  },
+  {
+   "id": "game_over_screen",
+   "what": "Result screen (RUN COMPLETE / winner, stats, replay studio)",
+   "opener": "End of the last day",
+   "clicks": "event",
+   "state": "`gameState.gameMode`",
+   "home": "Unchanged screen",
+   "pkg": "UX-6"
+  },
+  {
+   "id": "ask_drawer",
+   "what": "Ask the Game AI drawer + floating button",
+   "opener": "✨ Ask Game AI floating button (m) or Ctrl+K, once `askGameAiUiEnabled` is on",
+   "clicks": "1 after switch (m)",
+   "state": "own hook state (`useAskGameAIState`), not uiState: the surface manager never sees it, and its `showAskGameAi` alias is never set",
+   "home": "Drawer (optional); feature card",
+   "pkg": "UX-2 · UX-4"
+  },
+  {
+   "id": "diplomatic_breach_prompt",
+   "what": "Diplomatic breach prompt",
+   "opener": "Event (diplomacy)",
+   "clicks": "event",
+   "state": "diplomacy state",
+   "home": "Stays a decision",
+   "pkg": "UX-6"
+  },
+  {
+   "id": "safe_area_overlay",
+   "what": "Safe-area preview overlay",
+   "opener": "`safeAreaPreviewSettings.enabled`",
+   "clicks": "after switch",
+   "state": "setting",
+   "home": "Unchanged (developer)",
+   "pkg": "UX-4"
+  },
+  {
+   "id": "diag2_overlay",
+   "what": "DIAG-2 telemetry overlay",
+   "opener": "`diag2OverlayEnabled`",
+   "clicks": "after switch",
+   "state": "setting",
+   "home": "Unchanged (developer)",
+   "pkg": "UX-4"
+  },
+  {
+   "id": "intent_panels",
+   "what": "Play-card panels: All Actions, Change Goal, Goal Planner, Path, Why these",
+   "opener": "Play card buttons (View All Actions, Change Goal, …)",
+   "clicks": "1",
+   "state": "`showIntentAllActions`, `showIntentChangeGoal`, `showIntentGoalPlanner`, `showIntentPath`, `showIntentWhyThese`",
+   "home": "Unchanged (inline)",
+   "pkg": "UX-2"
+  },
+  {
+   "id": "intelligence_tabs",
+   "what": "INTELLIGENCE sub-tabs (Ask, Learn, Situations, Strategy, Situation, World, Team, Rivals, Diplomacy, What-If)",
+   "opener": "🧠 INTELLIGENCE › tab",
+   "clicks": "2",
+   "state": "layer + sub-tab state",
+   "home": "Unchanged; each tab a Find Anything result",
+   "pkg": "UX-2"
+  },
+  {
+   "id": "lab_inspectors",
+   "what": "LAB inspectors (17: Game Intelligence, Team OS, GI3, Parallel, Settings Intelligence, Diplomacy, World Reaction, Living Regions, Factions, Cohesion, Guided Learning, Content, Feel, Turn flow, Release readiness, Strategic balance, technical Co-Pilot state)",
+   "opener": "🧪 LAB, scroll",
+   "clicks": "1",
+   "state": "inline",
+   "home": "Unchanged (LAB)",
+   "pkg": "UX-2"
+  }
+ ],
+ "otherPrefs": [
+  {
+   "name": "Theme (Dark / Light / Retro / System)",
+   "store": "profile record `aussie-adventure.v99.profile-settings` (`theme`)",
+   "today": "Main menu theme switch",
+   "clicks": "3 (from play)",
+   "home": "⭐ Essentials #9 Look",
+   "pkg": "UX-3"
+  },
+  {
+   "name": "Player name, character",
+   "store": "`uiState.playerName`, `uiState.selectedCharacter`",
+   "today": "Main menu",
+   "clicks": "3 (from play)",
+   "home": "Unchanged (menu)",
+   "pkg": "—"
+  },
+  {
+   "name": "Game mode and difficulty for the next match",
+   "store": "`uiState.pendingMode` (inline difficulty picker); Scenario Mode opens the campaign select",
+   "today": "Main menu mode buttons",
+   "clicks": "4 (from play)",
+   "home": "Unchanged (menu)",
+   "pkg": "—"
+  },
+  {
+   "name": "\"Don’t ask again\" for travel / sell / challenge / end day",
+   "store": "`dontAskAgain` in the save",
+   "today": "The confirmation dialogs; reset in Settings › Gameplay & Rules › ✨ New in V9.9 › Confirmation questions (disabled until something was suppressed)",
+   "clicks": "event / 2",
+   "home": "🎮 Match & rules",
+   "pkg": "UX-3"
+  },
+  {
+   "name": "Quick bar filter and customisation",
+   "store": "`uiState.quickActionDomainFilter`, quick actions customizer",
+   "today": "Quick bar ⋯",
+   "clicks": "1",
+   "home": "Unchanged",
+   "pkg": "—"
+  },
+  {
+   "name": "Settings category navigation memory",
+   "store": "`aussie.v101.settingsNav`",
+   "today": "Settings › Interface & Accessibility › Category Navigation (LAB › Interface & Accessibility)",
+   "clicks": "2",
+   "home": "🧭 Help, screen & sound",
+   "pkg": "UX-3"
+  },
+  {
+   "name": "Rival Recap dismissed, safety nudge answered, challenge hint seen",
+   "store": "`aussie.v101.*` records",
+   "today": "The cards themselves",
+   "clicks": "—",
+   "home": "Unchanged (one-time records)",
+   "pkg": "—"
+  }
+ ],
+ "shortcuts": [
+  {
+   "keys": "Space",
+   "does": "End turn",
+   "when": "match, no window open",
+   "src": "KEYBOARD_SHORTCUTS",
+   "v11": "keep"
+  },
+  {
+   "keys": "C / T / R / M / W",
+   "does": "Challenges / Travel / Market (sell) / Resource Market (buy) / Workshop",
+   "when": "match",
+   "src": "KEYBOARD_SHORTCUTS",
+   "v11": "keep; open the docked panel tab (UX-5)"
+  },
+  {
+   "keys": "G",
+   "does": "Show / hide the map",
+   "when": "match",
+   "src": "KEYBOARD_SHORTCUTS",
+   "v11": "keep"
+  },
+  {
+   "keys": "N / H / P",
+   "does": "Negotiations / History / Progress",
+   "when": "match",
+   "src": "KEYBOARD_SHORTCUTS",
+   "v11": "keep"
+  },
+  {
+   "keys": "?",
+   "does": "Help: how to play and shortcuts",
+   "when": "match and main menu",
+   "src": "KEYBOARD_SHORTCUTS, useV99HelpKey",
+   "v11": "keep; Help becomes a Find Anything result"
+  },
+  {
+   "keys": "Escape",
+   "does": "Close the top window (clears every flag that opens it); first press blurs a field with text",
+   "when": "always",
+   "src": "KEYBOARD_SHORTCUTS + V10.1 Escape rule",
+   "v11": "keep"
+  },
+  {
+   "keys": "Shift+Escape (or Ctrl+Shift+R / Alt+Shift+Escape)",
+   "does": "UI rescue: close everything, restore layout",
+   "when": "always (rescue switch on by default)",
+   "src": "`uiRescueSettings.rescueHotkeyCombo`",
+   "v11": "keep"
+  },
+  {
+   "keys": "Ctrl/⌘+S",
+   "does": "Save the match (does not open Save / Load)",
+   "when": "match",
+   "src": "handleKeyPress",
+   "v11": "keep"
+  },
+  {
+   "keys": "Ctrl+Shift+C (or Ctrl+Alt+C)",
+   "does": "Clear notifications",
+   "when": "match",
+   "src": "`notificationClearShortcut`",
+   "v11": "keep"
+  },
+  {
+   "keys": "Alt+C",
+   "does": "AI Command Center",
+   "when": "`aiCommandCenterUiEnabled` on",
+   "src": "handleKeyPress",
+   "v11": "keep"
+  },
+  {
+   "keys": "Ctrl/⌘+K",
+   "does": "Toggle the Ask the Game AI drawer",
+   "when": "`askGameAiUiEnabled` on (off by default)",
+   "src": "useEffect at line 227750",
+   "v11": "⚠️ clashes with Find Anything (Q5)"
+  },
+  {
+   "keys": "Ctrl+Alt+D (configurable)",
+   "does": "Diagnostics Drawer",
+   "when": "always",
+   "src": "`diagnosticsSettings.exportDiagnosticsHotkey`",
+   "v11": "keep"
+  },
+  {
+   "keys": "/ or Ctrl/⌘+F",
+   "does": "Focus the settings search",
+   "when": "Settings open",
+   "src": "renderSettingsModal",
+   "v11": "keep inside Settings"
+  },
+  {
+   "keys": "← → Home End (Shift+← →)",
+   "does": "Replay: step, jump, by turn; Space plays/pauses",
+   "when": "Replay viewer open",
+   "src": "replay keyboard effect",
+   "v11": "keep"
+  },
+  {
+   "keys": "← → Home End",
+   "does": "Move between PLAY / INTELLIGENCE / LAB",
+   "when": "focus on the layer tabs",
+   "src": "ExperienceLayerNav",
+   "v11": "keep"
+  },
+  {
+   "keys": "Tab / Shift+Tab",
+   "does": "Focus stays inside the open dialog",
+   "when": "dialog open",
+   "src": "V10.1 dialogs",
+   "v11": "keep (UX-5 constraint)"
+  },
+  {
+   "keys": "Alt+S",
+   "does": "Strategy Planner",
+   "when": "never — `useStrategyPlannerHotkey` is defined but never called",
+   "src": "line 21941",
+   "v11": "dormant; decide (Q4)"
+  }
+ ],
+ "misfiled": [
+  {
+   "k": "rescueSettings",
+   "section": "interface.uiRescue",
+   "verdict": "reset only",
+   "where": "Reset Rescue Settings button",
+   "whereSection": null
+  },
+  {
+   "k": "rememberCategoryNavigationMode",
+   "section": "interface.categoryNavigation",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "autoCollapseCategoriesOnNarrow",
+   "section": "interface.categoryNavigation",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiSabotagePriority",
+   "section": "gameplay.expansions",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiInvestmentPriority",
+   "section": "gameplay.expansions",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiEquipmentPurchasePriority",
+   "section": "gameplay.expansions",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiInfrastructurePriority",
+   "section": "gameplay.expansions",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiCrisisMitigationPriority",
+   "section": "gameplay.expansions",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "v93ContentThemes",
+   "section": "gameplay.matchVariety",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "v93RecentRare",
+   "section": "gameplay.matchVariety",
+   "verdict": "internal",
+   "where": "cross-match variety history",
+   "whereSection": null
+  },
+  {
+   "k": "aiDifficulty",
+   "section": "ai.settings",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "directiveBudgetEnabled",
+   "section": "ai.settings",
+   "verdict": "control elsewhere",
+   "where": "Team AI Overseer section",
+   "whereSection": "teamModeAi.overseer"
+  },
+  {
+   "k": "directivesPerTurn",
+   "section": "ai.settings",
+   "verdict": "control elsewhere",
+   "where": "Team AI Overseer section",
+   "whereSection": "teamModeAi.overseer"
+  },
+  {
+   "k": "directiveEscalationCost",
+   "section": "ai.settings",
+   "verdict": "control elsewhere",
+   "where": "Team AI Overseer section",
+   "whereSection": "teamModeAi.overseer"
+  },
+  {
+   "k": "aiFairnessLevel",
+   "section": "ai.settings",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiPersonalityVariance",
+   "section": "ai.settings",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiPlanningDepth",
+   "section": "ai.settings",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiEngineVersion",
+   "section": "ai.settings",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiGrandTourPriority",
+   "section": "ai.settings",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiMarketModifierAwareness",
+   "section": "ai.settings",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiSpecialAbilityPriority",
+   "section": "ai.settings",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiEconomyInteractionWeight",
+   "section": "ai.settings",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiNegotiationParticipationWeight",
+   "section": "ai.settings",
+   "verdict": "reset only",
+   "where": "AI Difficulty reset",
+   "whereSection": null
+  },
+  {
+   "k": "aiNegotiationValuationWeight",
+   "section": "ai.settings",
+   "verdict": "reset only",
+   "where": "AI Difficulty reset",
+   "whereSection": null
+  },
+  {
+   "k": "teammatePerformanceSyncStrength",
+   "section": "ai.settings",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiEffectivenessScorecardEnabled",
+   "section": "ai.settings",
+   "verdict": "control elsewhere",
+   "where": "Activity Ledger window",
+   "whereSection": null
+  },
+  {
+   "k": "aiEffectivenessBlunderThresholdRoi",
+   "section": "ai.settings",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiEffectivenessTrackCompliance",
+   "section": "ai.settings",
+   "verdict": "control elsewhere",
+   "where": "Activity Ledger window",
+   "whereSection": null
+  },
+  {
+   "k": "aiEconomicCheats",
+   "section": "ai.settings",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "strategyPlannerSettings",
+   "section": "aiTeams.coPilot",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "commandCenterSettings",
+   "section": "aiTeams.coPilot",
+   "verdict": "control elsewhere",
+   "where": "AI Command Center widget",
+   "whereSection": null
+  },
+  {
+   "k": "defaultGuardianOpeningStyle",
+   "section": "aiTeams.coPilot",
+   "verdict": "control elsewhere",
+   "where": "Guardian AI Center window",
+   "whereSection": null
+  },
+  {
+   "k": "showGuardianFloatingButton",
+   "section": "aiTeams.coPilot",
+   "verdict": "control elsewhere",
+   "where": "Guardian AI Center window",
+   "whereSection": null
+  },
+  {
+   "k": "enableGuardianSidePanelAccess",
+   "section": "aiTeams.coPilot",
+   "verdict": "control elsewhere",
+   "where": "Guardian AI Center window",
+   "whereSection": null
+  },
+  {
+   "k": "hideGuardianFloatingButtonWhileCenterOpen",
+   "section": "aiTeams.coPilot",
+   "verdict": "control elsewhere",
+   "where": "Guardian AI Center window",
+   "whereSection": null
+  },
+  {
+   "k": "hideGuardianFloatingButtonWhileAnotherBlockingModalOpen",
+   "section": "aiTeams.coPilot",
+   "verdict": "control elsewhere",
+   "where": "Guardian AI Center window",
+   "whereSection": null
+  },
+  {
+   "k": "guardianFloatingPosition",
+   "section": "aiTeams.coPilot",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "allowGuardianFloatingButtonDragging",
+   "section": "aiTeams.coPilot",
+   "verdict": "control elsewhere",
+   "where": "Guardian AI Center window",
+   "whereSection": null
+  },
+  {
+   "k": "rememberGuardianFloatingPosition",
+   "section": "aiTeams.coPilot",
+   "verdict": "control elsewhere",
+   "where": "Guardian AI Center window",
+   "whereSection": null
+  },
+  {
+   "k": "teamDifficultyOverrides",
+   "section": "teamModeAi.performanceSync2",
+   "verdict": "control in its other indexed section",
+   "where": "Competitive AI section",
+   "whereSection": "teamModeAi.competitiveAi"
+  },
+  {
+   "k": "teamTreasuryAllowAiFundingRequests",
+   "section": "teamModeAi.treasury",
+   "verdict": "reset only",
+   "where": "Restore classic V6.6 competitive AI",
+   "whereSection": null
+  },
+  {
+   "k": "teamAiOverseerDashboardEnabled",
+   "section": "teamModeAi.overseer",
+   "verdict": "reset only",
+   "where": "Restore classic V6.6 competitive AI",
+   "whereSection": null
+  },
+  {
+   "k": "overseerWinConditionCounterStrategyEnabled",
+   "section": "teamModeAi.overseer",
+   "verdict": "control in its other indexed section",
+   "where": "Adaptive AI section",
+   "whereSection": "ai.adaptive"
+  },
+  {
+   "k": "teamGovernanceMode",
+   "section": "teamModeAi.overseer",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "overseerAutoResolveThreshold",
+   "section": "teamModeAi.overseer",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "planSwitchingCost",
+   "section": "teamModeAi.aiThinkingAlgorithm",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiTacticalIntelligence",
+   "section": "teamModeAi.aiThinkingAlgorithm",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "teamAiTacticalLookaheadDepth",
+   "section": "teamModeAi.aiThinkingAlgorithm",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "teamAiCandidateEvaluationWidth",
+   "section": "teamModeAi.aiThinkingAlgorithm",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "defaultPenaltyMultiplier",
+   "section": "economy.loans",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "loanTierUnlockSpeedMultiplier",
+   "section": "economy.loans",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "decisionTransparencySamplingDensity",
+   "section": "advancedSystems.decisionTransparency",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "decisionTransparencyPanelDensity",
+   "section": "advancedSystems.decisionTransparency",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "gameActivityLedgerPreserveBookmarks",
+   "section": "advancedSystems.gameActivityLedger",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "gameActivityLedgerPreserveRootCausal",
+   "section": "advancedSystems.gameActivityLedger",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "ledgerDiagnosticsEnabled",
+   "section": "advancedSystems.gameActivityLedger",
+   "verdict": "control elsewhere",
+   "where": "AI Difficulty section",
+   "whereSection": "ai.settings"
+  },
+  {
+   "k": "ledgerPruneRetentionLimit",
+   "section": "advancedSystems.gameActivityLedger",
+   "verdict": "control elsewhere",
+   "where": "Activity Ledger window",
+   "whereSection": null
+  },
+  {
+   "k": "ledgerAutoPruneEnabled",
+   "section": "advancedSystems.gameActivityLedger",
+   "verdict": "control elsewhere",
+   "where": "Activity Ledger window",
+   "whereSection": null
+  },
+  {
+   "k": "ledgerExportCompressionEnabled",
+   "section": "advancedSystems.gameActivityLedger",
+   "verdict": "control elsewhere",
+   "where": "Activity Ledger window",
+   "whereSection": null
+  },
+  {
+   "k": "randomnessMode",
+   "section": "advancedSystems.replaySafety",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "allowStrategyChanges",
+   "section": "autoMode.main",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "allowEconomyChanges",
+   "section": "autoMode.main",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "allowActionManagementChanges",
+   "section": "autoMode.main",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "preserveReplayDeterminism",
+   "section": "autoMode.main",
+   "verdict": "control elsewhere",
+   "where": "Auto Mode Advanced Policies section",
+   "whereSection": "autoMode.advanced"
+  },
+  {
+   "k": "smartSettingsProfile",
+   "section": "autoMode.main",
+   "verdict": "internal",
+   "where": "experience profile record",
+   "whereSection": null
+  },
+  {
+   "k": "autoModeDiagnosticsDrawerOpen",
+   "section": "autoMode.advanced",
+   "verdict": "internal",
+   "where": "drawer open flag",
+   "whereSection": null
+  },
+  {
+   "k": "deferredTransactions",
+   "section": "autoMode.advanced",
+   "verdict": "internal",
+   "where": "held settings edits",
+   "whereSection": null
+  },
+  {
+   "k": "infrastructureEnabled",
+   "section": "competition.regionalStanding",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiRegionalContractPriority",
+   "section": "competition.regionalStanding",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "expeditionModeEnabled",
+   "section": "competition.externalTerritories",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "survivalMechanicsEnabled",
+   "section": "competition.externalTerritories",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "dailySupplyConsumptionRate",
+   "section": "competition.externalTerritories",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "forcedRetreatEnabled",
+   "section": "competition.externalTerritories",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  },
+  {
+   "k": "aiRelicEquipPriority",
+   "section": "competition.externalTerritories",
+   "verdict": "no control found",
+   "where": "",
+   "whereSection": null
+  }
+ ]
+}

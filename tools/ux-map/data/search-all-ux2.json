@@ -1,0 +1,2315 @@
+{
+ "allowSettingsCategoryCollapse": {
+  "q": "allowSettingsCategoryCollapse",
+  "as": "field"
+ },
+ "startSettingsCategoryCollapsed": {
+  "q": "startSettingsCategoryCollapsed",
+  "as": "field"
+ },
+ "settingsCategoryNavigationMode": {
+  "q": "settingsCategoryNavigationMode",
+  "as": "field"
+ },
+ "rememberCategoryNavigationState": {
+  "q": "rememberCategoryNavigationState",
+  "as": "field"
+ },
+ "rememberCategoryNavigationMode": {
+  "q": "rememberCategoryNavigationMode",
+  "as": "field"
+ },
+ "autoCollapseCategoriesOnNarrow": {
+  "q": "autoCollapseCategoriesOnNarrow",
+  "as": "field"
+ },
+ "keepQuickActionsReopenHandleWhenClosed": {
+  "q": "keepQuickActionsReopenHandleWhenClosed",
+  "as": "section"
+ },
+ "fullyHideQuickActionsWhenClosed": {
+  "q": "fullyHideQuickActionsWhenClosed",
+  "as": "section"
+ },
+ "uiRescueSettings": {
+  "q": "uiRescueSettings",
+  "as": "section"
+ },
+ "rescueSettings": {
+  "q": "rescueSettings",
+  "as": "section"
+ },
+ "safeAreaPreviewSettings": {
+  "q": "safeAreaPreviewSettings",
+  "as": "section"
+ },
+ "accessibilitySettings": {
+  "q": "accessibilitySettings",
+  "as": "section"
+ },
+ "diagnosticsSettings": {
+  "q": "diagnosticsSettings",
+  "as": "section"
+ },
+ "aiCommandCenterUiEnabled": {
+  "q": "aiCommandCenterUiEnabled",
+  "as": "section"
+ },
+ "askGameAiUiEnabled": {
+  "q": "askGameAiUiEnabled",
+  "as": "field"
+ },
+ "aiTuningLabUiEnabled": {
+  "q": "aiTuningLabUiEnabled",
+  "as": "field"
+ },
+ "opponentGenomeId": null,
+ "startScreenConflictProtection": {
+  "q": "startScreenConflictProtection",
+  "as": "section"
+ },
+ "showFloatingControlsOnStartScreen": {
+  "q": "showFloatingControlsOnStartScreen",
+  "as": "section"
+ },
+ "startScreenFloatingLayout": {
+  "q": "startScreenFloatingLayout",
+  "as": "section"
+ },
+ "restoreEligibleFloatingControlsAfterMatchStarts": {
+  "q": "restoreEligibleFloatingControlsAfterMatchStarts",
+  "as": "section"
+ },
+ "hideGameplaySidePanelsOnStartScreen": {
+  "q": "hideGameplaySidePanelsOnStartScreen",
+  "as": "section"
+ },
+ "actionPointConsumptionSettings": {
+  "q": "actionPointConsumptionSettings",
+  "as": "section"
+ },
+ "autoModeEnabled": {
+  "q": "autoModeEnabled",
+  "as": "field"
+ },
+ "permissionMode": {
+  "q": "permissionMode",
+  "as": "field"
+ },
+ "allowStrategyChanges": {
+  "q": "allowStrategyChanges",
+  "as": "field"
+ },
+ "allowEconomyChanges": {
+  "q": "allowEconomyChanges",
+  "as": "field"
+ },
+ "allowActionManagementChanges": {
+  "q": "allowActionManagementChanges",
+  "as": "field"
+ },
+ "allowNumericalModifiers": {
+  "q": "allowNumericalModifiers",
+  "as": "field"
+ },
+ "preserveReplayDeterminism": {
+  "q": "preserveReplayDeterminism",
+  "as": "field"
+ },
+ "randomnessMode": {
+  "q": "randomnessMode",
+  "as": "field"
+ },
+ "survivalMechanicsEnabled": {
+  "q": "survivalMechanicsEnabled",
+  "as": "section"
+ },
+ "dailySupplyConsumptionRate": {
+  "q": "dailySupplyConsumptionRate",
+  "as": "section"
+ },
+ "forcedRetreatEnabled": {
+  "q": "forcedRetreatEnabled",
+  "as": "section"
+ },
+ "actionLimitsEnabled": {
+  "q": "actionLimitsEnabled",
+  "as": "section"
+ },
+ "maxActionsPerTurn": {
+  "q": "maxActionsPerTurn",
+  "as": "field"
+ },
+ "aiMaxActionsPerTurn": {
+  "q": "aiMaxActionsPerTurn",
+  "as": "section"
+ },
+ "allowActionOverride": {
+  "q": "allowActionOverride",
+  "as": "section"
+ },
+ "overrideCost": {
+  "q": "overrideCost",
+  "as": "section"
+ },
+ "totalDays": {
+  "q": "totalDays",
+  "as": "field"
+ },
+ "playerActionsPerDay": {
+  "q": "playerActionsPerDay",
+  "as": "field"
+ },
+ "aiActionsPerDay": {
+  "q": "aiActionsPerDay",
+  "as": "field"
+ },
+ "showDayTransition": {
+  "q": "showDayTransition",
+  "as": "section"
+ },
+ "dynamicWagerEnabled": {
+  "q": "dynamicWagerEnabled",
+  "as": "section"
+ },
+ "doubleOrNothingEnabled": {
+  "q": "doubleOrNothingEnabled",
+  "as": "section"
+ },
+ "investmentsEnabled": {
+  "q": "investmentsEnabled",
+  "as": "section"
+ },
+ "equipmentShopEnabled": {
+  "q": "equipmentShopEnabled",
+  "as": "section"
+ },
+ "sabotageEnabled": {
+  "q": "sabotageEnabled",
+  "as": "section"
+ },
+ "aiUsesMarketModifiers": {
+  "q": "aiUsesMarketModifiers",
+  "as": "section"
+ },
+ "aiSpecialAbilitiesEnabled": {
+  "q": "aiSpecialAbilitiesEnabled",
+  "as": "section"
+ },
+ "aiAffectsEconomy": {
+  "q": "aiAffectsEconomy",
+  "as": "field"
+ },
+ "aiWinConditionSpendingEnabled": {
+  "q": "aiWinConditionSpendingEnabled",
+  "as": "section"
+ },
+ "aiWinConditionAdaptationV2Enabled": {
+  "q": "aiWinConditionAdaptationV2Enabled",
+  "as": "section"
+ },
+ "aiRegionsMajorityRushEnabled": {
+  "q": "aiRegionsMajorityRushEnabled",
+  "as": "section"
+ },
+ "teammatePerformanceSyncEnabled": {
+  "q": "teammatePerformanceSyncEnabled",
+  "as": "section"
+ },
+ "directiveStrength": {
+  "q": "directiveStrength",
+  "as": "section"
+ },
+ "directiveBudgetEnabled": {
+  "q": "directiveBudgetEnabled",
+  "as": "field"
+ },
+ "directivesPerTurn": {
+  "q": "directivesPerTurn",
+  "as": "field"
+ },
+ "directiveEscalationCost": {
+  "q": "directiveEscalationCost",
+  "as": "field"
+ },
+ "overseerAutoResolveThreshold": {
+  "q": "overseerAutoResolveThreshold",
+  "as": "section"
+ },
+ "deterministicRngActive": {
+  "q": "deterministicRngActive",
+  "as": "field"
+ },
+ "teamAiTacticalLookaheadDepth": {
+  "q": "teamAiTacticalLookaheadDepth",
+  "as": "field"
+ },
+ "teamAiCandidateEvaluationWidth": {
+  "q": "teamAiCandidateEvaluationWidth",
+  "as": "section"
+ },
+ "aiDeterministic": {
+  "q": "aiDeterministic",
+  "as": "section"
+ },
+ "aiDeterministicSeed": {
+  "q": "aiDeterministicSeed",
+  "as": "section"
+ },
+ "worldRngMode": {
+  "q": "worldRngMode",
+  "as": "field"
+ },
+ "worldRngSeed": {
+  "q": "worldRngSeed",
+  "as": "section"
+ },
+ "aiReplayRecordingEnabled": {
+  "q": "aiReplayRecordingEnabled",
+  "as": "field"
+ },
+ "aiReplayMaxEvents": {
+  "q": "aiReplayMaxEvents",
+  "as": "section"
+ },
+ "aiReplayPolicy": {
+  "q": "aiReplayPolicy",
+  "as": "section"
+ },
+ "replaySmartCheckpointsEnabled": null,
+ "replayTurningPointDetectionEnabled": null,
+ "replayDeterministicValidationEnabled": null,
+ "replayWhatIfBranchingEnabled": null,
+ "replayDeveloperDiagnosticsEnabled": null,
+ "replayAutoOpenAtMatchEnd": null,
+ "replayDetailLevel": null,
+ "aiEngineVersion": {
+  "q": "aiEngineVersion",
+  "as": "section"
+ },
+ "aiFairnessLevel": {
+  "q": "aiFairnessLevel",
+  "as": "field"
+ },
+ "aiPersonalityVariance": {
+  "q": "aiPersonalityVariance",
+  "as": "section"
+ },
+ "aiPlanningDepth": {
+  "q": "aiPlanningDepth",
+  "as": "field"
+ },
+ "aiGrandTourPriority": {
+  "q": "aiGrandTourPriority",
+  "as": "section"
+ },
+ "aiMarketModifierAwareness": {
+  "q": "aiMarketModifierAwareness",
+  "as": "section"
+ },
+ "aiSpecialAbilityPriority": {
+  "q": "aiSpecialAbilityPriority",
+  "as": "section"
+ },
+ "aiEconomyInteractionWeight": {
+  "q": "aiEconomyInteractionWeight",
+  "as": "field"
+ },
+ "aiWinConditionSpendingStrength": {
+  "q": "aiWinConditionSpendingStrength",
+  "as": "section"
+ },
+ "aiRegionRushIntensity": {
+  "q": "aiRegionRushIntensity",
+  "as": "section"
+ },
+ "aiSabotagePriority": {
+  "q": "aiSabotagePriority",
+  "as": "section"
+ },
+ "aiInvestmentPriority": {
+  "q": "aiInvestmentPriority",
+  "as": "section"
+ },
+ "aiEquipmentPurchasePriority": {
+  "q": "aiEquipmentPurchasePriority",
+  "as": "section"
+ },
+ "aiRegionalContractPriority": {
+  "q": "aiRegionalContractPriority",
+  "as": "field"
+ },
+ "aiInfrastructurePriority": {
+  "q": "aiInfrastructurePriority",
+  "as": "field"
+ },
+ "aiRelicEquipPriority": {
+  "q": "aiRelicEquipPriority",
+  "as": "field"
+ },
+ "aiCrisisMitigationPriority": {
+  "q": "aiCrisisMitigationPriority",
+  "as": "field"
+ },
+ "aiNegotiationParticipationWeight": {
+  "q": "aiNegotiationParticipationWeight",
+  "as": "section"
+ },
+ "aiNegotiationValuationWeight": {
+  "q": "aiNegotiationValuationWeight",
+  "as": "section"
+ },
+ "teammatePerformanceSyncStrength": {
+  "q": "teammatePerformanceSyncStrength",
+  "as": "section"
+ },
+ "aiStrategyLabEnabled": {
+  "q": "aiStrategyLabEnabled",
+  "as": "section"
+ },
+ "aiStrategyLabScope": {
+  "q": "aiStrategyLabScope",
+  "as": "section"
+ },
+ "aiStrategyLabPreset": {
+  "q": "aiStrategyLabPreset",
+  "as": "field"
+ },
+ "aiStrategyLabSafeRangesEnabled": {
+  "q": "aiStrategyLabSafeRangesEnabled",
+  "as": "field"
+ },
+ "aiStrategyLabExtremeModeEnabled": {
+  "q": "aiStrategyLabExtremeModeEnabled",
+  "as": "section"
+ },
+ "aiStrategyLabSeparateProfilesEnabled": {
+  "q": "aiStrategyLabSeparateProfilesEnabled",
+  "as": "section"
+ },
+ "aiStrategyLabScorePreviewEnabled": {
+  "q": "aiStrategyLabScorePreviewEnabled",
+  "as": "section"
+ },
+ "aiStrategyLabWarningsEnabled": {
+  "q": "aiStrategyLabWarningsEnabled",
+  "as": "section"
+ },
+ "aiStrategyLabDesignerNotesEnabled": {
+  "q": "aiStrategyLabDesignerNotesEnabled",
+  "as": "section"
+ },
+ "playerTeammateAiPreset": {
+  "q": "playerTeammateAiPreset",
+  "as": "section"
+ },
+ "opponentAiPreset": {
+  "q": "opponentAiPreset",
+  "as": "section"
+ },
+ "aiEvaluationFactors": {
+  "q": "aiEvaluationFactors",
+  "as": "section"
+ },
+ "adaptiveAiPatternMemoryStrength": {
+  "q": "adaptiveAiPatternMemoryStrength",
+  "as": "section"
+ },
+ "aiMemoryEnabled": {
+  "q": "aiMemoryEnabled",
+  "as": "section"
+ },
+ "aiMemoryInfluenceStrength": {
+  "q": "aiMemoryInfluenceStrength",
+  "as": "section"
+ },
+ "aiMemoryInspectionEnabled": {
+  "q": "aiMemoryInspectionEnabled",
+  "as": "section"
+ },
+ "aiMemoryFullInspectionEnabled": {
+  "q": "aiMemoryFullInspectionEnabled",
+  "as": "section"
+ },
+ "aiStrategicLearningEnabled": {
+  "q": "aiStrategicLearningEnabled",
+  "as": "section"
+ },
+ "aiStrategicLearningStrength": {
+  "q": "aiStrategicLearningStrength",
+  "as": "section"
+ },
+ "aiPersistentMemoryEnabled": {
+  "q": "aiPersistentMemoryEnabled",
+  "as": "section"
+ },
+ "aiPersistentLearningEnabled": {
+  "q": "aiPersistentLearningEnabled",
+  "as": "section"
+ },
+ "aiPersistentIdentityMode": {
+  "q": "aiPersistentIdentityMode",
+  "as": "section"
+ },
+ "aiPersistentAskOnAbandon": {
+  "q": "aiPersistentAskOnAbandon",
+  "as": "section"
+ },
+ "aiPersistentAivsAiEnabled": {
+  "q": "aiPersistentAivsAiEnabled",
+  "as": "section"
+ },
+ "aiCommunicationEnabled": {
+  "q": "aiCommunicationEnabled",
+  "as": "section"
+ },
+ "aiCommunicationProactiveEnabled": {
+  "q": "aiCommunicationProactiveEnabled",
+  "as": "section"
+ },
+ "aiCommunicationProactiveFrequency": {
+  "q": "aiCommunicationProactiveFrequency",
+  "as": "section"
+ },
+ "aiCommunicationAutonomyLevel": {
+  "q": "aiCommunicationAutonomyLevel",
+  "as": "section"
+ },
+ "adaptiveAiRubberBandingStrength": {
+  "q": "adaptiveAiRubberBandingStrength",
+  "as": "section"
+ },
+ "advancedLoansEnabled": {
+  "q": "advancedLoansEnabled",
+  "as": "section"
+ },
+ "advancedLoansAccessMode": {
+  "q": "advancedLoansAccessMode",
+  "as": "section"
+ },
+ "creditScoreEnabled": {
+  "q": "creditScoreEnabled",
+  "as": "section"
+ },
+ "loanEventsEnabled": {
+  "q": "loanEventsEnabled",
+  "as": "section"
+ },
+ "earlyRepaymentEnabled": {
+  "q": "earlyRepaymentEnabled",
+  "as": "section"
+ },
+ "loanRefinancingEnabled": {
+  "q": "loanRefinancingEnabled",
+  "as": "section"
+ },
+ "defaultPenaltyMultiplier": {
+  "q": "defaultPenaltyMultiplier",
+  "as": "section"
+ },
+ "interestAccrualRate": {
+  "q": "interestAccrualRate",
+  "as": "section"
+ },
+ "maxSimultaneousLoans": {
+  "q": "maxSimultaneousLoans",
+  "as": "section"
+ },
+ "loanTierUnlockSpeedMultiplier": {
+  "q": "loanTierUnlockSpeedMultiplier",
+  "as": "section"
+ },
+ "aiLoanRiskWeight": {
+  "q": "aiLoanRiskWeight",
+  "as": "section"
+ },
+ "aiLoanRepaymentPriority": {
+  "q": "aiLoanRepaymentPriority",
+  "as": "section"
+ },
+ "aiLoanRefinancingWeight": {
+  "q": "aiLoanRefinancingWeight",
+  "as": "section"
+ },
+ "aiLoanEmergencyOnly": {
+  "q": "aiLoanEmergencyOnly",
+  "as": "section"
+ },
+ "adaptiveAiEnabled": {
+  "q": "adaptiveAiEnabled",
+  "as": "section"
+ },
+ "adaptiveAiNetWorthThreshold": {
+  "q": "adaptiveAiNetWorthThreshold",
+  "as": "section"
+ },
+ "adaptiveAiLevelDifference": {
+  "q": "adaptiveAiLevelDifference",
+  "as": "section"
+ },
+ "adaptiveAiChallengeDifference": {
+  "q": "adaptiveAiChallengeDifference",
+  "as": "section"
+ },
+ "adaptiveAiConsecutiveDays": {
+  "q": "adaptiveAiConsecutiveDays",
+  "as": "section"
+ },
+ "adaptiveAiMaxDifficulty": {
+  "q": "adaptiveAiMaxDifficulty",
+  "as": "section"
+ },
+ "adaptiveAiAggressionMultiplier": {
+  "q": "adaptiveAiAggressionMultiplier",
+  "as": "section"
+ },
+ "adaptiveAiPatternLearning": {
+  "q": "adaptiveAiPatternLearning",
+  "as": "section"
+ },
+ "adaptiveAiRubberBanding": {
+  "q": "adaptiveAiRubberBanding",
+  "as": "section"
+ },
+ "adaptiveAiTauntsEnabled": {
+  "q": "adaptiveAiTauntsEnabled",
+  "as": "section"
+ },
+ "adaptiveAiAffectedModes": {
+  "q": "adaptiveAiAffectedModes",
+  "as": "section"
+ },
+ "adaptiveAiTeamComebackStrength": {
+  "q": "adaptiveAiTeamComebackStrength",
+  "as": "section"
+ },
+ "adaptiveAiTriggerSensitivity": {
+  "q": "adaptiveAiTriggerSensitivity",
+  "as": "section"
+ },
+ "adaptiveAiSupportFocus": {
+  "q": "adaptiveAiSupportFocus",
+  "as": "section"
+ },
+ "adaptiveAiRiskBias": {
+  "q": "adaptiveAiRiskBias",
+  "as": "section"
+ },
+ "adaptiveAiEconomyRecoveryBias": {
+  "q": "adaptiveAiEconomyRecoveryBias",
+  "as": "section"
+ },
+ "adaptiveAiDisruptionBias": {
+  "q": "adaptiveAiDisruptionBias",
+  "as": "section"
+ },
+ "adaptiveAiShowDecisionTransparency": {
+  "q": "adaptiveAiShowDecisionTransparency",
+  "as": "section"
+ },
+ "adaptiveAiShowActiveModifiers": {
+  "q": "adaptiveAiShowActiveModifiers",
+  "as": "section"
+ },
+ "regionalStandingEnabled": {
+  "q": "regionalStandingEnabled",
+  "as": "field"
+ },
+ "regionalStandingDecayRate": {
+  "q": "regionalStandingDecayRate",
+  "as": "field"
+ },
+ "aiStandingWeight": {
+  "q": "aiStandingWeight",
+  "as": "field"
+ },
+ "aiStandingPriority": {
+  "q": "aiStandingPriority",
+  "as": "field"
+ },
+ "externalTerritoriesEnabled": {
+  "q": "externalTerritoriesEnabled",
+  "as": "field"
+ },
+ "territoryEquipmentGateEnabled": {
+  "q": "territoryEquipmentGateEnabled",
+  "as": "field"
+ },
+ "territoryTravelMode": {
+  "q": "territoryTravelMode",
+  "as": "field"
+ },
+ "multiTurnJourneyEnabled": {
+  "q": "multiTurnJourneyEnabled",
+  "as": "field"
+ },
+ "opponentModelDecayRate": {
+  "q": "opponentModelDecayRate",
+  "as": "section"
+ },
+ "opponentModelWeight": {
+  "q": "opponentModelWeight",
+  "as": "section"
+ },
+ "opponentThreatWeightsEnabled": {
+  "q": "opponentThreatWeightsEnabled",
+  "as": "section"
+ },
+ "rivalDossierPanelEnabled": {
+  "q": "rivalDossierPanelEnabled",
+  "as": "section"
+ },
+ "settingPriorityMode": {
+  "q": "settingPriorityMode",
+  "as": "section"
+ },
+ "maxConcurrentHighInfluenceSettings": {
+  "q": "maxConcurrentHighInfluenceSettings",
+  "as": "section"
+ },
+ "conflictResolutionStrength": {
+  "q": "conflictResolutionStrength",
+  "as": "section"
+ },
+ "deprioritizeLowImpactSettings": {
+  "q": "deprioritizeLowImpactSettings",
+  "as": "section"
+ },
+ "priorityTransparencyEnabled": {
+  "q": "priorityTransparencyEnabled",
+  "as": "section"
+ },
+ "manualPriorityWeights": {
+  "q": "manualPriorityWeights",
+  "as": "section"
+ },
+ "decisionTransparencyEnabled": {
+  "q": "decisionTransparencyEnabled",
+  "as": "section"
+ },
+ "decisionTransparencyVisibilityScope": {
+  "q": "decisionTransparencyVisibilityScope",
+  "as": "field"
+ },
+ "decisionTransparencyViewMode": {
+  "q": "decisionTransparencyViewMode",
+  "as": "section"
+ },
+ "decisionTransparencyRealtimeBreakdown": {
+  "q": "decisionTransparencyRealtimeBreakdown",
+  "as": "section"
+ },
+ "decisionTransparencyTimeline": {
+  "q": "decisionTransparencyTimeline",
+  "as": "section"
+ },
+ "decisionTransparencySettingContributions": {
+  "q": "decisionTransparencySettingContributions",
+  "as": "section"
+ },
+ "decisionTransparencyReasonExplanations": {
+  "q": "decisionTransparencyReasonExplanations",
+  "as": "section"
+ },
+ "decisionTransparencyAlternativeActions": {
+  "q": "decisionTransparencyAlternativeActions",
+  "as": "section"
+ },
+ "decisionTransparencyPriorityFlow": {
+  "q": "decisionTransparencyPriorityFlow",
+  "as": "section"
+ },
+ "decisionTransparencyMaxHistoryRetained": {
+  "q": "decisionTransparencyMaxHistoryRetained",
+  "as": "section"
+ },
+ "decisionTransparencyDetailLevel": {
+  "q": "decisionTransparencyDetailLevel",
+  "as": "field"
+ },
+ "decisionTransparencyExplanationDepth": {
+  "q": "decisionTransparencyExplanationDepth",
+  "as": "field"
+ },
+ "decisionTransparencyTimelineLength": {
+  "q": "decisionTransparencyTimelineLength",
+  "as": "section"
+ },
+ "decisionTransparencySamplingDensity": {
+  "q": "decisionTransparencySamplingDensity",
+  "as": "section"
+ },
+ "decisionTransparencyPanelDensity": {
+  "q": "decisionTransparencyPanelDensity",
+  "as": "section"
+ },
+ "decisionTransparencyMultiAiOverviewEnabled": {
+  "q": "decisionTransparencyMultiAiOverviewEnabled",
+  "as": "section"
+ },
+ "decisionTransparencyShowPerAiMiniCards": {
+  "q": "decisionTransparencyShowPerAiMiniCards",
+  "as": "section"
+ },
+ "decisionTransparencyShowAdaptiveActorBreakdown": {
+  "q": "decisionTransparencyShowAdaptiveActorBreakdown",
+  "as": "section"
+ },
+ "decisionTransparencyShowTeamAdaptiveSource": {
+  "q": "decisionTransparencyShowTeamAdaptiveSource",
+  "as": "section"
+ },
+ "decisionTransparencyShowActorAppliedEffects": {
+  "q": "decisionTransparencyShowActorAppliedEffects",
+  "as": "section"
+ },
+ "decisionTransparencyDefaultGroupView": {
+  "q": "decisionTransparencyDefaultGroupView",
+  "as": "section"
+ },
+ "decisionTransparencyShowOnlyActiveAis": {
+  "q": "decisionTransparencyShowOnlyActiveAis",
+  "as": "section"
+ },
+ "decisionTransparencyShowUnaffectedAis": {
+  "q": "decisionTransparencyShowUnaffectedAis",
+  "as": "section"
+ },
+ "decisionTransparencyMaxVisibleAiCards": {
+  "q": "decisionTransparencyMaxVisibleAiCards",
+  "as": "section"
+ },
+ "decisionTransparencyPerAiTimelineDensity": {
+  "q": "decisionTransparencyPerAiTimelineDensity",
+  "as": "section"
+ },
+ "decisionTransparencyPerAiTimelineLength": {
+  "q": "decisionTransparencyPerAiTimelineLength",
+  "as": "section"
+ },
+ "gameActivityLedgerEnabled": {
+  "q": "gameActivityLedgerEnabled",
+  "as": "section"
+ },
+ "gameActivityLedgerDetailLevel": {
+  "q": "gameActivityLedgerDetailLevel",
+  "as": "field"
+ },
+ "gameActivityLedgerIncludeInSaveFile": {
+  "q": "gameActivityLedgerIncludeInSaveFile",
+  "as": "section"
+ },
+ "gameActivityLedgerMaxEvents": {
+  "q": "gameActivityLedgerMaxEvents",
+  "as": "section"
+ },
+ "gameActivityLedgerRetentionPolicy": {
+  "q": "gameActivityLedgerRetentionPolicy",
+  "as": "section"
+ },
+ "gameActivityLedgerRecordingPaused": {
+  "q": "gameActivityLedgerRecordingPaused",
+  "as": "section"
+ },
+ "aiPipelineInspectorEnabled": {
+  "q": "aiPipelineInspectorEnabled",
+  "as": "section"
+ },
+ "diag2OverlayEnabled": {
+  "q": "diag2OverlayEnabled",
+  "as": "section"
+ },
+ "coPilotStartPhaseOverlayEnabled": {
+  "q": "coPilotStartPhaseOverlayEnabled",
+  "as": "section"
+ },
+ "postMatchDebriefEnabled": {
+  "q": "postMatchDebriefEnabled",
+  "as": "section"
+ },
+ "scenarioModeEnabled": {
+  "q": "scenarioModeEnabled",
+  "as": "field"
+ },
+ "selectedScenarioId": {
+  "q": "selectedScenarioId",
+  "as": "field"
+ },
+ "scenarioEngineV73Enabled": {
+  "q": "scenarioEngineV73Enabled",
+  "as": "section"
+ },
+ "customScenarioBuilderEnabled": {
+  "q": "customScenarioBuilderEnabled",
+  "as": "section"
+ },
+ "regionalContractsEnabled": {
+  "q": "regionalContractsEnabled",
+  "as": "field"
+ },
+ "stateInfrastructureEnabled": {
+  "q": "stateInfrastructureEnabled",
+  "as": "field"
+ },
+ "expeditionsRelicsEnabled": {
+  "q": "expeditionsRelicsEnabled",
+  "as": "field"
+ },
+ "expeditionModeEnabled": {
+  "q": "expeditionModeEnabled",
+  "as": "field"
+ },
+ "dynamicCrisesEnabled": {
+  "q": "dynamicCrisesEnabled",
+  "as": "field"
+ },
+ "dynamicCrisisChainsEnabled": {
+  "q": "dynamicCrisisChainsEnabled",
+  "as": "section"
+ },
+ "campaignModeEnabled": {
+  "q": "campaignModeEnabled",
+  "as": "field"
+ },
+ "campaignEngineEnabled": {
+  "q": "campaignEngineEnabled",
+  "as": "section"
+ },
+ "fogOfWarEnabled": {
+  "q": "fogOfWarEnabled",
+  "as": "field"
+ },
+ "whatIfTimelinesEnabled": {
+  "q": "whatIfTimelinesEnabled",
+  "as": "section"
+ },
+ "narrativeEngineEnabled": {
+  "q": "narrativeEngineEnabled",
+  "as": "section"
+ },
+ "publicStabilityEnabled": {
+  "q": "publicStabilityEnabled",
+  "as": "section"
+ },
+ "nationalEventsEnabled": {
+  "q": "nationalEventsEnabled",
+  "as": "section"
+ },
+ "careerProgressionEnabled": {
+  "q": "careerProgressionEnabled",
+  "as": "section"
+ },
+ "achievementsEnabled": {
+  "q": "achievementsEnabled",
+  "as": "section"
+ },
+ "aiRivalryEnabled": {
+  "q": "aiRivalryEnabled",
+  "as": "section"
+ },
+ "winCondition": {
+  "q": "winCondition",
+  "as": "field"
+ },
+ "winConditionTieBreakers": {
+  "q": "winConditionTieBreakers",
+  "as": "section"
+ },
+ "allowCashOut": {
+  "q": "allowCashOut",
+  "as": "section"
+ },
+ "negotiationMode": {
+  "q": "negotiationMode",
+  "as": "section"
+ },
+ "negotiationOptions": {
+  "q": "negotiationOptions",
+  "as": "section"
+ },
+ "uxAssistPackEnabled": {
+  "q": "uxAssistPackEnabled",
+  "as": "field"
+ },
+ "simplifiedActionBarEnabled": {
+  "q": "simplifiedActionBarEnabled",
+  "as": "section"
+ },
+ "disabledActionFeedbackEnabled": {
+  "q": "disabledActionFeedbackEnabled",
+  "as": "section"
+ },
+ "interactiveMapEnabled": {
+  "q": "interactiveMapEnabled",
+  "as": "section"
+ },
+ "winConditionCoachEnabled": {
+  "q": "winConditionCoachEnabled",
+  "as": "section"
+ },
+ "settingsPresetsEnabled": {
+  "q": "settingsPresetsEnabled",
+  "as": "section"
+ },
+ "groupedInventoryCardsEnabled": {
+  "q": "groupedInventoryCardsEnabled",
+  "as": "section"
+ },
+ "playerIntentOnboardingEnabled": null,
+ "playerIntentOnboardingDismissed": null,
+ "guidedLearning": null,
+ "v93ContentEnabled": {
+  "q": "v93ContentEnabled",
+  "as": "section"
+ },
+ "nationalSystemsEnabled": {
+  "q": "national systems",
+  "as": "section"
+ },
+ "industriesEnabled": null,
+ "infraNetworksEnabled": null,
+ "megaprojectsEnabled": null,
+ "nationalDevelopmentEnabled": null,
+ "innovationEnabled": null,
+ "systemicRiskEnabled": null,
+ "nationalPrioritiesEnabled": null,
+ "economicGeographyEnabled": null,
+ "workforceHumanCapitalEnabled": null,
+ "stateCapacityEnabled": null,
+ "publicFinanceEnabled": null,
+ "householdsEnabled": null,
+ "experienceMode": {
+  "q": "experienceMode",
+  "as": "field"
+ },
+ "challengeApproachesEnabled": {
+  "q": "challengeApproachesEnabled",
+  "as": "field"
+ },
+ "expandedChallengeContentEnabled": {
+  "q": "expandedChallengeContentEnabled",
+  "as": "field"
+ },
+ "proceduralChallengesEnabled": {
+  "q": "proceduralChallengesEnabled",
+  "as": "field"
+ },
+ "visualMode": {
+  "q": "visualMode",
+  "as": "field"
+ },
+ "soundEnabled": {
+  "q": "soundEnabled",
+  "as": "field"
+ },
+ "soundVolume": {
+  "q": "soundVolume",
+  "as": "field"
+ },
+ "reducedMotion": {
+  "q": "reducedMotion",
+  "as": "field"
+ },
+ "opponentPersonalityEnabled": {
+  "q": "opponentPersonalityEnabled",
+  "as": "field"
+ },
+ "matchShapeEnabled": {
+  "q": "matchShapeEnabled",
+  "as": "field"
+ },
+ "matchObjectiveWeight": {
+  "q": "matchObjectiveWeight",
+  "as": "field"
+ },
+ "comebackStrength": {
+  "q": "comebackStrength",
+  "as": "field"
+ },
+ "comebackFullGap": {
+  "q": "comebackFullGap",
+  "as": "field"
+ },
+ "finalStretchPct": {
+  "q": "finalStretchPct",
+  "as": "field"
+ },
+ "guidedFirstRunEnabled": {
+  "q": "guidedFirstRunEnabled",
+  "as": "field"
+ },
+ "canonicalActionRoutingV97": {
+  "q": "canonicalActionRoutingV97",
+  "as": "field"
+ },
+ "autoModeDiagnosticsDrawerOpen": {
+  "q": "autoModeDiagnosticsDrawerOpen",
+  "as": "section"
+ },
+ "infrastructureEnabled": {
+  "q": "infrastructureEnabled",
+  "as": "section"
+ },
+ "deferredTransactions": {
+  "q": "deferredTransactions",
+  "as": "section"
+ },
+ "aiDifficulty": {
+  "q": "aiDifficulty",
+  "as": "section"
+ },
+ "gameActivityLedgerPreserveBookmarks": {
+  "q": "gameActivityLedgerPreserveBookmarks",
+  "as": "section"
+ },
+ "gameActivityLedgerPreserveRootCausal": {
+  "q": "gameActivityLedgerPreserveRootCausal",
+  "as": "section"
+ },
+ "rivalryCampaignEnabled": {
+  "q": "rivalryCampaignEnabled",
+  "as": "field"
+ },
+ "matchRecoveryEnabled": {
+  "q": "matchRecoveryEnabled",
+  "as": "field"
+ },
+ "matchJournalEnabled": {
+  "q": "matchJournalEnabled",
+  "as": "section"
+ },
+ "turnDigestEnabled": {
+  "q": "turnDigestEnabled",
+  "as": "field"
+ },
+ "rivalTurnPace": {
+  "q": "rivalTurnPace",
+  "as": "field"
+ },
+ "classicStickyToasts": {
+  "q": "classicStickyToasts",
+  "as": "field"
+ },
+ "classicPlayScreenLayout": {
+  "q": "classicPlayScreenLayout",
+  "as": "field"
+ },
+ "warnBeforeUnloadEnabled": {
+  "q": "warnBeforeUnloadEnabled",
+  "as": "field"
+ },
+ "rivalRacesEnabled": {
+  "q": "rivalRacesEnabled",
+  "as": "field"
+ },
+ "classicRivalV99": {
+  "q": "classicRivalV99",
+  "as": "field"
+ },
+ "rivalRecapEnabled": {
+  "q": "rivalRecapEnabled",
+  "as": "field"
+ },
+ "dailyFixedRulesEnabled": {
+  "q": "dailyFixedRulesEnabled",
+  "as": "field"
+ },
+ "classicRulesV100": {
+  "q": "classicRulesV100",
+  "as": "field"
+ },
+ "findAnythingEnabled": {
+  "q": "findAnythingEnabled",
+  "as": "field"
+ },
+ "v93StartingPackage": {
+  "q": "v93StartingPackage",
+  "as": "section"
+ },
+ "v93RegionalOpening": {
+  "q": "v93RegionalOpening",
+  "as": "section"
+ },
+ "v93ContentThemes": {
+  "q": "v93ContentThemes",
+  "as": "section"
+ },
+ "v93ContractAbundance": {
+  "q": "v93ContractAbundance",
+  "as": "section"
+ },
+ "v93CrisisIntensity": {
+  "q": "v93CrisisIntensity",
+  "as": "section"
+ },
+ "v93RareEventFrequency": {
+  "q": "v93RareEventFrequency",
+  "as": "section"
+ },
+ "v93RecentRare": {
+  "q": "v93RecentRare",
+  "as": "section"
+ },
+ "playerIntentExplainRoutineActions": null,
+ "playerIntentExplainMode": null,
+ "teamModeAiSystemsEnabled": {
+  "q": "teamModeAiSystemsEnabled",
+  "as": "field"
+ },
+ "teamModeAiSystemProfile": {
+  "q": "teamModeAiSystemProfile",
+  "as": "field"
+ },
+ "teamBrainV63Enabled": {
+  "q": "teamBrainV63Enabled",
+  "as": "field"
+ },
+ "teamBrainModeV63": {
+  "q": "teamBrainModeV63",
+  "as": "field"
+ },
+ "teamBrainStrategyModesEnabled": {
+  "q": "teamBrainStrategyModesEnabled",
+  "as": "section"
+ },
+ "teamBrainPersonalitiesEnabled": {
+  "q": "teamBrainPersonalitiesEnabled",
+  "as": "section"
+ },
+ "teamBrainTeammateSupportEnabled": {
+  "q": "teamBrainTeammateSupportEnabled",
+  "as": "section"
+ },
+ "teamBrainOpponentPressureEnabled": {
+  "q": "teamBrainOpponentPressureEnabled",
+  "as": "section"
+ },
+ "teamBrainComebackLogicEnabled": {
+  "q": "teamBrainComebackLogicEnabled",
+  "as": "section"
+ },
+ "teamBrainRecoveryLogicEnabled": {
+  "q": "teamBrainRecoveryLogicEnabled",
+  "as": "section"
+ },
+ "teamBrainTravelDisciplineEnabled": {
+  "q": "teamBrainTravelDisciplineEnabled",
+  "as": "section"
+ },
+ "teamBrainResourceLogicEnabled": {
+  "q": "teamBrainResourceLogicEnabled",
+  "as": "section"
+ },
+ "teamBrainExplanationEnabled": {
+  "q": "teamBrainExplanationEnabled",
+  "as": "section"
+ },
+ "teamBrainTeammateSupportBias": {
+  "q": "teamBrainTeammateSupportBias",
+  "as": "field"
+ },
+ "teamBrainOpponentPressureBias": {
+  "q": "teamBrainOpponentPressureBias",
+  "as": "section"
+ },
+ "teamBrainTravelDiscipline": {
+  "q": "teamBrainTravelDiscipline",
+  "as": "section"
+ },
+ "teamBrainRiskScaling": {
+  "q": "teamBrainRiskScaling",
+  "as": "section"
+ },
+ "teamCompetitiveAiEnabled": {
+  "q": "teamCompetitiveAiEnabled",
+  "as": "field"
+ },
+ "teamModeAiDifficultyPreset": {
+  "q": "teamModeAiDifficultyPreset",
+  "as": "section"
+ },
+ "friendlyTeamAiPreset": {
+  "q": "friendlyTeamAiPreset",
+  "as": "section"
+ },
+ "enemyTeamAiPreset": {
+  "q": "enemyTeamAiPreset",
+  "as": "section"
+ },
+ "teamAiActionOverridesEnabled": {
+  "q": "teamAiActionOverridesEnabled",
+  "as": "section"
+ },
+ "teamAiOverridePolicy": {
+  "q": "teamAiOverridePolicy",
+  "as": "section"
+ },
+ "friendlyAiOverridePolicy": {
+  "q": "friendlyAiOverridePolicy",
+  "as": "section"
+ },
+ "teamAiOverrideMaxPerActorPerDay": {
+  "q": "teamAiOverrideMaxPerActorPerDay",
+  "as": "section"
+ },
+ "teamAiOverrideMaxPerTeamPerDay": {
+  "q": "teamAiOverrideMaxPerTeamPerDay",
+  "as": "section"
+ },
+ "teamAiOverrideBaseCostMultiplier": {
+  "q": "teamAiOverrideBaseCostMultiplier",
+  "as": "section"
+ },
+ "teamAiOverrideMinimumDecisionScore": {
+  "q": "teamAiOverrideMinimumDecisionScore",
+  "as": "section"
+ },
+ "teamAiOverrideMinimumCashReserve": {
+  "q": "teamAiOverrideMinimumCashReserve",
+  "as": "section"
+ },
+ "teamAiOverrideEscalatingCostEnabled": {
+  "q": "teamAiOverrideEscalatingCostEnabled",
+  "as": "section"
+ },
+ "teamAiOverrideFatigueEnabled": {
+  "q": "teamAiOverrideFatigueEnabled",
+  "as": "section"
+ },
+ "teamAiOverrideTransparencyEnabled": {
+  "q": "teamAiOverrideTransparencyEnabled",
+  "as": "section"
+ },
+ "teamActionBankEnabled": {
+  "q": "teamActionBankEnabled",
+  "as": "section"
+ },
+ "teamActionBankBonusActionsPerDay": {
+  "q": "teamActionBankBonusActionsPerDay",
+  "as": "section"
+ },
+ "teamActionBankDistributionMode": {
+  "q": "teamActionBankDistributionMode",
+  "as": "section"
+ },
+ "teamActionBankReserveActions": {
+  "q": "teamActionBankReserveActions",
+  "as": "section"
+ },
+ "teamActionBankMaxDrawsPerActorPerDay": {
+  "q": "teamActionBankMaxDrawsPerActorPerDay",
+  "as": "section"
+ },
+ "teamActionBankTransparencyEnabled": {
+  "q": "teamActionBankTransparencyEnabled",
+  "as": "section"
+ },
+ "teamAiActionLendingEnabled": {
+  "q": "teamAiActionLendingEnabled",
+  "as": "field"
+ },
+ "teamAiMaxLentActionsPerActorPerDay": {
+  "q": "teamAiMaxLentActionsPerActorPerDay",
+  "as": "section"
+ },
+ "teamAiMaxReceivedActionsPerActorPerDay": {
+  "q": "teamAiMaxReceivedActionsPerActorPerDay",
+  "as": "section"
+ },
+ "teamAiActionLendingMinimumValueGain": {
+  "q": "teamAiActionLendingMinimumValueGain",
+  "as": "section"
+ },
+ "teamAiActionLendingRequiresCommittedPlan": {
+  "q": "teamAiActionLendingRequiresCommittedPlan",
+  "as": "section"
+ },
+ "teamAiActionLendingTransparencyEnabled": {
+  "q": "teamAiActionLendingTransparencyEnabled",
+  "as": "section"
+ },
+ "teamAiPlanCommitmentEnabled": {
+  "q": "teamAiPlanCommitmentEnabled",
+  "as": "section"
+ },
+ "teamAiPlanCommitmentStrength": {
+  "q": "teamAiPlanCommitmentStrength",
+  "as": "section"
+ },
+ "teamAiPlanMaximumDurationDays": {
+  "q": "teamAiPlanMaximumDurationDays",
+  "as": "field"
+ },
+ "teamAiPlanReevaluationFrequency": {
+  "q": "teamAiPlanReevaluationFrequency",
+  "as": "section"
+ },
+ "teamAiPlanInterruptionSensitivity": {
+  "q": "teamAiPlanInterruptionSensitivity",
+  "as": "section"
+ },
+ "teamAiPlanTransparencyEnabled": {
+  "q": "teamAiPlanTransparencyEnabled",
+  "as": "section"
+ },
+ "teamAiReservationStrictness": {
+  "q": "teamAiReservationStrictness",
+  "as": "field"
+ },
+ "friendlyAiRespectPlayerReservations": {
+  "q": "friendlyAiRespectPlayerReservations",
+  "as": "section"
+ },
+ "friendlyAiMayRequestReservedResource": {
+  "q": "friendlyAiMayRequestReservedResource",
+  "as": "section"
+ },
+ "teamAiThreatTargetingEnabled": {
+  "q": "teamAiThreatTargetingEnabled",
+  "as": "section"
+ },
+ "teamAiThreatTargetingStrength": {
+  "q": "teamAiThreatTargetingStrength",
+  "as": "section"
+ },
+ "teamAiThreatReevaluationFrequency": {
+  "q": "teamAiThreatReevaluationFrequency",
+  "as": "section"
+ },
+ "teamAiThreatFocusDuration": {
+  "q": "teamAiThreatFocusDuration",
+  "as": "section"
+ },
+ "teamAiMayTargetFriendlyAiTeammate": {
+  "q": "teamAiMayTargetFriendlyAiTeammate",
+  "as": "section"
+ },
+ "teamAiEndgameAccelerationEnabled": {
+  "q": "teamAiEndgameAccelerationEnabled",
+  "as": "section"
+ },
+ "teamAiEndgameStartPercent": {
+  "q": "teamAiEndgameStartPercent",
+  "as": "section"
+ },
+ "teamAiEndgameAggressionMultiplier": {
+  "q": "teamAiEndgameAggressionMultiplier",
+  "as": "section"
+ },
+ "teamAiEndgameOverrideBias": {
+  "q": "teamAiEndgameOverrideBias",
+  "as": "section"
+ },
+ "teamAiEndgameCashConversionStrength": {
+  "q": "teamAiEndgameCashConversionStrength",
+  "as": "section"
+ },
+ "teamAiEmergencyActionsEnabled": {
+  "q": "teamAiEmergencyActionsEnabled",
+  "as": "section"
+ },
+ "teamAiEmergencyActionCooldownDays": {
+  "q": "teamAiEmergencyActionCooldownDays",
+  "as": "section"
+ },
+ "teamAiEmergencyActionsPerGame": {
+  "q": "teamAiEmergencyActionsPerGame",
+  "as": "section"
+ },
+ "teamAiEmergencyActionStrength": {
+  "q": "teamAiEmergencyActionStrength",
+  "as": "section"
+ },
+ "teamAiEmergencyActionsForFriendlyTeam": {
+  "q": "teamAiEmergencyActionsForFriendlyTeam",
+  "as": "section"
+ },
+ "teamAiEmergencyActionsForEnemyTeam": {
+  "q": "teamAiEmergencyActionsForEnemyTeam",
+  "as": "section"
+ },
+ "teamInitiativeEnabled": {
+  "q": "teamInitiativeEnabled",
+  "as": "section"
+ },
+ "teamInitiativeMaximum": {
+  "q": "teamInitiativeMaximum",
+  "as": "section"
+ },
+ "teamInitiativeGainMultiplier": {
+  "q": "teamInitiativeGainMultiplier",
+  "as": "section"
+ },
+ "teamInitiativeDecayEnabled": {
+  "q": "teamInitiativeDecayEnabled",
+  "as": "section"
+ },
+ "teamInitiativeVisibleToPlayer": {
+  "q": "teamInitiativeVisibleToPlayer",
+  "as": "section"
+ },
+ "teamComboBonusesEnabled": {
+  "q": "teamComboBonusesEnabled",
+  "as": "section"
+ },
+ "teamComboBonusStrength": {
+  "q": "teamComboBonusStrength",
+  "as": "section"
+ },
+ "teamComboWindowActions": {
+  "q": "teamComboWindowActions",
+  "as": "section"
+ },
+ "teamAiReservationTransparencyEnabled": {
+  "q": "teamAiReservationTransparencyEnabled",
+  "as": "section"
+ },
+ "teamAiThreatTargetingTransparencyEnabled": {
+  "q": "teamAiThreatTargetingTransparencyEnabled",
+  "as": "section"
+ },
+ "teamAiEndgameAccelerationTransparencyEnabled": {
+  "q": "teamAiEndgameAccelerationTransparencyEnabled",
+  "as": "section"
+ },
+ "teamAiEmergencyActionsTransparencyEnabled": {
+  "q": "teamAiEmergencyActionsTransparencyEnabled",
+  "as": "section"
+ },
+ "teamInitiativeTransparencyEnabled": {
+  "q": "teamInitiativeTransparencyEnabled",
+  "as": "section"
+ },
+ "teamComboBonusesTransparencyEnabled": {
+  "q": "teamComboBonusesTransparencyEnabled",
+  "as": "section"
+ },
+ "teamCashVaultEnabled": {
+  "q": "teamCashVaultEnabled",
+  "as": "section"
+ },
+ "automaticCashLockingEnabled": {
+  "q": "automaticCashLockingEnabled",
+  "as": "section"
+ },
+ "vaultProtectionMode": {
+  "q": "vaultProtectionMode",
+  "as": "section"
+ },
+ "vaultLockPercentage": {
+  "q": "vaultLockPercentage",
+  "as": "section"
+ },
+ "vaultMilestoneSizeMultiplier": {
+  "q": "vaultMilestoneSizeMultiplier",
+  "as": "section"
+ },
+ "vaultMinimumWorkingCash": {
+  "q": "vaultMinimumWorkingCash",
+  "as": "section"
+ },
+ "vaultCountProtectedCashTowardVictory": {
+  "q": "vaultCountProtectedCashTowardVictory",
+  "as": "section"
+ },
+ "vaultTransparencyEnabled": {
+  "q": "vaultTransparencyEnabled",
+  "as": "section"
+ },
+ "teamEconomyGovernorEnabled": {
+  "q": "teamEconomyGovernorEnabled",
+  "as": "section"
+ },
+ "teamIntelligenceOsEnabled": null,
+ "teamOsAuthorityLevel": null,
+ "teamOsEnemyEnabled": null,
+ "teamOsFullInspectionEnabled": null,
+ "economyCashFloor": {
+  "q": "economyCashFloor",
+  "as": "field"
+ },
+ "economyRecoveryTarget": {
+  "q": "economyRecoveryTarget",
+  "as": "section"
+ },
+ "economyMinimumChallengeProbability": {
+  "q": "economyMinimumChallengeProbability",
+  "as": "section"
+ },
+ "economyRecoverySpendingCap": {
+  "q": "economyRecoverySpendingCap",
+  "as": "section"
+ },
+ "economyReserveStrength": {
+  "q": "economyReserveStrength",
+  "as": "field"
+ },
+ "economyEndgameCashConversionEnabled": {
+  "q": "economyEndgameCashConversionEnabled",
+  "as": "section"
+ },
+ "economySpendingApprovalStrictness": {
+  "q": "economySpendingApprovalStrictness",
+  "as": "section"
+ },
+ "economyGovernorTransparencyEnabled": {
+  "q": "economyGovernorTransparencyEnabled",
+  "as": "section"
+ },
+ "teamAiGovernorRestrictionDetectionEnabled": {
+  "q": "teamAiGovernorRestrictionDetectionEnabled",
+  "as": "section"
+ },
+ "teamAiGovernorRestrictionTransparencyEnabled": {
+  "q": "teamAiGovernorRestrictionTransparencyEnabled",
+  "as": "section"
+ },
+ "teamAiProductiveRecoveryLadderEnabled": {
+  "q": "teamAiProductiveRecoveryLadderEnabled",
+  "as": "section"
+ },
+ "teamAiGovernorAutomaticExceptionsEnabled": {
+  "q": "teamAiGovernorAutomaticExceptionsEnabled",
+  "as": "section"
+ },
+ "teamAiGovernorExceptionConsecutiveTurnsThreshold": {
+  "q": "teamAiGovernorExceptionConsecutiveTurnsThreshold",
+  "as": "section"
+ },
+ "teamAiGovernorExceptionMaxReserveBreach": {
+  "q": "teamAiGovernorExceptionMaxReserveBreach",
+  "as": "section"
+ },
+ "teamAiGovernorExceptionMinProbability": {
+  "q": "teamAiGovernorExceptionMinProbability",
+  "as": "section"
+ },
+ "teamAiGovernorExceptionMinEvRatio": {
+  "q": "teamAiGovernorExceptionMinEvRatio",
+  "as": "section"
+ },
+ "teamAiGovernorExceptionMaxCost": {
+  "q": "teamAiGovernorExceptionMaxCost",
+  "as": "section"
+ },
+ "teammatePerformanceSync2Enabled": {
+  "q": "teammatePerformanceSync2Enabled",
+  "as": "section"
+ },
+ "teammatePerformanceSync2Strength": {
+  "q": "teammatePerformanceSync2Strength",
+  "as": "section"
+ },
+ "teammatePerformanceSync2StrategyLearningEnabled": {
+  "q": "teammatePerformanceSync2StrategyLearningEnabled",
+  "as": "section"
+ },
+ "teammatePerformanceSync2ChallengeExpertiseEnabled": {
+  "q": "teammatePerformanceSync2ChallengeExpertiseEnabled",
+  "as": "section"
+ },
+ "teammatePerformanceSync2ChallengeExpertiseMaxBonus": {
+  "q": "teammatePerformanceSync2ChallengeExpertiseMaxBonus",
+  "as": "section"
+ },
+ "guaranteedRecoveryProtocolEnabled": {
+  "q": "guaranteedRecoveryProtocolEnabled",
+  "as": "section"
+ },
+ "guaranteedRecoveryMinimumChallengeProbability": {
+  "q": "guaranteedRecoveryMinimumChallengeProbability",
+  "as": "section"
+ },
+ "teammatePerformanceSync2TransparencyEnabled": {
+  "q": "teammatePerformanceSync2TransparencyEnabled",
+  "as": "section"
+ },
+ "teammatePerformanceSyncAssistScope": {
+  "q": "teammatePerformanceSyncAssistScope",
+  "as": "section"
+ },
+ "governorCategoryPolicy": {
+  "q": "governorCategoryPolicy",
+  "as": "section"
+ },
+ "teamDifficultyOverrides": {
+  "q": "teamDifficultyOverrides",
+  "as": "section"
+ },
+ "teammatePerformanceSyncMomentumEnabled": {
+  "q": "teammatePerformanceSyncMomentumEnabled",
+  "as": "section"
+ },
+ "teammatePerformanceSyncExpertiseDecayEnabled": {
+  "q": "teammatePerformanceSyncExpertiseDecayEnabled",
+  "as": "section"
+ },
+ "teammatePerformanceSyncExpertiseDecayRate": {
+  "q": "teammatePerformanceSyncExpertiseDecayRate",
+  "as": "section"
+ },
+ "parallelAiPlanningEnabled": {
+  "q": "parallelAiPlanningEnabled",
+  "as": "section"
+ },
+ "parallelAiPlanningCoordinationStrictness": {
+  "q": "parallelAiPlanningCoordinationStrictness",
+  "as": "section"
+ },
+ "parallelAiPlanningSabotageCoordinationEnabled": {
+  "q": "parallelAiPlanningSabotageCoordinationEnabled",
+  "as": "section"
+ },
+ "parallelAiPlanningTransparencyEnabled": {
+  "q": "parallelAiPlanningTransparencyEnabled",
+  "as": "section"
+ },
+ "teamAiActionSequencesEnabled": {
+  "q": "teamAiActionSequencesEnabled",
+  "as": "section"
+ },
+ "aiActionApprovalEnabled": {
+  "q": "aiActionApprovalEnabled",
+  "as": "section"
+ },
+ "actionRequirementsEnabled": {
+  "q": "actionRequirementsEnabled",
+  "as": "section"
+ },
+ "actionRequirementGroups": {
+  "q": "actionRequirementGroups",
+  "as": "section"
+ },
+ "actionRequirementsTransparencyEnabled": {
+  "q": "actionRequirementsTransparencyEnabled",
+  "as": "section"
+ },
+ "aiActionApprovalMode": {
+  "q": "aiActionApprovalMode",
+  "as": "section"
+ },
+ "aiActionApprovalSelectedTypes": {
+  "q": "aiActionApprovalSelectedTypes",
+  "as": "section"
+ },
+ "aiActionApprovalHighRiskThresholds": {
+  "q": "aiActionApprovalHighRiskThresholds",
+  "as": "section"
+ },
+ "aiActionApprovalTeammateOverrides": {
+  "q": "aiActionApprovalTeammateOverrides",
+  "as": "section"
+ },
+ "aiActionApprovalRejectionOutcome": {
+  "q": "aiActionApprovalRejectionOutcome",
+  "as": "section"
+ },
+ "aiActionApprovalTransparencyEnabled": {
+  "q": "aiActionApprovalTransparencyEnabled",
+  "as": "section"
+ },
+ "aiActionApprovalAutoRulesEnabled": {
+  "q": "aiActionApprovalAutoRulesEnabled",
+  "as": "section"
+ },
+ "aiActionApprovalAutoRules": {
+  "q": "aiActionApprovalAutoRules",
+  "as": "section"
+ },
+ "teamAiActionSequencesTransparencyEnabled": {
+  "q": "teamAiActionSequencesTransparencyEnabled",
+  "as": "section"
+ },
+ "teamAiSequenceInterruptsEnabled": {
+  "q": "teamAiSequenceInterruptsEnabled",
+  "as": "section"
+ },
+ "teamAiPhaseSequenceSwitchingEnabled": {
+  "q": "teamAiPhaseSequenceSwitchingEnabled",
+  "as": "section"
+ },
+ "notificationSettings": {
+  "q": "notificationSettings",
+  "as": "section"
+ },
+ "notificationClearShortcut": {
+  "q": "notificationClearShortcut",
+  "as": "section"
+ },
+ "teamTreasuryEnabled": {
+  "q": "teamTreasuryEnabled",
+  "as": "section"
+ },
+ "teamTreasuryEnabledForFriendlyTeam": {
+  "q": "teamTreasuryEnabledForFriendlyTeam",
+  "as": "section"
+ },
+ "teamTreasuryEnabledForEnemyTeam": {
+  "q": "teamTreasuryEnabledForEnemyTeam",
+  "as": "section"
+ },
+ "teamTreasuryShowInUi": {
+  "q": "teamTreasuryShowInUi",
+  "as": "section"
+ },
+ "teamTreasuryShowTransactions": {
+  "q": "teamTreasuryShowTransactions",
+  "as": "section"
+ },
+ "teamTreasuryAllowManualContributions": {
+  "q": "teamTreasuryAllowManualContributions",
+  "as": "section"
+ },
+ "teamTreasuryAllowProtectedCashContribution": {
+  "q": "teamTreasuryAllowProtectedCashContribution",
+  "as": "section"
+ },
+ "teamAiTreasuryContributionEnabled": {
+  "q": "teamAiTreasuryContributionEnabled",
+  "as": "section"
+ },
+ "treasuryAutomaticContributionEnabled": {
+  "q": "treasuryAutomaticContributionEnabled",
+  "as": "section"
+ },
+ "treasuryAutomaticContributionPolicy": {
+  "q": "treasuryAutomaticContributionPolicy",
+  "as": "section"
+ },
+ "teamTreasuryMaxAutoContributionPerActorPerDay": {
+  "q": "teamTreasuryMaxAutoContributionPerActorPerDay",
+  "as": "section"
+ },
+ "teamTreasuryMinPersonalCashRemaining": {
+  "q": "teamTreasuryMinPersonalCashRemaining",
+  "as": "section"
+ },
+ "teamTreasuryMinContributionAmount": {
+  "q": "teamTreasuryMinContributionAmount",
+  "as": "section"
+ },
+ "teamTreasuryContributionCooldownDays": {
+  "q": "teamTreasuryContributionCooldownDays",
+  "as": "section"
+ },
+ "teamTreasuryDisableContributionDuringRecovery": {
+  "q": "teamTreasuryDisableContributionDuringRecovery",
+  "as": "section"
+ },
+ "teamTreasuryReserve": {
+  "q": "teamTreasuryReserve",
+  "as": "section"
+ },
+ "teamTreasuryDynamicReserveEnabled": {
+  "q": "teamTreasuryDynamicReserveEnabled",
+  "as": "section"
+ },
+ "teamTreasuryAllowHumanFundingRequests": {
+  "q": "teamTreasuryAllowHumanFundingRequests",
+  "as": "section"
+ },
+ "teamTreasuryAllowAiFundingRequests": {
+  "q": "teamTreasuryAllowAiFundingRequests",
+  "as": "section"
+ },
+ "teamTreasuryAllowRequestsAtZeroCash": {
+  "q": "teamTreasuryAllowRequestsAtZeroCash",
+  "as": "section"
+ },
+ "teamTreasuryEmergencyOperatingTarget": {
+  "q": "teamTreasuryEmergencyOperatingTarget",
+  "as": "section"
+ },
+ "teamTreasuryMaxWithdrawalPerRequest": {
+  "q": "teamTreasuryMaxWithdrawalPerRequest",
+  "as": "section"
+ },
+ "teamTreasuryMaxWithdrawalPerActorPerDay": {
+  "q": "teamTreasuryMaxWithdrawalPerActorPerDay",
+  "as": "section"
+ },
+ "teamTreasuryRequireApprovalForFriendlyAiWithdrawals": {
+  "q": "teamTreasuryRequireApprovalForFriendlyAiWithdrawals",
+  "as": "section"
+ },
+ "teamTreasuryAllowPartialApproval": {
+  "q": "teamTreasuryAllowPartialApproval",
+  "as": "section"
+ },
+ "teamTreasuryRequireIntendedAction": {
+  "q": "teamTreasuryRequireIntendedAction",
+  "as": "section"
+ },
+ "teamTreasuryReturnUnusedRestrictedFunds": {
+  "q": "teamTreasuryReturnUnusedRestrictedFunds",
+  "as": "section"
+ },
+ "teamTreasuryRequestCooldownDays": {
+  "q": "teamTreasuryRequestCooldownDays",
+  "as": "section"
+ },
+ "teamAiTreasuryRequestsEnabled": {
+  "q": "teamAiTreasuryRequestsEnabled",
+  "as": "section"
+ },
+ "countTeamTreasuryTowardVictory": {
+  "q": "countTeamTreasuryTowardVictory",
+  "as": "section"
+ },
+ "teamAiOverseerSystemEnabled": {
+  "q": "teamAiOverseerSystemEnabled",
+  "as": "section"
+ },
+ "teamAiStrategicCommandEnabled": {
+  "q": "teamAiStrategicCommandEnabled",
+  "as": "field"
+ },
+ "teamAiStrategicCommandAuthorityMode": {
+  "q": "teamAiStrategicCommandAuthorityMode",
+  "as": "field"
+ },
+ "teamAiStrategicCommandDirectiveDurationDays": {
+  "q": "teamAiStrategicCommandDirectiveDurationDays",
+  "as": "field"
+ },
+ "teamAiStrategicCommandDirectiveScoreBias": {
+  "q": "teamAiStrategicCommandDirectiveScoreBias",
+  "as": "field"
+ },
+ "teamAiStrategicCommandMaxSpendingPercent": {
+  "q": "teamAiStrategicCommandMaxSpendingPercent",
+  "as": "section"
+ },
+ "teamAiStrategicCommandTreasuryAllocationCap": {
+  "q": "teamAiStrategicCommandTreasuryAllocationCap",
+  "as": "section"
+ },
+ "teamAiStrategicCommandOverrideBias": {
+  "q": "teamAiStrategicCommandOverrideBias",
+  "as": "section"
+ },
+ "teamAiStrategicCommandEnabledForFriendlyTeam": {
+  "q": "teamAiStrategicCommandEnabledForFriendlyTeam",
+  "as": "section"
+ },
+ "teamAiStrategicCommandEnabledForEnemyTeam": {
+  "q": "teamAiStrategicCommandEnabledForEnemyTeam",
+  "as": "section"
+ },
+ "teamAiStrategicCommandInterventionsEnabled": {
+  "q": "teamAiStrategicCommandInterventionsEnabled",
+  "as": "section"
+ },
+ "teamAiAdaptiveOverseerEnabled": {
+  "q": "teamAiAdaptiveOverseerEnabled",
+  "as": "section"
+ },
+ "teamAiAdaptiveOverseerAuthorityMode": {
+  "q": "teamAiAdaptiveOverseerAuthorityMode",
+  "as": "section"
+ },
+ "teamAiOverseerShowStatusCard": {
+  "q": "teamAiOverseerShowStatusCard",
+  "as": "section"
+ },
+ "teamAiOverseerTransparencyEnabled": {
+  "q": "teamAiOverseerTransparencyEnabled",
+  "as": "section"
+ },
+ "teamAiOverseerDashboardEnabled": {
+  "q": "teamAiOverseerDashboardEnabled",
+  "as": "section"
+ },
+ "teamAiSafeModeEnabled": {
+  "q": "teamAiSafeModeEnabled",
+  "as": "section"
+ },
+ "teamAiSafeModeRestrictedActorThreshold": {
+  "q": "teamAiSafeModeRestrictedActorThreshold",
+  "as": "section"
+ },
+ "teamAiStrategicCommandPersonality": {
+  "q": "teamAiStrategicCommandPersonality",
+  "as": "section"
+ },
+ "teamAiAdaptiveOverseerPersonality": {
+  "q": "teamAiAdaptiveOverseerPersonality",
+  "as": "section"
+ },
+ "teamAiAdaptiveOverseerComebackEnterPercent": {
+  "q": "teamAiAdaptiveOverseerComebackEnterPercent",
+  "as": "section"
+ },
+ "teamAiAdaptiveOverseerComebackExitPercent": {
+  "q": "teamAiAdaptiveOverseerComebackExitPercent",
+  "as": "section"
+ },
+ "teamAiAdaptiveOverseerProtectLeadEnterPercent": {
+  "q": "teamAiAdaptiveOverseerProtectLeadEnterPercent",
+  "as": "section"
+ },
+ "teamAiAdaptiveOverseerProtectLeadExitPercent": {
+  "q": "teamAiAdaptiveOverseerProtectLeadExitPercent",
+  "as": "section"
+ },
+ "teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold": {
+  "q": "teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold",
+  "as": "section"
+ },
+ "teamAiAdaptiveOverseerMinimumStrategyDurationDays": {
+  "q": "teamAiAdaptiveOverseerMinimumStrategyDurationDays",
+  "as": "section"
+ },
+ "overseerWinConditionCounterStrategyEnabled": {
+  "q": "overseerWinConditionCounterStrategyEnabled",
+  "as": "section"
+ },
+ "teamAiAuditorSystemEnabled": {
+  "q": "teamAiAuditorSystemEnabled",
+  "as": "section"
+ },
+ "teamAiAuditorModeForFriendlyTeam": {
+  "q": "teamAiAuditorModeForFriendlyTeam",
+  "as": "section"
+ },
+ "teamAiAuditorModeForEnemyTeam": {
+  "q": "teamAiAuditorModeForEnemyTeam",
+  "as": "section"
+ },
+ "teamAiAuditorShowStatusCard": {
+  "q": "teamAiAuditorShowStatusCard",
+  "as": "section"
+ },
+ "teamAiAuditorDashboardEnabled": {
+  "q": "teamAiAuditorDashboardEnabled",
+  "as": "section"
+ },
+ "teamAiAuditorAutomaticRecoveryMinConfidence": {
+  "q": "teamAiAuditorAutomaticRecoveryMinConfidence",
+  "as": "section"
+ },
+ "teamAiAuditorAutomaticRecoveryMaxPerDay": {
+  "q": "teamAiAuditorAutomaticRecoveryMaxPerDay",
+  "as": "section"
+ },
+ "teamAiAuditorSafeModeEnabled": {
+  "q": "teamAiAuditorSafeModeEnabled",
+  "as": "section"
+ },
+ "teamAiAuditorSafeModeEscalatedIncidentThreshold": {
+  "q": "teamAiAuditorSafeModeEscalatedIncidentThreshold",
+  "as": "section"
+ },
+ "aiAlgorithmForFriendlyTeam": {
+  "q": "aiAlgorithmForFriendlyTeam",
+  "as": "field"
+ },
+ "aiAlgorithmForEnemyTeam": {
+  "q": "aiAlgorithmForEnemyTeam",
+  "as": "field"
+ },
+ "aiAlgorithmForOpponent": {
+  "q": "aiAlgorithmForOpponent",
+  "as": "field"
+ },
+ "aiThinkingDepth": {
+  "q": "aiThinkingDepth",
+  "as": "field"
+ },
+ "aiAlgorithmBuilderEnabled": {
+  "q": "aiAlgorithmBuilderEnabled",
+  "as": "section"
+ },
+ "aiAlgorithmBuilderDefaultEditorMode": {
+  "q": "aiAlgorithmBuilderDefaultEditorMode",
+  "as": "section"
+ },
+ "humanAutomationEnabled": {
+  "q": "humanAutomationEnabled",
+  "as": "section"
+ },
+ "humanAutomationTransparencyEnabled": {
+  "q": "humanAutomationTransparencyEnabled",
+  "as": "section"
+ },
+ "automationSequenceLaunchEnabled": {
+  "q": "automationSequenceLaunchEnabled",
+  "as": "section"
+ },
+ "automationSlotProgressionEnabled": {
+  "q": "automationSlotProgressionEnabled",
+  "as": "section"
+ },
+ "automationRunHistoryEnabled": {
+  "q": "automationRunHistoryEnabled",
+  "as": "section"
+ },
+ "automationExtendedTriggersEnabled": {
+  "q": "automationExtendedTriggersEnabled",
+  "as": "section"
+ },
+ "automationExtendedActionsEnabled": {
+  "q": "automationExtendedActionsEnabled",
+  "as": "section"
+ },
+ "automationConflictWarningsEnabled": {
+  "q": "automationConflictWarningsEnabled",
+  "as": "section"
+ },
+ "automationDailyDigestEnabled": {
+  "q": "automationDailyDigestEnabled",
+  "as": "section"
+ },
+ "automationImportExportEnabled": {
+  "q": "automationImportExportEnabled",
+  "as": "section"
+ },
+ "replayComparisonEnabled": {
+  "q": "replayComparisonEnabled",
+  "as": "field"
+ },
+ "replayComparisonToleranceThreshold": {
+  "q": "replayComparisonToleranceThreshold",
+  "as": "section"
+ },
+ "replayComparisonIgnoreMinorTiming": {
+  "q": "replayComparisonIgnoreMinorTiming",
+  "as": "section"
+ },
+ "aiEffectivenessScorecardEnabled": {
+  "q": "aiEffectivenessScorecardEnabled",
+  "as": "section"
+ },
+ "aiEffectivenessBlunderThresholdRoi": {
+  "q": "aiEffectivenessBlunderThresholdRoi",
+  "as": "section"
+ },
+ "aiEffectivenessTrackCompliance": {
+  "q": "aiEffectivenessTrackCompliance",
+  "as": "section"
+ },
+ "balanceLabEnabled": {
+  "q": "balanceLabEnabled",
+  "as": "section"
+ },
+ "balanceLabAutoStressTracking": {
+  "q": "balanceLabAutoStressTracking",
+  "as": "section"
+ },
+ "balanceLabSandboxMode": {
+  "q": "balanceLabSandboxMode",
+  "as": "section"
+ },
+ "ledgerDiagnosticsEnabled": {
+  "q": "ledgerDiagnosticsEnabled",
+  "as": "section"
+ },
+ "ledgerPruneRetentionLimit": {
+  "q": "ledgerPruneRetentionLimit",
+  "as": "section"
+ },
+ "ledgerAutoPruneEnabled": {
+  "q": "ledgerAutoPruneEnabled",
+  "as": "section"
+ },
+ "ledgerExportCompressionEnabled": {
+  "q": "ledgerExportCompressionEnabled",
+  "as": "section"
+ },
+ "enableAiCalibrationLearning": {
+  "q": "enableAiCalibrationLearning",
+  "as": "section"
+ },
+ "aiCalibrationLearningRate": {
+  "q": "aiCalibrationLearningRate",
+  "as": "section"
+ },
+ "enableCounterfactualEvaluation": {
+  "q": "enableCounterfactualEvaluation",
+  "as": "section"
+ },
+ "enablePersistentOpponentModels": {
+  "q": "enablePersistentOpponentModels",
+  "as": "section"
+ },
+ "planSwitchingCost": {
+  "q": "planSwitchingCost",
+  "as": "section"
+ },
+ "teamGovernanceMode": {
+  "q": "teamGovernanceMode",
+  "as": "field"
+ },
+ "aiTacticalIntelligence": {
+  "q": "aiTacticalIntelligence",
+  "as": "section"
+ },
+ "aiEconomicCheats": {
+  "q": "aiEconomicCheats",
+  "as": "section"
+ },
+ "teamOverviewDensity": {
+  "q": "teamOverviewDensity",
+  "as": "section"
+ },
+ "projectedOutcomeEnabled": {
+  "q": "projectedOutcomeEnabled",
+  "as": "section"
+ },
+ "projectedOutcomeHorizon": {
+  "q": "projectedOutcomeHorizon",
+  "as": "field"
+ },
+ "projectedOutcomeMode": {
+  "q": "projectedOutcomeMode",
+  "as": "section"
+ },
+ "deterministicMode": {
+  "q": "deterministicMode",
+  "as": "section"
+ },
+ "governanceControlSurfaceEnabled": {
+  "q": "governanceControlSurfaceEnabled",
+  "as": "field"
+ },
+ "humanGovernanceVetoEnabled": {
+  "q": "humanGovernanceVetoEnabled",
+  "as": "section"
+ },
+ "teamGovernanceModeOverrides": {
+  "q": "teamGovernanceModeOverrides",
+  "as": "section"
+ },
+ "governanceLeaderVoteWeight": {
+  "q": "governanceLeaderVoteWeight",
+  "as": "field"
+ },
+ "governanceMemberVoteWeight": {
+  "q": "governanceMemberVoteWeight",
+  "as": "section"
+ },
+ "governanceVoteThreshold": {
+  "q": "governanceVoteThreshold",
+  "as": "section"
+ },
+ "governanceConsensusThreshold": {
+  "q": "governanceConsensusThreshold",
+  "as": "section"
+ },
+ "governanceVetoUsesPerMatch": {
+  "q": "governanceVetoUsesPerMatch",
+  "as": "section"
+ },
+ "governanceWeightSettings": {
+  "q": "governanceWeightSettings",
+  "as": "section"
+ },
+ "defaultGuardianOpeningStyle": {
+  "q": "defaultGuardianOpeningStyle",
+  "as": "section"
+ },
+ "showGuardianFloatingButton": {
+  "q": "showGuardianFloatingButton",
+  "as": "section"
+ },
+ "showGuardianInQuickActions": {
+  "q": "showGuardianInQuickActions",
+  "as": "field"
+ },
+ "enableGuardianSidePanelAccess": {
+  "q": "enableGuardianSidePanelAccess",
+  "as": "section"
+ },
+ "hideGuardianFloatingButtonWhileCenterOpen": {
+  "q": "hideGuardianFloatingButtonWhileCenterOpen",
+  "as": "section"
+ },
+ "hideGuardianFloatingButtonWhileAnotherBlockingModalOpen": {
+  "q": "hideGuardianFloatingButtonWhileAnotherBlockingModalOpen",
+  "as": "section"
+ },
+ "guardianFloatingPosition": {
+  "q": "guardianFloatingPosition",
+  "as": "section"
+ },
+ "allowGuardianFloatingButtonDragging": {
+  "q": "allowGuardianFloatingButtonDragging",
+  "as": "section"
+ },
+ "rememberGuardianFloatingPosition": {
+  "q": "rememberGuardianFloatingPosition",
+  "as": "section"
+ },
+ "autoModeSettings": {
+  "q": "autoModeSettings",
+  "as": "field"
+ },
+ "coPilotSettings": {
+  "q": "coPilotSettings",
+  "as": "section"
+ },
+ "guardianAiSettings": {
+  "q": "guardianAiSettings",
+  "as": "section"
+ },
+ "commandCenterSettings": {
+  "q": "commandCenterSettings",
+  "as": "section"
+ },
+ "strategyPlannerSettings": {
+  "q": "strategyPlannerSettings",
+  "as": "section"
+ },
+ "smartSettingsProfile": {
+  "q": "smartSettingsProfile",
+  "as": "section"
+ },
+ "conflictControlSettings": {
+  "q": "conflictControlSettings",
+  "as": "section"
+ },
+ "conflictControlEnabled": {
+  "q": "conflictControlEnabled",
+  "as": "field"
+ },
+ "conflictAllowRelocation": {
+  "q": "conflictAllowRelocation",
+  "as": "field"
+ },
+ "conflictReturnToPreferred": {
+  "q": "conflictReturnToPreferred",
+  "as": "field"
+ },
+ "conflictShowExplanations": {
+  "q": "conflictShowExplanations",
+  "as": "field"
+ },
+ "floatingUiPriorityMatrix": {
+  "q": "floatingUiPriorityMatrix",
+  "as": "field"
+ },
+ "launcherSettings": {
+  "q": "launcherSettings",
+  "as": "section"
+ },
+ "dockSettings": {
+  "q": "dockSettings",
+  "as": "section"
+ },
+ "presetSettings": {
+  "q": "presetSettings",
+  "as": "section"
+ },
+ "autoHideSettings": {
+  "q": "autoHideSettings",
+  "as": "section"
+ },
+ "notificationLaneSettings": {
+  "q": "notificationLaneSettings",
+  "as": "section"
+ },
+ "modalSizeSettings": {
+  "q": "modalSizeSettings",
+  "as": "section"
+ }
+}
