@@ -199081,12 +199081,13 @@ export function V99SimpleNewJump(): React.ReactElement {
   const jump = () => {
     if (typeof document === 'undefined') return;
     // V10.0 (SECTION 20AY): the V10.0 card sits just above V9.9's at the end of the page; the jump lands on it first.
-    const card = document.querySelector('[data-testid="v100-simple-new"]') || document.querySelector(V99_SIMPLE_NEW_CARD_SELECTOR);
+    // V10.1 (SECTION 20BG, final verification): the line still announced V10.0 as the new thing; V10.1's card sits above V10.0's, so the jump lands on it first.
+    const card = document.querySelector('[data-testid="v101-simple-new"]') || document.querySelector('[data-testid="v100-simple-new"]') || document.querySelector(V99_SIMPLE_NEW_CARD_SELECTOR);
     if (card instanceof HTMLElement) { card.scrollIntoView({ block: 'start' }); card.focus({ preventScroll: true }); }
   };
   return (
     <button type="button" onClick={jump} className="w-full text-left text-xs rounded-lg border border-sky-500 px-3 py-2" data-testid="v99-simple-new-jump">
-      <span className="font-semibold">{V100_SETTINGS_HUB_SECTION_TITLE}</span> — Rival Races and the classic rival, then V9.9's autosave, match journal, turn digest, rival speed and classic look, are at the end of this page ↓
+      <span className="font-semibold">{V101_SETTINGS_HUB_SECTION_TITLE}</span> — Rival Recap, the fixed-rules Daily and the Classic-rules switch, then V10.0's Rival Races and V9.9's autosave, match journal, turn digest, rival speed and classic look, are at the end of this page ↓
     </button>
   );
 }
@@ -209487,6 +209488,11 @@ export function isV101SettingKeyName(key: unknown): boolean {
   return typeof key === 'string' && (V101_SETTING_KEYS as readonly string[]).includes(key);
 }
 
+/** V10.1 (SECTION 20BG, final verification): the keys the Simple settings view may write. Its handler listed the V9.9 and V10.0 cards' keys but not the V10.1 card's, so the three "New in V10.1" switches in the Simple view did nothing when pressed. One list, used by the handler and the tests. */
+export function isSimpleViewWritableKey(key: unknown): boolean {
+  return typeof key === 'string' && (SIMPLE_SETTINGS_KEYS.includes(key) || isSimpleCompanionSettingKey(key) || isV99SettingKeyName(key) || isV100SettingKeyName(key) || isV101SettingKeyName(key));
+}
+
 /** What the hub body needs from the settings: the three keys, nothing else. GameSettingsState satisfies it. */
 export type V101SettingsView = { readonly [K in V101BooleanSettingKey]?: boolean };
 
@@ -212249,7 +212255,10 @@ export const V101_RULE_LOCK_REASON = 'Locked while a match is running. Changes a
 /** Id prefix of the next-match deferrals this lock writes (so they are told apart from Smart Settings deferrals). */
 export const V101_RULE_DEFER_ID_PREFIX = 'v101_rule_';
 /** Sources that start or restore a match (a loaded save, a scenario, a replay) and so may write the rules. Everything else is a player edit. */
-export const V101_RULE_LOCK_EXEMPT_SOURCES: readonly string[] = ['save_loader', 'scenario_start', 'scenario_exit', 'save_file_migration', 'replay'];
+// V10.1 (SECTION 20BD, final verification): + 'daily_start'. The fixed-rules Daily writes its pinned Game Length and Victory Goal in the same batch as the match start; the write guard
+// runs inside the settings updater, after the reducer has made the new match a locked V10.1 match, so the pins were held back as "Waiting for your next match" and the Daily played
+// on the player's own rules while its card promised 20 days and Most Controlled Regions.
+export const V101_RULE_LOCK_EXEMPT_SOURCES: readonly string[] = ['save_loader', 'scenario_start', 'scenario_exit', 'save_file_migration', 'replay', 'daily_start'];
 
 /** True while `key` is a rule the match in `gameState` has frozen: a V10.1 match that is running. A menu, the end screen, a V10.0 or unstamped match: false. */
 export function v101MatchRuleLocked(gameState: unknown, key: string): boolean {
@@ -212580,6 +212589,14 @@ export function runV101MatchRulesSelfTests(): V9SelfTestResult[] {
     const held = withLock(true, () => sources.filter(src => { const out = writeSettings(start, prev => ({ ...prev, totalDays: 55, winCondition: 'regions' }), src); return out.totalDays !== 30 || out.winCondition !== 'money'; }));
     const exempt = withLock(true, () => V101_RULE_LOCK_EXEMPT_SOURCES.filter(src => { const out = writeSettings(start, prev => ({ ...prev, totalDays: 55, winCondition: 'regions' }), src); return out.totalDays !== 55 || out.winCondition !== 'regions'; }));
     return (held.length === 0 && exempt.length === 0 && ['save_loader', 'scenario_start', 'replay'].every(src => V101_RULE_LOCK_EXEMPT_SOURCES.includes(src))) || json({ gotThrough: held, exemptBlocked: exempt });
+  });
+  check('v101ru_26_daily_start_writes_its_pins_into_a_locked_match', 'The fixed-rules Daily\'s pinned Game Length and Victory Goal are written as a rules source (daily_start): with the new match already locked they still take effect, while the same write as a player edit is held back (the Daily used to play on the player\'s own rules)', () => {
+    const own = { ...base(), winCondition: 'money' as WinMetric, totalDays: 30 };
+    const pins = (prev: GameSettingsState): GameSettingsState => ({ ...prev, totalDays: 20, winCondition: 'regions' as WinMetric });
+    const asDaily = withLock(true, () => writeSettings(own, pins, 'daily_start'));
+    const asEdit = withLock(true, () => writeSettings(own, pins, 'direct_player_change'));
+    return (V101_RULE_LOCK_EXEMPT_SOURCES.includes('daily_start') && asDaily.totalDays === 20 && asDaily.winCondition === 'regions' && v101PendingRuleEdits(asDaily).length === 0
+      && asEdit.totalDays === 30 && asEdit.winCondition === 'money' && v101PendingRuleEdits(asEdit).length === 2) || json({ daily: [asDaily.totalDays, asDaily.winCondition, v101PendingRuleEdits(asDaily).length], edit: [asEdit.totalDays, asEdit.winCondition, v101PendingRuleEdits(asEdit).length] });
   });
   check('v101ru_05_unlocked_is_the_old_freedom', 'With no V10.1 match running (menu, end screen, V10.0, unstamped, Classic) the same writes change the rules exactly as before, and nothing is queued', () => {
     const start = { ...base(), winCondition: 'money' as WinMetric, totalDays: 30 };
@@ -213409,6 +213426,19 @@ export function v101PopoverPlacement(input: V101PopoverInput): V101PopoverPlacem
   const room = vertical === 'below' ? below : above;
   return { side, left: Math.round(x - n(input.anchorLeft)), vertical, maxHeight: Math.max(120, Math.floor(room)) };
 }
+/** True when two placements are the same (the More panel re-measures on every scroll frame and keeps the old object when nothing moved, so a scroll does not re-render it for nothing). */
+export function v101SamePlacement(a: V101PopoverPlacement | null | undefined, b: V101PopoverPlacement | null | undefined): boolean {
+  return Boolean(a && b && a.side === b.side && a.left === b.left && a.vertical === b.vertical && a.maxHeight === b.maxHeight);
+}
+/** V10.1 (SECTION 20BF, final verification): the line the Resource Market shows under its quote when "Buy Selected" would be refused or cut short. A toast cannot say it (toasts wait while a modal is open, so a refused purchase gave no sign at all); null when the purchase is fine. */
+export function v101MarketShortfallNote(total: number, cash: number, quantity: number, freeSlots: number): string | null {
+  const money = (v: number) => `$${Math.round(v).toLocaleString('en-US')}`;
+  if (!Number.isFinite(total) || !Number.isFinite(cash)) return null;
+  if (freeSlots <= 0) return 'Your inventory is full: sell or use something first.';
+  if (total > cash) return `Not enough money: this costs ${money(total)} and you have ${money(cash)} (${money(total - cash)} short).`;
+  if (Number.isFinite(quantity) && Number.isFinite(freeSlots) && quantity > freeSlots) return `Only ${freeSlots} inventory slot${freeSlots === 1 ? ' is' : 's are'} free, so only ${freeSlots} would be bought.`;
+  return null;
+}
 /** Text for the icon-only entries of the More menu (they were blank squares when the menu was clipped). Everything else keeps its own label. */
 export const V101_MORE_MENU_LABELS: Readonly<Record<string, string>> = { settings: 'Settings', help: 'Help' };
 export function v101MoreMenuDescriptor<T extends { id: string; label: string }>(descriptor: T): T {
@@ -213435,14 +213465,20 @@ export function V101MorePopover(props: V101MorePopoverProps): React.ReactElement
         const wrap = wrapRef.current, panel = panelRef.current;
         if (!wrap || !panel) return;
         const a = wrap.getBoundingClientRect();
-        setPlacement(v101PopoverPlacement({ anchorLeft: a.left, anchorRight: a.right, anchorTop: a.top, anchorBottom: a.bottom, panelWidth: panel.scrollWidth || panel.offsetWidth, panelHeight: panel.scrollHeight || panel.offsetHeight, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }));
+        const next = v101PopoverPlacement({ anchorLeft: a.left, anchorRight: a.right, anchorTop: a.top, anchorBottom: a.bottom, panelWidth: panel.scrollWidth || panel.offsetWidth, panelHeight: panel.scrollHeight || panel.offsetHeight, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight });
+        setPlacement(prev => (v101SamePlacement(prev, next) && prev ? prev : next));
       } catch { /* no layout (a test renderer): the panel keeps its default right-aligned place */ }
     };
     measure();
+    // V10.1 (SECTION 20BF, final verification): "View All Actions" opens this menu and then smooth-scrolls the action bar into view; the panel was measured once, mid-scroll, and
+    // stayed "above" the button, so when the scroll ended (button near the top of the window) every item was off-screen. It is measured again whenever the page scrolls.
+    let frame = 0;
+    const onScroll = () => { if (frame) return; frame = window.requestAnimationFrame(() => { frame = 0; measure(); }); };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.shiftKey) onToggle(); };
     window.addEventListener('resize', measure);
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('keydown', onKey);
-    return () => { window.removeEventListener('resize', measure); window.removeEventListener('keydown', onKey); };
+    return () => { if (frame) window.cancelAnimationFrame(frame); window.removeEventListener('resize', measure); window.removeEventListener('scroll', onScroll, true); window.removeEventListener('keydown', onKey); };
   }, [open, onToggle]);
   const panelStyle: React.CSSProperties | undefined = placement
     ? { left: placement.left, right: 'auto', maxHeight: placement.maxHeight, overflowY: 'auto', maxWidth: 'calc(100vw - 16px)' }
@@ -214089,6 +214125,33 @@ export function runV101PlayScreenSelfTests(): V9SelfTestResult[] {
     if (v101MorePanelClickCloses(text) || v101MorePanelClickCloses(null) || v101MorePanelClickCloses({})) return 'a click that is not on a button closed the More panel';
     if (v101ToastLanePointerClass(3) !== 'pointer-events-none' || v101ToastLanePointerClass(undefined) !== 'pointer-events-none') return 'the default toast lane is no longer click-through';
     if (v101ToastLanePointerClass(10) !== 'pointer-events-auto' || v101ToastLanePointerClass(0) !== 'pointer-events-auto') return 'a scrolling toast lane cannot be scrolled with the mouse';
+    return true;
+  });
+
+  check('v101ui_25_more_panel_follows_the_scroll', 'The More panel is placed again after the page scrolls: the same button that had room above (mid-scroll, 559 px down a 800 px window) must open BELOW once the scroll has put it at the top, and an unchanged placement is recognised so a scroll does not re-render the panel', () => {
+    const at = (anchorTop: number) => v101PopoverPlacement({ anchorLeft: 174, anchorRight: 271, anchorTop, anchorBottom: anchorTop + 42, panelWidth: 256, panelHeight: 341, viewportWidth: 1280, viewportHeight: 800 });
+    const mid = at(559), done = at(63);
+    if (mid.vertical !== 'above') return `mid-scroll (button 559 px down) expected the panel above: ${json(mid)}`;
+    if (done.vertical !== 'below') return `after the scroll (button 63 px down) expected the panel below, got ${json(done)}`;
+    if (63 + 42 + 8 + done.maxHeight > 800) return `the panel below runs off the bottom of the window: ${json(done)}`;
+    if (!v101SamePlacement(done, at(63)) || v101SamePlacement(mid, done) || v101SamePlacement(null, done) || v101SamePlacement(done, undefined)) return 'v101SamePlacement does not tell equal placements from different ones';
+    return true;
+  });
+
+  check('v101ui_26_market_says_why_a_purchase_is_refused', 'The Resource Market names a purchase that would be refused (not enough money, full inventory) or cut short (fewer free slots than the quantity) and says nothing when it is fine', () => {
+    const cases: Array<[number, number, number, number, RegExp | null]> = [
+      [133, 1000, 1, 50, null],
+      [7854, 1000, 50, 50, /Not enough money.*\$7,854.*\$1,000.*\$6,854 short/],
+      [100, 1000, 1, 0, /inventory is full/],
+      [680, 1000, 10, 5, /Only 5 inventory slots are free/],
+      [680, 1000, 3, 1, /Only 1 inventory slot is free/],
+      [1000, 1000, 5, 50, null],
+      [Number.NaN, 1000, 5, 50, null],
+    ];
+    for (const [total, cash, quantity, slots, expect] of cases) {
+      const got = v101MarketShortfallNote(total, cash, quantity, slots);
+      if (expect === null ? got !== null : !(got !== null && expect.test(got))) return `total ${total} cash ${cash} qty ${quantity} slots ${slots}: ${String(got)}`;
+    }
     return true;
   });
 
@@ -214796,6 +214859,17 @@ export function runV101SettingsSelfTests(): V9SelfTestResult[] {
     const edited = v101SettingsWritePipeline(live, fromFile, 'direct_player_change');
     const untouched = loaded.every(out => out.maxActionsPerTurn === 3 && out.aiMaxActionsPerTurn === 3 && out.playerActionsPerDay === 4 && out.aiActionsPerDay === 5);
     return (untouched && edited.maxActionsPerTurn === 4 && edited.aiMaxActionsPerTurn === 5 && V101_RESTORE_SETTING_SOURCES.includes('save_loader')) || json({ loaded: loaded.map(o => [o.maxActionsPerTurn, o.aiMaxActionsPerTurn]), edited: [edited.maxActionsPerTurn, edited.aiMaxActionsPerTurn] });
+  });
+  check('v101st_25_simple_view_writes_the_v101_switches', 'The Simple view accepts a write for each of the three "New in V10.1" keys (the handler used to drop them, so those switches were dead there), still accepts the V9.9, V10.0 and everyday keys, and still refuses a key it never showed', () => {
+    const v101 = V101_SETTING_KEYS.filter(k => !isSimpleViewWritableKey(k));
+    const older = [...V99_SETTING_KEYS, ...V100_SETTING_KEYS, 'totalDays', 'experienceMode'].filter(k => SIMPLE_SETTINGS_KEYS.includes(k) || isV99SettingKeyName(k) || isV100SettingKeyName(k)).filter(k => !isSimpleViewWritableKey(k));
+    const junk = ['aiDifficulty', 'investmentsEnabled', '', 'rulesVersion'].filter(k => isSimpleViewWritableKey(k) && !SIMPLE_SETTINGS_KEYS.includes(k));
+    return (v101.length === 0 && older.length === 0 && junk.length === 0 && !isSimpleViewWritableKey(undefined) && !isSimpleViewWritableKey(42) && SIMPLE_SETTINGS_KEYS.every(k => isSimpleViewWritableKey(k))) || json({ v101, older, junk });
+  });
+  check('v101st_24_simple_view_jump_announces_v101', 'The line at the top of the Simple settings view announces "New in V10.1" (it still said V10.0 was the new thing) and still mentions the V10.0 and V9.9 switches it jumps past', () => {
+    if (!staticReady) return true; // rendered-markup test: needs the runner's static renderer
+    const html = markup(<V99SimpleNewJump />);
+    return (html.includes('New in V10.1') && html.includes('Rival Recap') && html.includes('Rival Races') && html.includes('autosave') && !html.includes('New in V10.0')) || html.slice(0, 400);
   });
   return results;
 }
@@ -227777,6 +227851,9 @@ function dispatchGameSettingsChange(
   useEffect(() => {
     const pending = uiState.pendingSettingsNavigation;
     if (!pending) return;
+    // V10.1 (SECTION 20BF, final verification): opening Settings from the play screen's More menu asks to go nowhere in particular (no section, no field); the loop below
+    // looked for "undefined" for five frames and then logged a console warning on every open. There is nothing to scroll to, so the request is simply cleared.
+    if (!pending.fieldKey && !pending.sectionId) { setUiState(prev => ({ ...prev, pendingSettingsNavigation: null })); return; }
 
     let animationFrameId: number | null = null;
     let frameCount = 0;
@@ -231893,7 +231970,8 @@ function dispatchGameSettingsChange(
       const own = v101DailyRestoreRef.current?.values ?? readV101DailyRestore(store) ?? v101DailyOwnValues(gameSettings, patch);
       v101DailyRestoreRef.current = { values: own, armed: false };
       writeV101DailyRestore(store, own);
-      trackedSetGameSettings('direct_player_change', 'Daily Challenge rules', prev => ({ ...prev, ...patch }));
+      // V10.1 (SECTION 20BD, final verification): written as 'daily_start' (a rules source, like a scenario's), not as a player edit: the new match is locked by the time the update is applied.
+      dispatchGameSettingsChange(setGameSettings, prev => ({ ...prev, ...patch }), undefined, 'daily_start', { section: 'Daily Challenge rules', day: gameState?.day, turn: gameState?.turnCounter }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent);
       initializeGameMode(wpMjPendingStart.mode, wpMjPendingStart.difficulty, undefined, { seed: wpMjPendingStart.seed, settings: { ...gameSettings, ...patch }, dailyChallenge: v101DailyChallengeRecordOf(v101Daily) });
       return;
     }
@@ -253050,7 +253128,7 @@ function dispatchGameSettingsChange(
   const wp8SimpleSettingChange = useCallback((key: string, value: boolean | string | number) => {
     if (key === 'experienceMode') { if (value === 'explorer' || value === 'nation' || value === 'full') requestExperienceModeChange(value); return; }
     if (key === 'guidedFirstRunEnabled') { wp8SetGuidedFirstRun(value === true); return; }
-    if (!SIMPLE_SETTINGS_KEYS.includes(key) && !isSimpleCompanionSettingKey(key) && !isV99SettingKeyName(key) && !isV100SettingKeyName(key)) return; // V10.0 (SECTION 20AY): + the "New in V10.0" card // V9.9 (SECTION 20AS): + the rival's actions per day; W4A (f1-03): + the "New in V9.9" card
+    if (!isSimpleViewWritableKey(key)) return; // V10.1 (SECTION 20BG): + the "New in V10.1" card (its switches were silently dropped here) // V10.0 (SECTION 20AY): + the "New in V10.0" card // V9.9 (SECTION 20AS): + the rival's actions per day; W4A (f1-03): + the "New in V9.9" card
     trackedSetGameSettings('direct_player_change', '⚙️ Simple settings', prev => ({ ...prev, ...({ [key]: value } as unknown as Partial<GameSettingsState>) }));
   }, [requestExperienceModeChange, trackedSetGameSettings, wp8SetGuidedFirstRun]);
   // V10.1 (SECTION 20BE): what this browser remembers about the "matches are not saved" lesson (Not now / Don't ask again / turned on).
@@ -273305,6 +273383,7 @@ function dispatchGameSettingsChange(
 	                      Cost: <span className={`font-bold ${v99ThemeAccent(themeStyles, 'warningText', 'text-yellow-400')}`}>{fmtMoney(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true, settings: gameSettings }).total)}</span>
 	                      <span className="text-xs opacity-75"> — {v99PurchasePriceLabel(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true, settings: gameSettings }))}. {v99MarketBuyActionNote(player, gameSettings)}</span>
 	                      {isV101Match(gameState) && <div className="text-xs opacity-75" data-testid="v101-market-note">{V101_MARKET_PRESSURE_NOTE}</div> /* V10.1 (SECTION 20BB): says how the price moves */}
+	                      {(() => { const shortfall = v101MarketShortfallNote(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true, settings: gameSettings }).total, Number(player.money), resourceMarketQuantity, MAX_INVENTORY - player.inventory.length); return shortfall ? <div className={`text-xs font-semibold ${v99ThemeAccent(themeStyles, 'warningText', 'text-yellow-400')}`} role="status" data-testid="v101-market-shortfall">{shortfall /* V10.1 (SECTION 20BF): a refused purchase said nothing while the modal was open */}</div> : null; })()}
 	                    </div>
 	                    <button
 	                      onClick={handlePlayerResourceMarketPurchase}
