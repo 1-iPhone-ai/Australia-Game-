@@ -48793,7 +48793,7 @@ export function chooseAction(
   if (options?.live?.onRanked) { try { options.live.onRanked(ranked); } catch { /* a reader of the list can never change the pick */ } } // V10.1 (SECTION 20BC): Rival Recap reads the list the pick is made from
   // V10.0 (SECTION 20AY, F1): the V10.0 rival plays its best move at its difficulty's rate; without the flag, V9.9's pick.
   // V10.1 (SECTION 20BC): in a V10.1 match the best-move rate IS the screen's "Decision" figure (the mistake share is taken out of it, not multiplied into it) and the pick always draws two values.
-  if (v100Policy) return pickV100RivalDecision(ranked, rng, ctx.difficultyKey, mistakeRolled, options?.live?.v101Rules === true ? { mistakeChance: options?.live?.suppressMistake === true ? 0 : (Number(profile.mistakeChance) || 0) } : undefined);
+  if (v100Policy) return pickV100RivalDecision(ranked, rng, ctx.difficultyKey, mistakeRolled, options?.live?.v101Rules === true ? { mistakeChance: options?.live?.suppressMistake === true ? 0 : (Number(profile.mistakeChance) || 0), lesserPool: V101_RIVAL_LADDER[v100RivalDifficulty(ctx.difficultyKey)].lesserPool } : undefined);
   return pickClassicDecision(ranked, rng, ctx.difficultyKey);
 }
 
@@ -196814,6 +196814,8 @@ export function refineRivalCandidates(candidates: RivalCandidate[], input: Rival
   }
   // 5. V10.1 (SECTION 20BC): the final day of a match started on V10.1 — nothing bought on the last day can pay back.
   if (input.v101 === true) out = v101RivalFinalDayCandidates(out, input);
+  // 6. V10.1 (SECTION 20BC): the difficulty ladder (how well the rival reads its prizes and plans its journeys; V101_RIVAL_LADDER).
+  if (input.v101 === true) out = v101RivalLadderRescore(out, input);
   return out;
 }
 
@@ -207998,7 +208000,7 @@ export function v100RivalPolicyActive(gameState: unknown, settings: { classicRiv
  * two values on every path (the contract this comment used to claim) and the best-move rate is the one the difficulty
  * screen prints (v101RivalBestMoveRate: the mistake share is taken out of it, not multiplied into it).
  */
-export function pickV100RivalDecision<T>(ranked: readonly T[], rng: { next: () => number }, difficultyKey: unknown, mistake: boolean, v101?: { mistakeChance: number }): T | null {
+export function pickV100RivalDecision<T>(ranked: readonly T[], rng: { next: () => number }, difficultyKey: unknown, mistake: boolean, v101?: { mistakeChance: number; lesserPool?: number }): T | null {
   if (!ranked.length) return null;
   const difficulty = v100RivalDifficulty(difficultyKey);
   const roll = rng.next();
@@ -208007,8 +208009,10 @@ export function pickV100RivalDecision<T>(ranked: readonly T[], rng: { next: () =
   const second = v101 ? rng.next() : null;
   const lesser = (): T => {
     if (ranked.length === 1) return ranked[0];
-    if (difficulty !== 'easy') return ranked[1];
-    const pool = Math.min(3, ranked.length - 1);
+    // V10.1 (SECTION 20BC): a V10.1 match names how many next-best moves a slip may land on (V101_RIVAL_LADDER); V10.0: Easy three, the rest one.
+    const wanted = v101 && typeof v101.lesserPool === 'number' ? Math.max(1, Math.floor(v101.lesserPool)) : difficulty === 'easy' ? 3 : 1;
+    if (wanted <= 1) return ranked[1];
+    const pool = Math.min(wanted, ranked.length - 1);
     return ranked[1 + Math.min(pool - 1, Math.floor((second !== null ? second : rng.next()) * pool))];
   };
   if (mistake) return lesser();
@@ -211008,6 +211012,33 @@ export function v101RivalBestMoveRate(difficultyKey: unknown, mistakeChance: num
   return Math.min(1, target / (1 - mistake));
 }
 
+// ---- RV3: the difficulty ladder (V10.1 (SECTION 20BC)) ---------------------------------------------------------------------------------
+/**
+ * V10.1 (SECTION 20BC): what separates the four difficulties besides the share of moves that go to the rival's best (V100_RIVAL_BEST_MOVE_RATE, the
+ * "Decision" figure the screen prints). Three honest levers, all about how well the rival CHOOSES; none of them pays it a dollar:
+ *   insight  (0 to 1) how much of its own prize arithmetic it uses when it ranks challenges. The chooser scores a challenge by the printed multiplier alone;
+ *            a win really pays the multiplier through the pay curve, the character's bonus and the mastery bonus (x1.25, x1.5, x2 on a challenge it has
+ *            won before), the very numbers the player's own card quotes. Insight 0 ranks by the printed multiplier (V10.0); 1 ranks by what a win will pay;
+ *            between, a challenge's score is scaled by (what a win pays / what the multiplier suggests) to this power.
+ *   planning (0 to 1) how far its journeys follow the best challenge waiting at the destination (that challenge's real expected value, less the fare)
+ *            instead of the chooser's own "an unvisited region" habit: it is the share of a journey's score that comes from that value. A player picks
+ *            where to go the same way.
+ *   lesserPool how many of its next-best moves a slip may land on (a slip is the share of decisions that do not go to its best move).
+ * Easy reads nothing and, on the 60% of decisions that are not its best, picks among the next six moves ("random decisions, often inefficient"); Medium, Hard and
+ * Expert read more and more of their prizes and plan more and more of their journeys. The planned value of a journey reads the destination's own region list; with the
+ * challenge board on, the board where the rival stands is still what it ranks. Only a match started on V10.1 reads this table (classic rules, V10.0 and older matches
+ * keep V10.0's chooser exactly).
+ */
+/** The share of the best waiting challenge's expected value a planned journey counts on (it must still be won, and the next action is needed to take it). */
+export const V101_RIVAL_TRAVEL_PRIZE_SHARE = 0.8;
+export interface V101RivalRung { insight: number; planning: number; lesserPool: number }
+export const V101_RIVAL_LADDER: Record<V100RivalDifficulty, V101RivalRung> = {
+  easy: { insight: 0, planning: 0, lesserPool: 6 },
+  medium: { insight: 0.4, planning: 0.4, lesserPool: 1 },
+  hard: { insight: 0.7, planning: 0.7, lesserPool: 1 },
+  expert: { insight: 1, planning: 1, lesserPool: 1 }
+};
+
 // ---- RV1: what an action costs the rival -----------------------------------------------------------------------------------
 /**
  * How many of its daily actions the rival's action of this type uses in a V10.1 match. A sale: what the rules charge
@@ -211053,6 +211084,62 @@ export function v101RivalFinalDayCandidates(candidates: RivalCandidate[], input:
     return { type: 'sell', description: `Sell ${resource}`, data: { resource, price }, score: lead + price, plan: AI_TUNING_LAB_DEFAULT_PLAN } as RivalCandidate;
   });
   return [...kept.filter(candidate => !(candidate.type === 'sell' && held.includes(String((v99IsRecord(candidate.data) ? candidate.data : {}).resource)))), ...sells];
+}
+
+/**
+ * V10.1 (SECTION 20BC): what a win of this challenge candidate really pays, as the player's card would quote it for the rival (character, mastery, streak,
+ * the pay curve at the roll's odds). Pure; draws nothing.
+ */
+function v101RivalChallengeTruth(candidate: RivalCandidate, actor: Record<string, unknown>, gameState: unknown): { printed: number; truth: number } | null {
+  const data = v99IsRecord(candidate.data) ? candidate.data : null;
+  if (!data || candidate.type !== 'challenge' || !v99IsRecord(data.challenge)) return null;
+  const wager = Number(data.wager) || 0;
+  const chance = Math.min(1, Math.max(0, Number(data.successChance) || 0));
+  if (!(wager > 0)) return null;
+  const offer = data.challenge as unknown as V99ChallengeOffer;
+  const printedReward = (Number(offer.reward) || 0) || 2;
+  const win = v99ChallengeWinReward(offer, actor as V99ChallengeActorView, wager, false, v101PayoutFactorFor(gameState, chance));
+  return { printed: wager * (printedReward * chance - (1 - chance)), truth: chance * win - (1 - chance) * wager };
+}
+
+/**
+ * V10.1 (SECTION 20BC): the rival's difficulty ladder (V101_RIVAL_LADDER). Scales each challenge's score by (what a win really pays / what the printed
+ * multiplier suggests) ^ insight, and blends a journey's score towards the value of the best challenge waiting at its destination (0.8 of that challenge's
+ * expected value, less the fare, on the scale of a challenge's own score) by `planning`. Pure; draws nothing; a rung with no insight and no planning
+ * (Easy) returns the list as it came.
+ */
+export function v101RivalLadderRescore(candidates: RivalCandidate[], input: RivalDisciplineInput): RivalCandidate[] {
+  const rung = V101_RIVAL_LADDER[v100RivalDifficulty(input.difficultyKey)];
+  if (!(rung.insight > 0) && !(rung.planning > 0)) return candidates;
+  const actor = v99IsRecord(input.actor) ? input.actor : {};
+  const money = Number(actor.money) || 0;
+  const profile = AI_DIFFICULTY_PROFILES[input.difficultyKey] || AI_DIFFICULTY_PROFILES.expert;
+  const scoreScale = (Number(profile.riskTolerance) || 0.7) * (Number(profile.decisionQuality) || 0.95);
+  const done = Array.isArray(actor.completedThisSeason) ? actor.completedThisSeason : [];
+  /** The best real expected value waiting for the rival in `code`: each open challenge at the stake and odds the rival would use there. */
+  const bestAt = (code: string): number => {
+    let best = 0;
+    for (const challenge of rivalRegionInfo(code)?.challenges || []) {
+      if (done.includes(challenge.name)) continue;
+      const chance = v101RivalRollOdds(challenge, actor);
+      const wager = rivalWagerFor(money, chance, Number(challenge.reward) || 2);
+      const truth = v101RivalChallengeTruth({ type: 'challenge', description: '', data: { challenge, wager, successChance: chance }, score: 0, plan: AI_TUNING_LAB_DEFAULT_PLAN } as RivalCandidate, actor, input.gameState);
+      if (truth && truth.truth > best) best = truth.truth;
+    }
+    return best;
+  };
+  return candidates.map(candidate => {
+    if (candidate.type === 'travel' && rung.planning > 0 && v99IsRecord(candidate.data) && typeof candidate.data.region === 'string') {
+      const share = Math.min(1, rung.planning);
+      const planned = Math.max(0, V101_RIVAL_TRAVEL_PRIZE_SHARE * bestAt(candidate.data.region) - (Number(candidate.data.cost) || 0)) * scoreScale;
+      return { ...candidate, score: (Number(candidate.score) || 0) * (1 - share) + planned * share };
+    }
+    if (!(rung.insight > 0)) return candidate;
+    const worth = v101RivalChallengeTruth(candidate, actor, input.gameState);
+    if (!worth) return candidate;
+    const ratio = worth.printed > 0 ? Math.min(4, Math.max(0.05, worth.truth / worth.printed)) : 1;
+    return ratio === 1 ? candidate : { ...candidate, score: (Number(candidate.score) || 0) * Math.pow(ratio, rung.insight) };
+  });
 }
 
 // ---- RV1: the challenge board ------------------------------------------------------------------------------------------------
@@ -211381,6 +211468,8 @@ export interface V101ParityMatchConfig {
   weatherVaries?: boolean;
   /** Lab switch for the balance report: on V10.1 rules, still charge the rival an action for every sale (isolates what free sales are worth). */
   chargeSales?: boolean;
+  /** V10.1 (SECTION 20BC): pay a challenge win by the real rules (the pay curve at the roll's odds, the character's bonus, the mastery bonus, which a win then raises) instead of the stand-in's printed multiplier; default off, so the older tests' numbers do not move. */
+  truePay?: boolean;
 }
 export interface V101ParityMatchResult {
   rivalMoney: number; rivalNetWorth: number; playerMoney: number; playerNetWorth: number;
@@ -211446,8 +211535,13 @@ export function runV101RivalParityMatch(cfg: V101ParityMatchConfig): V101ParityM
         if (!ch || money < wager) { ok = false; break; }
         const win = rng.next() < (Number(data.successChance) || 0.5);
         const streak = side === 'ai' && cfg.rules === 'v101' ? v100StreakRewardShare(actor.consecutiveWins, false) : 0;
+        // V10.1 (SECTION 20BC): truePay = what the real game pays (v99ChallengeWinReward: pay curve, character, mastery); the mastery count then rises with the win.
+        const paid = cfg.truePay === true
+          ? v99ChallengeWinReward(ch as unknown as V99ChallengeOffer, actor as V99ChallengeActorView, wager, false, v101PayoutFactorFor(gs, Number(data.successChance) || 0.5))
+          : Math.floor(wager * ch.reward);
+        const mastered = cfg.truePay === true ? { challengeMastery: { ...(v99IsRecord(actor.challengeMastery) ? actor.challengeMastery : {}), [ch.name]: (Number((v99IsRecord(actor.challengeMastery) ? actor.challengeMastery : {})[ch.name]) || 0) + 1 } } : {};
         set(win
-          ? { money: money + (streak > 0 ? v100RivalRewardWithStreak(Math.floor(wager * ch.reward), streak) : Math.floor(wager * ch.reward)), challengesCompleted: [...(actor.challengesCompleted as string[]), ch.name], completedThisSeason: [...(actor.completedThisSeason as string[]), ch.name], consecutiveWins: (Number(actor.consecutiveWins) || 0) + 1 }
+          ? { money: money + (streak > 0 ? v100RivalRewardWithStreak(paid, streak) : paid), challengesCompleted: [...(actor.challengesCompleted as string[]), ch.name], completedThisSeason: [...(actor.completedThisSeason as string[]), ch.name], consecutiveWins: (Number(actor.consecutiveWins) || 0) + 1, ...mastered }
           : { money: money - wager, consecutiveWins: 0 });
         break;
       }
@@ -211991,7 +212085,7 @@ export function runV101RivalSelfTests(): V9SelfTestResult[] {
         const list: Candidate[] = seen ?? [];
         if (json(plain.pick) !== json(read.pick) || plain.draws !== read.draws || json(plain.pick) !== json(boom.pick) || plain.draws !== boom.draws) bad.push(`${difficulty}/${seed}: reading changed the decision`);
         if (!plain.pick || v101RivalRankOf(plain.pick, list) === 0 || list.some((c, i) => i > 0 && (list[i - 1].score || 0) < (c.score || 0))) bad.push(`${difficulty}/${seed}: list is not the ranked list holding the pick`);
-        if (plain.pick && v101RivalRankOf(plain.pick, list) > 1 + (difficulty === 'easy' ? 3 : 1)) bad.push(`${difficulty}/${seed}: pick ranked ${v101RivalRankOf(plain.pick, list)}`);
+        if (plain.pick && v101RivalRankOf(plain.pick, list) > 1 + V101_RIVAL_LADDER[difficulty].lesserPool) bad.push(`${difficulty}/${seed}: pick ranked ${v101RivalRankOf(plain.pick, list)}`);
       }
     });
     return bad.length === 0 || json(bad.slice(0, 5));
@@ -212020,6 +212114,112 @@ export function runV101RivalSelfTests(): V9SelfTestResult[] {
     const old = [mk({ rules: V100_RULES_VERSION }), mk({ rules: null }), mk({ settings: { classicRulesV100: true } })].map(x => Math.max(...Object.values(oddsByName(x))));
     const oldKeep = old.every(top => top > 0.9);
     return (exact && capped && tires && pins && oldKeep) || json({ exact, capped, tires, pins, old, a, t });
+  });
+
+  // ---- the difficulty ladder (V10.1 (SECTION 20BC), RV3) ----
+  /** Runs `fn` with the ladder replaced by `rungs` (restored afterwards, whatever happens). */
+  const withLadder = <T,>(rungs: Record<V100RivalDifficulty, V101RivalRung>, fn: () => T): T => {
+    const saved = json(V101_RIVAL_LADDER);
+    difficulties.forEach(d => { Object.assign(V101_RIVAL_LADDER[d], rungs[d]); });
+    try { return fn(); } finally { const back = JSON.parse(saved) as Record<V100RivalDifficulty, V101RivalRung>; difficulties.forEach(d => { Object.assign(V101_RIVAL_LADDER[d], back[d]); }); }
+  };
+  const noLadder: Record<V100RivalDifficulty, V101RivalRung> = { easy: { insight: 0, planning: 0, lesserPool: 1 }, medium: { insight: 0, planning: 0, lesserPool: 1 }, hard: { insight: 0, planning: 0, lesserPool: 1 }, expert: { insight: 0, planning: 0, lesserPool: 1 } };
+  const scoreByChallenge = (list: Candidate[]): Record<string, number> => { const m: Record<string, number> = {}; list.filter(c => c.type === 'challenge').forEach(c => { const ch = dataOf(c).challenge; if (v99IsRecord(ch)) m[String(ch.name)] = Number(c.score); }); return m; };
+  const travelScores = (list: Candidate[]): Record<string, number> => { const m: Record<string, number> = {}; list.filter(c => c.type === 'travel').forEach(c => { m[String(dataOf(c).region)] = Number(c.score); }); return m; };
+  const qldChallenges = REGIONS.QLD.challenges as Array<{ name: string; difficulty: number; type: string; reward: number }>;
+  const nswChallenges = REGIONS.NSW.challenges as Array<{ name: string; difficulty: number; type: string; reward: number }>;
+
+  check('v101rv_31_the_ladder_constants_are_pinned_and_ordered', 'The difficulty ladder is explicit: insight 0 / 0.4 / 0.7 / 1, planning 0 / 0.4 / 0.7 / 1, a slip lands on one of the next 6 moves on Easy and the runner-up elsewhere; every constant only ever rises (or, for the slip pool, falls) from Easy to Expert, and the printed Decision rate rises with it', () => {
+    const rungs = difficulties.map(d => V101_RIVAL_LADDER[d]);
+    const pinned = json(rungs) === json([{ insight: 0, planning: 0, lesserPool: 6 }, { insight: 0.4, planning: 0.4, lesserPool: 1 }, { insight: 0.7, planning: 0.7, lesserPool: 1 }, { insight: 1, planning: 1, lesserPool: 1 }]) && V101_RIVAL_TRAVEL_PRIZE_SHARE === 0.8;
+    const monotone = rungs.every((r, i) => i === 0 || (r.insight >= rungs[i - 1].insight && r.planning >= rungs[i - 1].planning && r.lesserPool <= rungs[i - 1].lesserPool));
+    const strict = rungs[0].insight < rungs[1].insight && rungs[1].insight < rungs[2].insight && rungs[2].insight < rungs[3].insight && rungs[0].planning < rungs[1].planning && rungs[2].planning < rungs[3].planning;
+    const inRange = rungs.every(r => r.insight >= 0 && r.insight <= 1 && r.planning >= 0 && r.planning <= 1 && Number.isInteger(r.lesserPool) && r.lesserPool >= 1 && r.lesserPool <= 8);
+    const rates = difficulties.map(d => V100_RIVAL_BEST_MOVE_RATE[d]);
+    const risingRate = rates.every((r, i) => i === 0 || r > rates[i - 1]);
+    return (pinned && monotone && strict && inRange && risingRate) || json({ pinned, monotone, strict, inRange, rates, rungs });
+  });
+
+  check('v101rv_32_old_matches_never_read_the_ladder', "A V10.0-stamped match, an unstamped one and one started with the classic rules switch rank exactly what V10.0 ranked whatever the ladder says (the list is identical with the ladder zeroed); the same position in a V10.1 match at Expert is ranked differently, so the ladder is really read there", () => {
+    const rank = (b: Bundle) => json(preview(b).map(c => [c.type, c.description, Math.round(Number(c.score) * 1e6) / 1e6]));
+    const mastery = { [qldChallenges[0].name]: 3 };
+    const mk = (o: BundleOptions) => { const b = bundle({ ...o, difficulty: 'expert', region: 'QLD', money: 3000 }); b.rival = { ...b.rival, challengeMastery: mastery }; return b; };
+    const same = [mk({ rules: V100_RULES_VERSION }), mk({ rules: null }), mk({ settings: { classicRulesV100: true } })].map(b => rank(b) === withLadder(noLadder, () => rank(b)));
+    const v101 = mk({});
+    const differs = rank(v101) !== withLadder(noLadder, () => rank(v101));
+    return (same.every(Boolean) && differs) || json({ same, differs });
+  });
+
+  check('v101rv_33_insight_reads_what_a_win_really_pays', "At Expert a challenge the rival has already won three times (a win pays x2) scores more than twice what the identical unmastered one does (the win pays x2 and a loss still costs the stake), a long shot is not over-rated by the pay curve, and at Easy (insight 0) mastery changes nothing; Medium sits between; the input list is not mutated and nothing is drawn", () => {
+    const name = qldChallenges[0].name;
+    const rest = qldChallenges.filter(c => c.name !== name).map(c => c.name);
+    const at = (d: V100RivalDifficulty, mastered: boolean) => { const b = bundle({ difficulty: d, region: 'QLD', money: 3000 }); if (mastered) b.rival = { ...b.rival, challengeMastery: { [name]: 3 } }; return scoreByChallenge(preview(b)); };
+    const lift = (d: V100RivalDifficulty) => { const plain = at(d, false), mastered = at(d, true); return mastered[name] / plain[name]; };
+    const expert = lift('expert'), medium = lift('medium'), hard = lift('hard'), easy = lift('easy');
+    const othersUnchanged = (() => { const plain = at('expert', false), mastered = at('expert', true); return rest.every(n => plain[n] === undefined || Math.abs(plain[n] - mastered[n]) < 1e-9); })();
+    const ordered = Math.abs(easy - 1) < 1e-9 && medium > 1 && hard > medium && expert > hard && expert > 1.9;
+    const b = bundle({ difficulty: 'expert', region: 'QLD', money: 3000 });
+    const input = preview(b, false); const before = json(input);
+    const out = v101RivalLadderRescore(input as RivalCandidate[], { actor: b.rival, gameState: b.gameState, settings: b.settings, difficultyKey: 'expert', ownerKey: RIVAL_OWNER_KEY, v101: true });
+    const pure = json(input) === before && out !== input;
+    const easyList = preview(bundle({ difficulty: 'easy', region: 'QLD', money: 3000 }), false);
+    const easyKept = v101RivalLadderRescore(easyList as RivalCandidate[], { actor: bundle({ difficulty: 'easy' }).rival, gameState: b.gameState, settings: b.settings, difficultyKey: 'easy', ownerKey: RIVAL_OWNER_KEY, v101: true }) === easyList;
+    return (ordered && othersUnchanged && pure && easyKept) || json({ easy, medium, hard, expert, othersUnchanged, pure, easyKept });
+  });
+
+  check('v101rv_34_planning_follows_the_best_challenge_waiting_at_the_destination', "At Expert the journey to a region holding a challenge the rival has mastered outranks the same journey without it, by more than at Hard and Medium; Easy ranks journeys as V10.0 did (the same list back); a destination with nothing left to win is worth only its fare", () => {
+    const here = (d: V100RivalDifficulty, mastered: boolean, done = false) => {
+      const b = bundle({ difficulty: d, region: 'QLD', money: 3000 });
+      const target = nswChallenges.reduce((best, c) => (c.reward > best.reward ? c : best), nswChallenges[0]);
+      b.rival = { ...b.rival, ...(mastered ? { challengeMastery: { [target.name]: 3 } } : {}), ...(done ? { completedThisSeason: nswChallenges.map(c => c.name) } : {}) };
+      return travelScores(preview(b))['NSW'];
+    };
+    const gain = (d: V100RivalDifficulty) => here(d, true) - here(d, false);
+    const ge = gain('expert'), gh = gain('hard'), gm = gain('medium'), gz = gain('easy');
+    const spent = here('expert', false, true);
+    const unspent = here('expert', false);
+    return (ge > gh && gh > gm && gm > 0 && Math.abs(gz) < 1e-9 && spent < unspent) || json({ ge, gh, gm, gz, spent, unspent });
+  });
+
+  check('v101rv_35_a_slip_lands_on_the_rungs_pool', "A V10.1 slip lands on the runner-up at Medium, Hard and Expert and on any of the next six moves at Easy; the same slip in a V10.0 pick still lands on one of three (Easy) or the runner-up; the pick draws the same two values either way", () => {
+    const list = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'];
+    const rolls = (a: number, b: number) => { let n = 0; return { next: () => [a, b][Math.min(n++, 1)] }; };
+    const slip = (d: V100RivalDifficulty, second: number, v101: boolean) => pickV100RivalDecision(list, rolls(0.999, second), d, false, v101 ? { mistakeChance: 0.02, lesserPool: V101_RIVAL_LADDER[d].lesserPool } : undefined);
+    const easy101 = [0, 0.2, 0.5, 0.8, 0.99].map(x => slip('easy', x, true)).join('');
+    const others101 = (['medium', 'hard', 'expert'] as const).map(d => [0, 0.99].map(x => slip(d, x, true)).join('')).join('|');
+    const easy100 = [0, 0.5, 0.99].map(x => slip('easy', x, false)).join('');
+    const hard100 = [0, 0.99].map(x => slip('hard', x, false)).join('');
+    const best = pickV100RivalDecision(list, rolls(0.01, 0.5), 'easy', false, { mistakeChance: 0.02, lesserPool: 6 });
+    // a short list never indexes past its end
+    const short = pickV100RivalDecision(['a', 'b'], rolls(0.999, 0.99), 'easy', false, { mistakeChance: 0.02, lesserPool: 6 });
+    return (easy101 === 'bcefg' && others101 === 'bb|bb|bb' && easy100 === 'bcd' && hard100 === 'bb' && best === 'a' && short === 'b') || json({ easy101, others101, easy100, hard100, best, short });
+  });
+
+  check('v101rv_36_the_chooser_reads_the_pool_only_in_a_v101_match', "Over 150 decisions at Easy the V10.1 chooser's slips reach beyond the third-best move (the pool is six, never past the seventh); the V10.0 chooser's never go past the fourth", () => {
+    const deepest = (rules: number): number => {
+      let max = 0;
+      for (let seed = 1; seed <= 150; seed += 1) {
+        const b = bundle({ difficulty: 'easy', rules, region: 'QLD', money: 3000 });
+        let seen: Candidate[] = [];
+        const { pick } = choose(b, seed, { ...hooksFor(b)!, onRanked: list => { seen = list; } });
+        if (pick) max = Math.max(max, v101RivalRankOf(pick, seen));
+      }
+      return max;
+    };
+    const v101 = deepest(V101_RULES_VERSION), v100 = deepest(V100_RULES_VERSION);
+    return (v101 >= 5 && v101 <= 7 && v100 <= 4) || json({ v101, v100 });
+  });
+
+  check('v101rv_37_mini_grid_the_ladder_orders_the_rival_by_difficulty', "A deterministic 12-seed, 29-day mini grid on the headless match (V10.1 rules, the real payout rules): the rival's mean final cash rises Easy < Medium < Hard < Expert, Medium is at least 25% and Expert at least 50% above Easy", () => {
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
+    const run = (d: V100RivalDifficulty) => mean(Array.from({ length: 12 }, (_, i) => runV101RivalParityMatch({ seed: i + 1, rules: 'v101', difficulty: d, days: 29, truePay: true }).rivalMoney));
+    const m = difficulties.map(run);
+    return (m[0] < m[1] && m[1] < m[2] && m[2] < m[3] && m[1] >= m[0] * 1.25 && m[3] >= m[0] * 1.5) || json({ m: m.map(Math.round) });
+  });
+
+  check('v101rv_38_a_whole_v100_match_is_move_for_move_the_same_whatever_the_ladder_says', "A whole V10.0-rules headless match (every difficulty, 14 days) plays the same decisions and ends on the same cash with the ladder zeroed as with the ladder on: the ladder is read by V10.1 matches only", () => {
+    const play = () => difficulties.map(d => { const r = runV101RivalParityMatch({ seed: 3, rules: 'v100', difficulty: d, days: 14 }); return json([r.rivalMoney, r.rivalTrace]); }).join('|');
+    return play() === withLadder(noLadder, play) || 'the V10.0 match changed with the ladder';
   });
 
   return results;
