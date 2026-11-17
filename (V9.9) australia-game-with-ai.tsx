@@ -213209,6 +213209,19 @@ export function v101PopoverPlacement(input: V101PopoverInput): V101PopoverPlacem
   const room = vertical === 'below' ? below : above;
   return { side, left: Math.round(x - n(input.anchorLeft)), vertical, maxHeight: Math.max(120, Math.floor(room)) };
 }
+/** True when two placements are the same (the More panel re-measures on every scroll frame and keeps the old object when nothing moved, so a scroll does not re-render it for nothing). */
+export function v101SamePlacement(a: V101PopoverPlacement | null | undefined, b: V101PopoverPlacement | null | undefined): boolean {
+  return Boolean(a && b && a.side === b.side && a.left === b.left && a.vertical === b.vertical && a.maxHeight === b.maxHeight);
+}
+/** V10.1 (SECTION 20BF, final verification): the line the Resource Market shows under its quote when "Buy Selected" would be refused or cut short. A toast cannot say it (toasts wait while a modal is open, so a refused purchase gave no sign at all); null when the purchase is fine. */
+export function v101MarketShortfallNote(total: number, cash: number, quantity: number, freeSlots: number): string | null {
+  const money = (v: number) => `$${Math.round(v).toLocaleString('en-US')}`;
+  if (!Number.isFinite(total) || !Number.isFinite(cash)) return null;
+  if (freeSlots <= 0) return 'Your inventory is full: sell or use something first.';
+  if (total > cash) return `Not enough money: this costs ${money(total)} and you have ${money(cash)} (${money(total - cash)} short).`;
+  if (Number.isFinite(quantity) && Number.isFinite(freeSlots) && quantity > freeSlots) return `Only ${freeSlots} inventory slot${freeSlots === 1 ? ' is' : 's are'} free, so only ${freeSlots} would be bought.`;
+  return null;
+}
 /** Text for the icon-only entries of the More menu (they were blank squares when the menu was clipped). Everything else keeps its own label. */
 export const V101_MORE_MENU_LABELS: Readonly<Record<string, string>> = { settings: 'Settings', help: 'Help' };
 export function v101MoreMenuDescriptor<T extends { id: string; label: string }>(descriptor: T): T {
@@ -213235,14 +213248,20 @@ export function V101MorePopover(props: V101MorePopoverProps): React.ReactElement
         const wrap = wrapRef.current, panel = panelRef.current;
         if (!wrap || !panel) return;
         const a = wrap.getBoundingClientRect();
-        setPlacement(v101PopoverPlacement({ anchorLeft: a.left, anchorRight: a.right, anchorTop: a.top, anchorBottom: a.bottom, panelWidth: panel.scrollWidth || panel.offsetWidth, panelHeight: panel.scrollHeight || panel.offsetHeight, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }));
+        const next = v101PopoverPlacement({ anchorLeft: a.left, anchorRight: a.right, anchorTop: a.top, anchorBottom: a.bottom, panelWidth: panel.scrollWidth || panel.offsetWidth, panelHeight: panel.scrollHeight || panel.offsetHeight, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight });
+        setPlacement(prev => (v101SamePlacement(prev, next) && prev ? prev : next));
       } catch { /* no layout (a test renderer): the panel keeps its default right-aligned place */ }
     };
     measure();
+    // V10.1 (SECTION 20BF, final verification): "View All Actions" opens this menu and then smooth-scrolls the action bar into view; the panel was measured once, mid-scroll, and
+    // stayed "above" the button, so when the scroll ended (button near the top of the window) every item was off-screen. It is measured again whenever the page scrolls.
+    let frame = 0;
+    const onScroll = () => { if (frame) return; frame = window.requestAnimationFrame(() => { frame = 0; measure(); }); };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.shiftKey) onToggle(); };
     window.addEventListener('resize', measure);
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('keydown', onKey);
-    return () => { window.removeEventListener('resize', measure); window.removeEventListener('keydown', onKey); };
+    return () => { if (frame) window.cancelAnimationFrame(frame); window.removeEventListener('resize', measure); window.removeEventListener('scroll', onScroll, true); window.removeEventListener('keydown', onKey); };
   }, [open, onToggle]);
   const panelStyle: React.CSSProperties | undefined = placement
     ? { left: placement.left, right: 'auto', maxHeight: placement.maxHeight, overflowY: 'auto', maxWidth: 'calc(100vw - 16px)' }
@@ -213889,6 +213908,33 @@ export function runV101PlayScreenSelfTests(): V9SelfTestResult[] {
     if (v101MorePanelClickCloses(text) || v101MorePanelClickCloses(null) || v101MorePanelClickCloses({})) return 'a click that is not on a button closed the More panel';
     if (v101ToastLanePointerClass(3) !== 'pointer-events-none' || v101ToastLanePointerClass(undefined) !== 'pointer-events-none') return 'the default toast lane is no longer click-through';
     if (v101ToastLanePointerClass(10) !== 'pointer-events-auto' || v101ToastLanePointerClass(0) !== 'pointer-events-auto') return 'a scrolling toast lane cannot be scrolled with the mouse';
+    return true;
+  });
+
+  check('v101ui_25_more_panel_follows_the_scroll', 'The More panel is placed again after the page scrolls: the same button that had room above (mid-scroll, 559 px down a 800 px window) must open BELOW once the scroll has put it at the top, and an unchanged placement is recognised so a scroll does not re-render the panel', () => {
+    const at = (anchorTop: number) => v101PopoverPlacement({ anchorLeft: 174, anchorRight: 271, anchorTop, anchorBottom: anchorTop + 42, panelWidth: 256, panelHeight: 341, viewportWidth: 1280, viewportHeight: 800 });
+    const mid = at(559), done = at(63);
+    if (mid.vertical !== 'above') return `mid-scroll (button 559 px down) expected the panel above: ${json(mid)}`;
+    if (done.vertical !== 'below') return `after the scroll (button 63 px down) expected the panel below, got ${json(done)}`;
+    if (63 + 42 + 8 + done.maxHeight > 800) return `the panel below runs off the bottom of the window: ${json(done)}`;
+    if (!v101SamePlacement(done, at(63)) || v101SamePlacement(mid, done) || v101SamePlacement(null, done) || v101SamePlacement(done, undefined)) return 'v101SamePlacement does not tell equal placements from different ones';
+    return true;
+  });
+
+  check('v101ui_26_market_says_why_a_purchase_is_refused', 'The Resource Market names a purchase that would be refused (not enough money, full inventory) or cut short (fewer free slots than the quantity) and says nothing when it is fine', () => {
+    const cases: Array<[number, number, number, number, RegExp | null]> = [
+      [133, 1000, 1, 50, null],
+      [7854, 1000, 50, 50, /Not enough money.*\$7,854.*\$1,000.*\$6,854 short/],
+      [100, 1000, 1, 0, /inventory is full/],
+      [680, 1000, 10, 5, /Only 5 inventory slots are free/],
+      [680, 1000, 3, 1, /Only 1 inventory slot is free/],
+      [1000, 1000, 5, 50, null],
+      [Number.NaN, 1000, 5, 50, null],
+    ];
+    for (const [total, cash, quantity, slots, expect] of cases) {
+      const got = v101MarketShortfallNote(total, cash, quantity, slots);
+      if (expect === null ? got !== null : !(got !== null && expect.test(got))) return `total ${total} cash ${cash} qty ${quantity} slots ${slots}: ${String(got)}`;
+    }
     return true;
   });
 
@@ -273105,6 +273151,7 @@ function dispatchGameSettingsChange(
 	                      Cost: <span className={`font-bold ${v99ThemeAccent(themeStyles, 'warningText', 'text-yellow-400')}`}>{fmtMoney(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true, settings: gameSettings }).total)}</span>
 	                      <span className="text-xs opacity-75"> — {v99PurchasePriceLabel(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true, settings: gameSettings }))}. {v99MarketBuyActionNote(player, gameSettings)}</span>
 	                      {isV101Match(gameState) && <div className="text-xs opacity-75" data-testid="v101-market-note">{V101_MARKET_PRESSURE_NOTE}</div> /* V10.1 (SECTION 20BB): says how the price moves */}
+	                      {(() => { const shortfall = v101MarketShortfallNote(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState, { buyer: player, approachesEnabled: gameSettings.challengeApproachesEnabled === true, settings: gameSettings }).total, Number(player.money), resourceMarketQuantity, MAX_INVENTORY - player.inventory.length); return shortfall ? <div className={`text-xs font-semibold ${v99ThemeAccent(themeStyles, 'warningText', 'text-yellow-400')}`} role="status" data-testid="v101-market-shortfall">{shortfall /* V10.1 (SECTION 20BF): a refused purchase said nothing while the modal was open */}</div> : null; })()}
 	                    </div>
 	                    <button
 	                      onClick={handlePlayerResourceMarketPurchase}
