@@ -209544,7 +209544,7 @@ export const V101_CHANGELOG = [
   `${GAME_VERSION_LABEL} - A fairer fight, a safer match`,
   'Money you can trust: buying from the Resource Market now costs about what the same goods sell for, so buying and reselling in one region no longer prints cash. Bulk buys nudge the price up a little. (New matches.)',
   'Challenges are a decision, not a free button: odds top out at 85%, the pay trims as the odds climb, and each challenge you take tires you a little. Every challenge card now shows the win, the loss and the average in dollars. (New matches.)',
-  'A rival that is what its label says: it pays the same fares and picks from the same challenge board as you, and selling no longer costs it an action. Turn on Rival Recap to see what it did on its turn, and why.',
+  'A rival that is what its label says: it pays the same fares and picks from the same challenge board as you, and selling no longer costs it an action. Harder rivals now plan their journeys and rank challenges by what a win really pays, so Medium, Hard and Expert play stronger than before. Turn on Rival Recap to see what it did on its turn, and why.',
   'Match rules stay put: while a match runs, the Victory Goal, Game Length and Difficulty are locked and any change waits for your next match. Team bankruptcy tests the cash its warnings name (a loan no longer counts against you), sabotage lasts what it says, replays are finalised and a Single Player run ends with a graded RUN COMPLETE. (New matches.)',
   'A safer first hour: the menu says plainly how a save works, the tutorial answers the Ask chips right on the Play screen, and starting from a Journal seed or loading asks before it replaces your autosaved match.',
   'The world tells the truth: infrastructure, contracts and faction advice only appear when those systems are switched on and are refused when they are off. Fund now lets you choose an amount instead of spending all your cash, faction rewards say what they really do, and the clock says day where the screen says Day.',
@@ -212197,11 +212197,11 @@ export function runV101RivalSelfTests(): V9SelfTestResult[] {
     return (pinned && monotone && strict && inRange && risingRate) || json({ pinned, monotone, strict, inRange, rates, rungs });
   });
 
-  check('v101rv_32_old_matches_never_read_the_ladder', "A V10.0-stamped match, an unstamped one and one started with the classic rules switch rank exactly what V10.0 ranked whatever the ladder says (the list is identical with the ladder zeroed); the same position in a V10.1 match at Expert is ranked differently, so the ladder is really read there", () => {
+  check('v101rv_32_old_matches_never_read_the_ladder', "A V10.0-stamped match, an unstamped one and one started with the classic rules switch (which stamps it V10.0 at match start) rank exactly what V10.0 ranked whatever the ladder says (the list is identical with the ladder zeroed); the same position in a V10.1 match at Expert is ranked differently, so the ladder is really read there", () => {
     const rank = (b: Bundle) => json(preview(b).map(c => [c.type, c.description, Math.round(Number(c.score) * 1e6) / 1e6]));
     const mastery = { [qldChallenges[0].name]: 3 };
     const mk = (o: BundleOptions) => { const b = bundle({ ...o, difficulty: 'expert', region: 'QLD', money: 3000 }); b.rival = { ...b.rival, challengeMastery: mastery }; return b; };
-    const same = [mk({ rules: V100_RULES_VERSION }), mk({ rules: null }), mk({ settings: { classicRulesV100: true } })].map(b => rank(b) === withLadder(noLadder, () => rank(b)));
+    const same = [mk({ rules: V100_RULES_VERSION }), mk({ rules: null }), mk({ rules: V100_RULES_VERSION, settings: { classicRulesV100: true } })].map(b => rank(b) === withLadder(noLadder, () => rank(b)));
     const v101 = mk({});
     const differs = rank(v101) !== withLadder(noLadder, () => rank(v101));
     return (same.every(Boolean) && differs) || json({ same, differs });
