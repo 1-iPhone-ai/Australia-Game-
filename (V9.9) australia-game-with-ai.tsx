@@ -18488,7 +18488,7 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     key: 'classicRulesV100',
     category: 'fairness',
     label: 'Classic rules (V10.0)',
-    description: "On = a new match plays by the V10.0 rules: the Resource Market, challenge payouts, the rival's costs and mid-match rule changes work as they did in V10.0. Matches started before V10.1 always keep their rules.",
+    description: "On = a new match plays by the V10.0 rules: the Resource Market, challenge payouts, the rival's costs and mid-match rule changes work as they did in V10.0. Matches started before V10.1 always keep their rules, and a match in progress keeps the rules it started with whatever you set here.",
     valueType: 'boolean',
     defaultValue: false,
     validate: (v: unknown) => typeof v === 'boolean',
@@ -209472,6 +209472,9 @@ export const V101_SETTINGS_HUB_SECTION_TITLE = '✨ New in V10.1';
 
 export interface V101ToggleRow { key: V101BooleanSettingKey; label: string; description: string }
 
+/** V10.1 (SECTION 20BA, final verification): the Daily card lives in the Match Journal's menu card, which is off by default; with the Daily on and the Journal off the switch showed nothing, so it says so. */
+export const V101_DAILY_NEEDS_JOURNAL_NOTE = 'Daily Challenge is on, but the Match Journal & Daily Seed is off, so there is no Daily card on the menu yet. Turn on Match Journal & Daily Seed (Settings, Gameplay) to see it.';
+
 /** The new features. Off by default. */
 export const V101_FEATURE_TOGGLE_ROWS: readonly V101ToggleRow[] = [
   { key: 'rivalRecapEnabled', label: 'Rival Recap', description: "After the rival's turn a card lists what it did and why, in plain words, with the cash each move made or lost. Nothing about how the rival plays changes." },
@@ -209480,7 +209483,7 @@ export const V101_FEATURE_TOGGLE_ROWS: readonly V101ToggleRow[] = [
 
 /** "Prefer the old way?" Off = the V10.1 rules; on = a new match plays by the V10.0 rules. */
 export const V101_CLASSIC_TOGGLE_ROWS: readonly V101ToggleRow[] = [
-  { key: 'classicRulesV100', label: 'Classic rules (V10.0)', description: "On = a new match plays by the V10.0 rules: the Resource Market, challenge payouts, the rival's costs and mid-match rule changes work as they did in V10.0. Matches started before V10.1 always keep their rules." },
+  { key: 'classicRulesV100', label: 'Classic rules (V10.0)', description: "On = a new match plays by the V10.0 rules: the Resource Market, challenge payouts, the rival's costs and mid-match rule changes work as they did in V10.0. Matches started before V10.1 always keep their rules, and a match in progress keeps the rules it started with whatever you set here." },
 ];
 
 /** True for the keys of the "New in V10.1" block (the Simple view's card may write exactly these). */
@@ -209494,7 +209497,7 @@ export function isSimpleViewWritableKey(key: unknown): boolean {
 }
 
 /** What the hub body needs from the settings: the three keys, nothing else. GameSettingsState satisfies it. */
-export type V101SettingsView = { readonly [K in V101BooleanSettingKey]?: boolean };
+export type V101SettingsView = { readonly [K in V101BooleanSettingKey | 'matchJournalEnabled']?: boolean };
 
 /** Body of the "✨ New in V10.1" settings section (hub and Simple view). Stateless; the caller writes through its tracked setter. */
 export function V101SettingsHubBody({ settings, onToggle, onClassName, offClassName }: { settings: V101SettingsView; onToggle: (key: V101BooleanSettingKey) => void; onClassName: string; offClassName: string }): React.ReactElement {
@@ -209524,6 +209527,9 @@ export function V101SettingsHubBody({ settings, onToggle, onClassName, offClassN
     <div className="space-y-4" data-testid="v101-settings">
       <div className="text-sm opacity-75">Rival Recap and the fixed-rules Daily are off until you switch them on. Matches started on V10.1 play by the V10.1 rules; the classic switch below brings back the V10.0 rules.</div>
       {V101_FEATURE_TOGGLE_ROWS.map(toggleRow)}
+      {settings.dailyFixedRulesEnabled === true && settings.matchJournalEnabled !== true && (
+        <div className="text-sm font-semibold" role="note" data-testid="v101-daily-needs-journal">{V101_DAILY_NEEDS_JOURNAL_NOTE}</div>
+      )}
       <div className="pt-3 border-t border-current border-opacity-10 space-y-4">
         <div className="text-xs font-semibold uppercase tracking-wide opacity-75">Prefer the old way?</div>
         {V101_CLASSIC_TOGGLE_ROWS.map(toggleRow)}
@@ -209539,11 +209545,11 @@ export const V101_CHANGELOG = [
   'Money you can trust: buying from the Resource Market now costs about what the same goods sell for, so buying and reselling in one region no longer prints cash. Bulk buys nudge the price up a little. (New matches.)',
   'Challenges are a decision, not a free button: odds top out at 85%, the pay trims as the odds climb, and each challenge you take tires you a little. Every challenge card now shows the win, the loss and the average in dollars. (New matches.)',
   'A rival that is what its label says: it pays the same fares and picks from the same challenge board as you, and selling no longer costs it an action. Turn on Rival Recap to see what it did on its turn, and why.',
-  'Match rules stay put: while a match runs, the Victory Goal, Game Length and Difficulty are locked and any change waits for your next match. Team bankruptcy counts debts, sabotage lasts what it says, replays are finalised and a Single Player run ends with a graded RUN COMPLETE. (New matches.)',
+  'Match rules stay put: while a match runs, the Victory Goal, Game Length and Difficulty are locked and any change waits for your next match. Team bankruptcy tests the cash its warnings name (a loan no longer counts against you), sabotage lasts what it says, replays are finalised and a Single Player run ends with a graded RUN COMPLETE. (New matches.)',
   'A safer first hour: the menu says plainly how a save works, the tutorial answers the Ask chips right on the Play screen, and starting from a Journal seed or loading asks before it replaces your autosaved match.',
   'The world tells the truth: infrastructure, contracts and faction advice only appear when those systems are switched on and are refused when they are off. Fund now lets you choose an amount instead of spending all your cash, faction rewards say what they really do, and the clock says day where the screen says Day.',
   'Advice you can trust: Ask the Game AI answers the question you asked from your real match, the Play card names one best move, and the Strategy Planner plans real actions (and no longer suggests gathering that does nothing).',
-  'More to play for: Lord Howe, Antarctica and the other territories have their own challenges, objectives and challenge points count, story choices keep their consequences, and the optional Daily Challenge fixes the rules so scores compare from day to day.',
+  'More to play for: with External Territories switched on, Lord Howe, Antarctica and the other territories have their own challenges; objectives can be completed, every challenge counts in Most challenge points, story choices keep their consequences, and the optional Daily Challenge (it needs the Match Journal) fixes the rules so scores compare from day to day.',
   'Easier to use: the Strategy Planner window opens and closes properly, the More menu stays on screen, keyboard shortcuts follow their buttons, Escape works from any field, the main windows are real dialogs, Light theme is readable, text size has A- and A+, and a plain banner appears if the game styles fail to load.',
   'Settings that do what they say: presets are always visible, Start Collapsed and Remember work, the Co-Pilot turn limit follows your actions per day, and applying a preset shows what will change and keeps your personal preferences.',
   'Under the hood: replays and the in-game self-test buttons no longer disturb a live match, a calm recovery banner offers a backup copy if something unexpected breaks, and watching AI vs AI no longer runs the player advisor.',
@@ -209955,6 +209961,41 @@ export function runV101FoundationsSelfTests(): V9SelfTestResult[] {
       } catch (err) { wrong.push(`${label}: threw ${err instanceof Error ? err.message : String(err)}`); }
     });
     return (wrong.length === 0 && mustLoad.length + mustFail.length >= 55) || `${wrong.join('; ')} (${mustLoad.length + mustFail.length} variants)`;
+  });
+  // V10.1 (SECTION 20BA, final verification): one stamp decides every V10.1 rule, including the rival's; the classic switch is read when a match starts and never in the middle of one.
+  check('v101fx_20_one_stamp_decides_every_rule', 'Every V10.1 gate follows the match stamp alone: the rival gate and the session stream agree with isV101Match for every stamp whatever the live classic switch says, and the switch at match start stamps 1000', () => {
+    const stamps: unknown[] = [undefined, 999, 1000, 1009, 1010, 1200];
+    const switches: unknown[] = [undefined, false, true, 'true'];
+    const wrong: string[] = [];
+    stamps.forEach(stamp => switches.forEach(sw => {
+      const gs = stamp === undefined ? {} : { rulesVersion: stamp };
+      const settings = { classicRulesV100: sw };
+      const want = isV101Match(gs);
+      if (v101RivalRulesActive(gs, settings) !== want) wrong.push(`rival gate ${String(stamp)}/${String(sw)}`);
+      if ((v101SessionRandomDomain(gs, settings) === 'HumanAutomation') !== want) wrong.push(`stream ${String(stamp)}/${String(sw)}`);
+    }));
+    const started = [v101RulesVersionForNewMatch({ classicRulesV100: true }), v101RulesVersionForNewMatch({ classicRulesV100: false })];
+    const classicStart = { rulesVersion: started[0] }, freshStart = { rulesVersion: started[1] };
+    if (v101RivalRulesActive(classicStart, { classicRulesV100: true }) || !v101RivalRulesActive(freshStart, { classicRulesV100: true })) wrong.push('start-time stamp');
+    return (wrong.length === 0 && started[0] === 1000 && started[1] === 1010) || json({ wrong, started });
+  });
+  check('v101fx_21_daily_and_classic_words_are_honest', 'With the Daily on and the Match Journal off the V10.1 settings body says there is no Daily card yet (and says nothing once the Journal is on or the Daily is off); the classic switch says a match in progress keeps its rules', () => {
+    const text = (node: unknown): string => {
+      if (node === null || node === undefined || typeof node === 'boolean') return '';
+      if (typeof node === 'string' || typeof node === 'number') return String(node);
+      if (Array.isArray(node)) return node.map(text).join(' ');
+      if (!React.isValidElement(node)) return '';
+      const el = node as React.ReactElement<{ children?: unknown }>;
+      if (typeof el.type === 'function') { try { return text((el.type as (p: unknown) => unknown)(el.props)); } catch { return ''; } }
+      return text(el.props.children);
+    };
+    const body = (settings: V101SettingsView) => text(V101SettingsHubBody({ settings, onToggle: () => undefined, onClassName: 'on', offClassName: 'off' }));
+    const hint = (settings: V101SettingsView) => body(settings).includes(V101_DAILY_NEEDS_JOURNAL_NOTE);
+    const classicRow = V101_CLASSIC_TOGGLE_ROWS[0].description, classicReg = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(d => d.key === 'classicRulesV100')?.description;
+    return (hint({ dailyFixedRulesEnabled: true, matchJournalEnabled: false }) && hint({ dailyFixedRulesEnabled: true })
+      && !hint({ dailyFixedRulesEnabled: true, matchJournalEnabled: true }) && !hint({ dailyFixedRulesEnabled: false, matchJournalEnabled: false }) && !hint({})
+      && classicRow.includes('a match in progress keeps the rules it started with') && classicReg === classicRow
+      && v101PresetApplyPlan(createDefaultGameSettings(), { classicRulesV100: true, dailyFixedRulesEnabled: true }, { includeProfile: false, liveMatch: false }).message.includes('Classic rules (V10.0), Daily Challenge (fixed rules)')) || json({ a: hint({ dailyFixedRulesEnabled: true }), classicReg });
   });
   return results;
 }
@@ -210929,7 +210970,8 @@ export function runV101EconomySelfTests(): V9SelfTestResult[] {
 // ============================================================================
 // <<V101-SLOT RIVAL begin>>
 // What this section fixes and adds (every rule change is tied to the MATCH's rules stamp, never to the build: isV101Match
-// plus not classicRulesV100; a match started on V10.0 or earlier plays move for move as it did).
+// (the classic switch classicRulesV100 is read once, when the match starts: it stamps the match 1000, so it is never read here);
+// a match started on V10.0 or earlier plays move for move as it did).
 //
 // RV1 PARITY — the rival pays what the player pays (V10.1 matches only).
 //     • A sale costs the rival no action, as the player's Sell costs none (it used to spend one of its 3 daily actions on
@@ -210954,9 +210996,16 @@ export function runV101EconomySelfTests(): V9SelfTestResult[] {
 // Suite v101rv (runV101RivalSelfTests).
 
 // ---- RV1: which matches ------------------------------------------------------------------------------------------------
-/** True for a match started on V10.1 (rules stamp 1010+) unless the classic rules switch is on: the rival pays the player's prices. */
-export function v101RivalRulesActive(gameState: unknown, settings: { classicRulesV100?: unknown } | null | undefined): boolean {
-  return isV101Match(gameState) && settings?.classicRulesV100 !== true;
+/**
+ * True for a match started on V10.1 (rules stamp 1010+): the rival pays the player's prices.
+ * V10.1 (SECTION 20BC, final verification): the classic switch (classicRulesV100) is NOT read here. It stamps a new match 1000 when the match starts, and every other
+ * V10.1 rule (market, challenges, endings, world, content) follows that stamp alone; this gate used to also read the LIVE switch, so turning it on in the middle of a V10.1
+ * match (or applying a preset that carried it) gave the match half of V10.1: the rival went back to V10.0 fares and costs while the market, challenges and endings stayed V10.1.
+ * `settings` stays in the signature so every caller keeps working; it no longer changes the answer.
+ */
+export function v101RivalRulesActive(gameState: unknown, settings?: { classicRulesV100?: unknown } | null | undefined): boolean {
+  void settings;
+  return isV101Match(gameState);
 }
 
 // ---- RV1: the player's fare ----------------------------------------------------------------------------------------------
@@ -211171,11 +211220,9 @@ export function v101RivalBoardChallenges(input: { actor: unknown; gameState: unk
 /** The stream a Co-Pilot session token / takeover id is drawn from: the rival's AIReasoning stream before V10.1, HumanAutomation in a V10.1 match (the state may be the match or hold it as `gameState`). */
 export function v101SessionRandomDomain(state: unknown, settings?: { classicRulesV100?: unknown } | null): 'AIReasoning' | 'HumanAutomation' {
   const inner = v99IsRecord(state) ? state.gameState : null;
-  // V10.1 (SECTION 20BC): review fix — the classic rules switch (when the caller or the state carries the settings) keeps V10.0 streams, like the parity rules.
-  const own = v99IsRecord(state) && v99IsRecord(state.gameSettings) ? state.gameSettings : null;
-  const innerOwn = v99IsRecord(inner) && v99IsRecord(inner.gameSettings) ? inner.gameSettings : null;
-  const classic = settings?.classicRulesV100 === true || own?.classicRulesV100 === true || innerOwn?.classicRulesV100 === true;
-  return !classic && (isV101Match(state) || isV101Match(inner)) ? 'HumanAutomation' : 'AIReasoning';
+  // V10.1 (SECTION 20BC, final verification): the stamp alone decides (a classic-rules match is stamped 1000 when it starts); the live switch is no longer read (see v101RivalRulesActive).
+  void settings;
+  return isV101Match(state) || isV101Match(inner) ? 'HumanAutomation' : 'AIReasoning';
 }
 /** One roll for `actor`'s action in the team executor: the human's roll comes from the HumanAutomation stream in a V10.1 match, everyone else's (and every earlier match) from `fallback` (the rival's stream). */
 export function v101ActorRandom(actor: { kind?: unknown } | null | undefined, gameState: unknown, fallback: () => number, settings?: { classicRulesV100?: unknown } | null): number {
@@ -211692,9 +211739,9 @@ export function runV101RivalSelfTests(): V9SelfTestResult[] {
   const choose = (b: Bundle, seed: number, live?: ClassicAiLiveHooks | undefined) => { const c = countingRng(seed); const pick = chooseAction(canonical(b), 'ai', weights, c.rng, { difficultyKey: b.difficulty, settings: b.settings, live: live === undefined ? hooksFor(b) : live }); return { pick, draws: c.draws }; };
   const rivalActor = { id: 'ai', character: { name: 'Tourist' }, masteryUnlocks: [] as string[], equipment: [] as string[], debuffs: [] as unknown[] };
 
-  check('v101rv_01_rules_gate', 'The V10.1 rival rules apply to a match stamped 1010 or more and never to a V10.0 match, an unstamped one, or one started with the classic rules switch', () => {
+  check('v101rv_01_rules_gate', 'The V10.1 rival rules apply to a match stamped 1010 or more and never to a V10.0 match, an unstamped one, or one started with the classic rules switch (which stamps it 1000); the live switch, flipped in the middle of a V10.1 match, changes nothing', () => {
     const table: Array<[unknown, { classicRulesV100?: unknown } | null | undefined, boolean]> = [
-      [{ rulesVersion: 1010 }, {}, true], [{ rulesVersion: 1200 }, undefined, true], [{ rulesVersion: 1010 }, { classicRulesV100: true }, false], [{ rulesVersion: 1000 }, {}, false],
+      [{ rulesVersion: 1010 }, {}, true], [{ rulesVersion: 1200 }, undefined, true], [{ rulesVersion: 1010 }, { classicRulesV100: true }, true], [{ rulesVersion: 1000 }, { classicRulesV100: true }, false], [{ rulesVersion: 1000 }, {}, false],
       [{}, {}, false], [null, {}, false], [{ rulesVersion: '1010' }, {}, false], [{ rulesVersion: 1009 }, {}, false]
     ];
     const wrong = table.filter(([gs, settings, want]) => v101RivalRulesActive(gs, settings) !== want).length;
@@ -211722,13 +211769,13 @@ export function runV101RivalSelfTests(): V9SelfTestResult[] {
     const costs = (b: Bundle) => { const m: Record<string, number> = {}; preview(b).filter(c => c.type === 'travel').forEach(c => { m[String(dataOf(c).region)] = Number(dataOf(c).cost); }); return m; };
     const stormy = { weather: 'Stormy', season: 'Winter', money: 5000 };
     const calm = { weather: 'Sunny', season: 'Autumn', money: 5000 };
-    const v101 = costs(bundle(stormy)), v100 = costs(bundle({ rules: V100_RULES_VERSION, ...stormy })), none = costs(bundle({ rules: null, ...stormy })), classic = costs(bundle({ settings: { classicRulesV100: true }, ...stormy }));
+    const v101 = costs(bundle(stormy)), v100 = costs(bundle({ rules: V100_RULES_VERSION, ...stormy })), none = costs(bundle({ rules: null, ...stormy })), classic = costs(bundle({ rules: V100_RULES_VERSION, settings: { classicRulesV100: true }, ...stormy })), flipped = costs(bundle({ settings: { classicRulesV100: true }, ...stormy }));
     const calm101 = costs(bundle(calm));
     const flat = (m: Record<string, number>) => Object.keys(m).length >= 4 && Object.keys(m).every(code => m[code] === 200 || m[code] === 350);
     const probe = bundle(stormy);
     const priced = Object.keys(v101).every(code => v101[code] === v101RivalTravelCost('QLD', code, probe.rival, probe.gameState, probe.settings));
     const longHaul = Object.keys(calm101).filter(code => !ADJACENT_REGIONS.QLD.includes(code));
-    return (v101.NSW === 312 && priced && longHaul.length > 0 && longHaul.every(code => calm101[code] === (code === 'TAS' ? 800 : 500)) && flat(v100) && flat(none) && flat(classic) && json(v100) === json(none)) || json({ v101, calm101, v100, none, classic });
+    return (v101.NSW === 312 && priced && longHaul.length > 0 && longHaul.every(code => calm101[code] === (code === 'TAS' ? 800 : 500)) && flat(v100) && flat(none) && flat(classic) && json(v100) === json(none) && json(flipped) === json(v101)) || json({ v101, calm101, v100, none, classic, flipped });
   });
 
   check('v101rv_04_a_fare_the_rival_cannot_pay_is_not_offered', 'With $900 in a stormy winter the V10.1 rival is offered no journey to Tasmania ($1,248), while the V10.0 rival is (at $350)', () => {
@@ -211882,13 +211929,15 @@ export function runV101RivalSelfTests(): V9SelfTestResult[] {
     v101ActorRandom({ kind: 'ai' }, { rulesVersion: V101_RULES_VERSION }, () => { fallbackCalls += 1; return 0.5; });
     v101ActorRandom({ kind: 'human' }, { rulesVersion: V100_RULES_VERSION }, () => { fallbackCalls += 1; return 0.5; });
     v101ActorRandom({ kind: 'human' }, {}, () => { fallbackCalls += 1; return 0.5; });
-    // review fix: the classic rules switch (turned on mid-match) keeps the V10.0 streams
-    const classicState = { rulesVersion: V101_RULES_VERSION };
-    const classicDomain = v101SessionRandomDomain(classicState, { classicRulesV100: true }) === 'AIReasoning' && v101SessionRandomDomain({ ...classicState, gameSettings: { classicRulesV100: true } }) === 'AIReasoning' && v101SessionRandomDomain(classicState, { classicRulesV100: false }) === 'HumanAutomation';
+    // final verification: a classic-rules match is stamped 1000 when it starts (V10.0 streams); the live switch, flipped in the middle of a V10.1 match, changes nothing (one stamp, one set of rules)
+    const classicState = { rulesVersion: V100_RULES_VERSION };
+    const flippedState = { rulesVersion: V101_RULES_VERSION };
+    const classicDomain = v101SessionRandomDomain(classicState, { classicRulesV100: true }) === 'AIReasoning' && v101SessionRandomDomain(flippedState, { classicRulesV100: true }) === 'HumanAutomation' && v101SessionRandomDomain({ ...flippedState, gameSettings: { classicRulesV100: true } }) === 'HumanAutomation';
     let classicFallback = 0;
     v101ActorRandom({ kind: 'human' }, classicState, () => { classicFallback += 1; return 0.5; }, { classicRulesV100: true });
-    return (json(tokenNew) === json([0, 1]) && json(tokenOld) === json([1, 0]) && json(tokenV100) === json([1, 0]) && nested && json(humanNew) === json([0, 1]) && fallbackCalls === 3 && classicDomain && classicFallback === 1)
-      || json({ tokenNew, tokenOld, tokenV100, nested, humanNew, fallbackCalls, classicDomain, classicFallback });
+    const flippedStream = probe(null, () => { v101ActorRandom({ kind: 'human' }, flippedState, () => { throw new Error('the rival stream was used'); }, { classicRulesV100: true }); });
+    return (json(tokenNew) === json([0, 1]) && json(tokenOld) === json([1, 0]) && json(tokenV100) === json([1, 0]) && nested && json(humanNew) === json([0, 1]) && fallbackCalls === 3 && classicDomain && classicFallback === 1 && json(flippedStream) === json([0, 1]))
+      || json({ tokenNew, tokenOld, tokenV100, nested, humanNew, fallbackCalls, classicDomain, classicFallback, flippedStream });
   });
 
   check('v101rv_16_team_only_settings_say_so', "Every setting only the team AI reads carries a \"Team modes only\" chip in AI Opponent, Scenario and Grand Tour and none in a team mode; live settings never carry it; every listed key is a real setting", () => {
@@ -212054,9 +212103,11 @@ export function runV101RivalSelfTests(): V9SelfTestResult[] {
         if (json(a.pick) !== json(c.pick) || a.draws !== c.draws) bad.push(`${String(rules)}/${difficulty}/${seed}`);
       }
     }));
-    const classicSwitch = bundle({ settings: { classicRulesV100: true } });
+    const classicSwitch = bundle({ rules: V100_RULES_VERSION, settings: { classicRulesV100: true } }); // what the switch produces: a match stamped 1000
     const stripped = hooksFor(classicSwitch);
     if (stripped && 'travelCost' in stripped) bad.push('classic switch still hooks fares');
+    const flipped = hooksFor(bundle({ settings: { classicRulesV100: true } })); // the switch flipped mid-match in a V10.1 match: the stamp rules, so the hooks stay
+    if (!flipped || flipped.v101Rules !== true || typeof flipped.travelCost !== 'function') bad.push('flipping the switch mid-match changed the rival hooks');
     const fresh = hooksFor(bundle());
     if (!fresh || fresh.v101Rules !== true || typeof fresh.travelCost !== 'function' || 'challengesFor' in fresh) bad.push('a V10.1 match is missing its hooks');
     return bad.length === 0 || json(bad.slice(0, 6));
@@ -212117,7 +212168,7 @@ export function runV101RivalSelfTests(): V9SelfTestResult[] {
     const tires = names.some(name => t[name] < a[name] - 0.0499);
     const pin = (fatigue: number, character: string) => Number(v101RivalRollOdds({ difficulty: 2, type: 'physical' }, { character: { name: character }, level: 1, stats: { strength: 4, charisma: 3, luck: 3, intelligence: 3 }, overrideFatigue: fatigue }).toFixed(4));
     const pins = pin(0, 'Tourist') === 0.62 && pin(0.03, 'Tourist') === 0.59 && pin(0, 'Scientist') === 0.52;
-    const old = [mk({ rules: V100_RULES_VERSION }), mk({ rules: null }), mk({ settings: { classicRulesV100: true } })].map(x => Math.max(...Object.values(oddsByName(x))));
+    const old = [mk({ rules: V100_RULES_VERSION }), mk({ rules: null }), mk({ rules: V100_RULES_VERSION, settings: { classicRulesV100: true } })].map(x => Math.max(...Object.values(oddsByName(x))));
     const oldKeep = old.every(top => top > 0.9);
     return (exact && capped && tires && pins && oldKeep) || json({ exact, capped, tires, pins, old, a, t });
   });
@@ -214463,6 +214514,8 @@ export interface V101PresetPlan {
 function v101SettingLabel(key: string): string {
   const meta = SETTINGS_HUB_FIELD_META[key];
   if (meta && meta.label) return meta.label;
+  const v101Row = [...V101_FEATURE_TOGGLE_ROWS, ...V101_CLASSIC_TOGGLE_ROWS].find(row => row.key === key); // V10.1 (SECTION 20BG, final verification): the three V10.1 switches are labelled by their own rows (they have no hub field entry), not "Classic rules v100"
+  if (v101Row) return v101Row.label;
   const words = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase(); // no hub label: "winConditionCoachEnabled" reads "Win condition coach enabled"
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
