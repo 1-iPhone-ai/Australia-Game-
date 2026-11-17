@@ -45909,7 +45909,8 @@ export function evaluateGuardianRiskPipeline(
   const payloadHash = hashNormalizedPayload(context.actionPayload);
   // V10.1 (SECTION 20BH): the key also carries what the verdict depends on (region, bag, loans, contracts, expeditions, plans, the actions used). It was day, turn,
   // actor, cash and action tokens only, so after a free action that left cash alone (accepting a contract, a sale at the same cash) the old verdict stayed on screen.
-  const cacheKey = `${context.actorId}:${context.turn}:${context.actionType}:${payloadHash}:${stateHashBefore}:${v101GuardianStateKey(context)}:${context.settings.protectionLevel}`;
+  // V10.1 (SECTION 20BH, final verification): only a V10.1 match gets the wider key; a V10.0, classic-rules or older match keeps the V10.0 key exactly (so its verdicts and its activity ledger are V10.0's).
+  const cacheKey = `${context.actorId}:${context.turn}:${context.actionType}:${payloadHash}:${stateHashBefore}:${v101GuardianKeyApplies(context.gameState) ? `${v101GuardianStateKey(context)}:` : ''}${context.settings.protectionLevel}`;
 
   const cachedEntry = GUARDIAN_EVALUATION_CACHE.get(cacheKey);
   if (cachedEntry && cachedEntry.turn === context.turn) {
@@ -214649,6 +214650,10 @@ export function v101ObjectiveTokenAlignment(objectiveText: string, cardText: str
  * The state a Guardian verdict depends on beyond day, turn, cash and action tokens: where the actor is, how much it carries and owes, the actions it
  * has used, and its contracts, expeditions, plans and regions held. Part of the verdict cache key, so a verdict is never replayed after one of these changed.
  */
+export function v101GuardianKeyApplies(gameState: unknown): boolean {
+  const inner = gameState && typeof gameState === 'object' ? (gameState as { gameState?: unknown }).gameState : null;
+  return isV101Match(gameState) || isV101Match(inner);
+}
 export function v101GuardianStateKey(context: { gameState?: unknown; actorId: string; activeContracts?: readonly string[]; activeExpeditions?: readonly string[]; activePlans?: readonly string[]; currentCash?: number; currentActionTokens?: number }): string {
   const gs = v101AskRec(context.gameState);
   const byId = v101AskRec(gs.actorsById)[context.actorId];
@@ -214659,7 +214664,10 @@ export function v101GuardianStateKey(context: { gameState?: unknown; actorId: st
   const held = v101AskRec(v101AskRec(gs.regionControlStats).totalControlled)[context.actorId];
   // The play screen's inline warnings hand over a live state with no player in it, so the actor's own fields can be missing there. What is always in it: the
   // contracts this actor holds, the expeditions under way, and the activity ledger, which gets an entry for every committed action (so a sale at the same cash level changes it).
-  const ledger = Array.isArray(v101AskRec(gs.gameActivityLedger).events) ? v101AskRec(gs.gameActivityLedger).events as unknown[] : [];
+  // Guardian's own verdict events are in the ledger too, and every evaluation writes one: counting them made each evaluation change the key of the next, so no verdict was ever replayed
+  // and every re-evaluation wrote another event (the ledger grew about five times faster and the state about four times larger). Only what the player's and the rival's actions write counts.
+  const ledgerAll = Array.isArray(v101AskRec(gs.gameActivityLedger).events) ? v101AskRec(gs.gameActivityLedger).events as unknown[] : [];
+  const ledger = ledgerAll.filter(e => v101AskRec(e).category !== 'guardian_event');
   const parts = [
     String(actor.currentRegion || ''), count(actor.inventory), count(actor.loans) + count(actor.advancedLoans), Number(actor.actionsUsedThisTurn) || 0, Math.floor(Number(actor.money) || 0),
     count(context.activeContracts), count(context.activeExpeditions), count(context.activePlans), Number(held) || 0, Number(context.currentCash) || 0, Number(context.currentActionTokens) || 0,
@@ -214981,7 +214989,7 @@ export function runV101AdviceSelfTests(): V9SelfTestResult[] {
     const changed = [key(actor({ currentRegion: 'VIC' })), key(actor({ inventory: [] })), key(actor({ loans: [{}] })), key(actor({ actionsUsedThisTurn: 1 })), key(actor(), { activeContracts: ['c1'] }), key(actor(), { currentCash: 400 }), key(actor(), { currentActionTokens: 2 })];
     if (!same || new Set([key(actor()), ...changed]).size !== 8) return json({ same, distinct: new Set([key(actor()), ...changed]).size });
     // through the real pipeline: the same situation hits the cache, a changed region does not
-    const gs = (region: string): Obj => ({ actorsById: { player: actor({ currentRegion: region }) }, day: 2, turn: 4 });
+    const gs = (region: string): Obj => ({ rulesVersion: V101_RULES_VERSION, actorsById: { player: actor({ currentRegion: region }) }, day: 2, turn: 4 }); // final verification: the wider key is a V10.1 match's
     const evalCtx = (state: Obj): GuardianEvaluationContext => ({ settings: { ...createDefaultGuardianAiSettings(), enabled: true }, gameState: state, actorId: 'player', actionType: 'travel', actionPayload: {}, source: 'human_direct', day: 2, turn: 4, currentActionTokens: 3, currentCash: 900, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false });
     const a1 = evaluateGuardianRiskPipeline(evalCtx(gs('NSW')));
     const a2 = evaluateGuardianRiskPipeline(evalCtx(gs('NSW')));
@@ -215038,6 +215046,25 @@ export function runV101AdviceSelfTests(): V9SelfTestResult[] {
     const classify = (rulesVersion: number | null) => String(classifyStrategyPlanDeviation(plan(plannerState([], rulesVersion)), { type: 'work' }, plannerState([], rulesVersion)));
     return (!!a && !!b && !!c && a.actionType === V101_PLAN_FALLBACK_ACTION && a.estimatedRevenue === V101_WORK_WAGE && a.id === b.id && c.actionType === 'gather' && c.estimatedRevenue === 150
       && classify(V101_RULES_VERSION) === 'compatible' && classify(V100_RULES_VERSION) !== 'compatible') || json({ a, c, v101c: classify(V101_RULES_VERSION), v100c: classify(V100_RULES_VERSION) });
+  });
+
+  check('v101ai_25_guardian_verdicts_do_not_invalidate_themselves', 'A Guardian verdict is replayed after its own ledger event was written (the key ignores Guardian events), a committed action still changes the key, and a V10.0, classic or unstamped match keeps the V10.0 key', () => {
+    const actor: Obj = { id: 'player', currentRegion: 'NSW', inventory: ['Coral'], loans: [], actionsUsedThisTurn: 0, money: 900 };
+    const evalCtx = (state: Obj): GuardianEvaluationContext => ({ settings: { ...createDefaultGuardianAiSettings(), enabled: true }, gameState: state, actorId: 'player', actionType: 'travel', actionPayload: {}, source: 'human_direct', day: 2, turn: 4, currentActionTokens: 3, currentCash: 900, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false });
+    const state = (rules: number | undefined, events: Obj[], region = 'NSW'): Obj => ({ ...(rules === undefined ? {} : { rulesVersion: rules }), actorsById: { player: { ...actor, currentRegion: region } }, gameActivityLedger: { events }, day: 2, turn: 4 });
+    const own: Obj = { id: 'e1', category: 'action' };
+    const verdict: Obj = { id: 'g1', category: 'guardian_event' };
+    clearGuardianEvaluationCache();
+    const first = evaluateGuardianRiskPipeline(evalCtx(state(V101_RULES_VERSION, [own])));
+    const afterOwnEvent = evaluateGuardianRiskPipeline(evalCtx(state(V101_RULES_VERSION, [own, verdict]))); // the ledger now holds the verdict's own event
+    const afterTwo = evaluateGuardianRiskPipeline(evalCtx(state(V101_RULES_VERSION, [own, verdict, { id: 'g2', category: 'guardian_event' }])));
+    const afterAction = evaluateGuardianRiskPipeline(evalCtx(state(V101_RULES_VERSION, [own, verdict, { id: 'e2', category: 'action' }]))); // a committed action
+    const keyed = (rules: number | undefined) => { clearGuardianEvaluationCache(); const a = evaluateGuardianRiskPipeline(evalCtx(state(rules, [own]))); return a === evaluateGuardianRiskPipeline(evalCtx(state(rules, [own], 'VIC'))); };
+    if (first !== afterOwnEvent || first !== afterTwo) return 'a Guardian ledger event changed the verdict key (the verdict was evaluated again)';
+    if (afterAction === first) return 'a committed action did not change the verdict key';
+    if (keyed(V101_RULES_VERSION) || !keyed(V100_RULES_VERSION) || !keyed(undefined)) return json({ v101: keyed(V101_RULES_VERSION), v100: keyed(V100_RULES_VERSION), none: keyed(undefined) });
+    clearGuardianEvaluationCache();
+    return true;
   });
 
   check('v101ai_22_nothing_new_is_saved', 'The package adds no match state: no V10.1 state key belongs to it, and the Ask hand-over (the Play card\'s move) lives on the question\'s own copy of the state', () => {
