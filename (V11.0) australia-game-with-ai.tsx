@@ -14122,6 +14122,8 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   classicRulesV100: false,
   /** V11.0 (SECTION 20BL): Find Anything — one search box over actions, screens, settings, shortcuts and LAB cards. New, off by default (profile). */
   findAnythingEnabled: false,
+  /** V11.0 (SECTION 20BN): the layered Settings — ⭐ Essentials and five goal groups in place of the 11 tabs. New, off by default (profile). */
+  settingsLayersEnabled: false,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -15264,6 +15266,7 @@ export function sanitizeGameSettings(input: unknown): GameSettingsState {
     dailyFixedRulesEnabled: typeof src.dailyFixedRulesEnabled === 'boolean' ? src.dailyFixedRulesEnabled : defaults.dailyFixedRulesEnabled,
     classicRulesV100: typeof src.classicRulesV100 === 'boolean' ? src.classicRulesV100 : defaults.classicRulesV100,
     findAnythingEnabled: typeof src.findAnythingEnabled === 'boolean' ? src.findAnythingEnabled : defaults.findAnythingEnabled, // V11.0 (SECTION 20BL): only a real boolean switches it on
+    settingsLayersEnabled: typeof src.settingsLayersEnabled === 'boolean' ? src.settingsLayersEnabled : defaults.settingsLayersEnabled, // V11.0 (SECTION 20BN): only a real boolean switches it on
     rememberCategoryNavigationState: typeof src.rememberCategoryNavigationState === 'boolean' ? src.rememberCategoryNavigationState : defaults.rememberCategoryNavigationState,
     rememberCategoryNavigationMode: typeof src.rememberCategoryNavigationMode === 'boolean' ? src.rememberCategoryNavigationMode : defaults.rememberCategoryNavigationMode,
     autoCollapseCategoriesOnNarrow: typeof src.autoCollapseCategoriesOnNarrow === 'boolean' ? src.autoCollapseCategoriesOnNarrow : defaults.autoCollapseCategoriesOnNarrow,
@@ -18508,6 +18511,18 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     category: 'interface',
     label: 'Find Anything',
     description: 'One search box for every action, screen, setting, keyboard shortcut and LAB card (the 🔎 Find button and Ctrl/⌘+K). Nothing about how a match plays changes.',
+    valueType: 'boolean',
+    defaultValue: false,
+    validate: (v: unknown) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: false,
+  },
+  // V11.0 (SECTION 20BN): the layered Settings (new, off by default, profile). The label is the one its settings row shows (V113_LABEL; pinned by v113sl).
+  {
+    key: 'settingsLayersEnabled',
+    category: 'interface',
+    label: 'Essentials and goal groups',
+    description: 'Settings opens on Essentials, the 12 choices most players want, with everything else filed under five goals instead of 11 tabs. Every setting keeps its key, default and value. Nothing about how a match plays changes.',
     valueType: 'boolean',
     defaultValue: false,
     validate: (v: unknown) => typeof v === 'boolean',
@@ -27017,6 +27032,8 @@ export type GameSettingsState = {
   rivalRecapEnabled?: boolean;
   /** V11.0 Find Anything (SECTION 20BM): true = the 🔎 Find button and Ctrl/⌘+K open one search box over everything. Off (default) = as in V10.1. Profile-scoped. */
   findAnythingEnabled?: boolean; // V11.0 (SECTION 20BL): the round's switch
+  /** V11.0 (SECTION 20BN): Settings layers — true = Settings opens on ⭐ Essentials with five goal groups. Off (default) = the classic tabs. Profile-scoped. */
+  settingsLayersEnabled?: boolean;
   /** V10.1 Daily Challenge with fixed rules (SECTION 20BJ): true = the Daily Seed match runs on pinned rules. Off (default) = the Daily Seed is as in V9.9. Match-scoped. */
   dailyFixedRulesEnabled?: boolean;
   /** V10.1 (SECTION 20BA): true = a match started now plays by the V10.0 rules (no Resource Market spread, no V10.1 rival costs, rules editable mid-match, …).
@@ -60518,6 +60535,8 @@ export interface SettingsHubContextValue {
   settingsSearchViewMode?: 'results' | 'focused';
   focusedSearchResultIndex?: number;
   pendingSettingsNavigation?: PendingSettingsNavigation | null;
+  /** V11.0 (SECTION 20BN): the layered Settings for this draw (absent or null: the classic hub, exactly as before). */
+  v113?: V113Hub | null;
 }
 interface SettingsGateNoticeProps {
   /** The trailing phrase, e.g. "the Economy Governor" or "Action Overrides". */
@@ -65149,6 +65168,7 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'interface.startScreen', tab: 'interfaceAcc', title: '🛡️ Start-Screen Protection', tags: ['UX'], fieldKeys: ['startScreenConflictProtection', 'showFloatingControlsOnStartScreen', 'startScreenFloatingLayout', 'restoreEligibleFloatingControlsAfterMatchStarts', 'hideGameplaySidePanelsOnStartScreen'], keywords: 'start screen protection floating controls safe area layout conflict' },
   { id: 'interface.floatingUi', tab: 'interfaceAcc', title: '🎯 Floating UI Conflict Control & Priority Matrix', tags: ['UX', 'Floating UI'], fieldKeys: ['conflictControlSettings', 'conflictControlEnabled', 'conflictAllowRelocation', 'conflictReturnToPreferred', 'conflictShowExplanations', 'floatingUiPriorityMatrix'], keywords: 'floating ui conflict control priority matrix spatial collision relocation return to preferred' },
   { id: 'interface.findAnything', tab: 'interfaceAcc', title: '🔎 Find Anything', tags: ['UX'], chips: ['Off by default'], fieldKeys: ['findAnythingEnabled'], keywords: 'find anything search everything command palette ctrl k cmd k go to open jump look up where is' }, // V11.0 (SECTION 20BL, Q7): filed under its goal, no version in the title
+  { id: 'interface.settingsLayers', tab: 'interfaceAcc', title: '🗂️ Settings Layout', tags: ['UX'], chips: ['Off by default'], fieldKeys: ['settingsLayersEnabled'], keywords: 'settings layout essentials goal groups simple tabs classic layered organise organize declutter' }, // V11.0 (SECTION 20BN): filed under its goal, no version in the title
   { id: 'interface.aiAssistants', tab: 'interfaceAcc', title: '🧠 AI Assistant Surfaces', tags: ['UX', 'AI', 'Floating UI'], fieldKeys: ['aiCommandCenterUiEnabled', 'askGameAiUiEnabled', 'aiTuningLabUiEnabled'], keywords: 'ai command center ask game assistant tuning lab floating button hud widget hide show off by default alt+c ctrl+k' },
   { id: 'interface.launcherDock', tab: 'interfaceAcc', title: '🚀 Unified Launcher & Dock', tags: ['UX', 'Launcher', 'Dock'], fieldKeys: ['launcherSettings', 'dockSettings'], keywords: 'unified launcher floating widget dock positioning mode dragging collapse badge' },
   { id: 'interface.quickActionsVisibility', tab: 'interfaceAcc', title: '⚡ Quick Actions Visibility & Close Behavior', tags: ['UX', 'Quick Actions'], fieldKeys: ['keepQuickActionsReopenHandleWhenClosed', 'fullyHideQuickActionsWhenClosed'], keywords: 'quick actions visibility reopen handle button close behavior minimize hide' },
@@ -86661,6 +86681,10 @@ interface UIState {
   experienceLayer?: ExperienceLayer;
   /** V11.0 (SECTION 20BM): Find Anything's dialog is open (only ever set while findAnythingEnabled is on). Transient — never saved. */
   showFindAnything?: boolean;
+  /** V11.0 (SECTION 20BN): the layered Settings' chosen group, the tab it was chosen on, and Show inactive. Transient — never saved. */
+  v113Group?: V113GroupId;
+  v113GroupTab?: string;
+  v113ShowInactive?: boolean;
   showLiveControlCenter: boolean;
   liveControlCenterTab: LiveControlCenterTab;
   quickActionDomainFilter: QuickActionDomainId;
@@ -95806,8 +95830,9 @@ const SettingsSection: React.FC<{
   const searching = ctx.searchMatchedIds !== null;
   const isMatchedBySearch = searching && ctx.searchMatchedIds!.has(id);
   const tabActive = ctx.activeTab === effectiveTab;
-  if (!searching && !tabActive) return null;
-  if (searching && !isMatchedBySearch) return null;
+  // V11.0 (SECTION 20BN): with the layered Settings on, the group (not the tab) decides, and a search hit shows in its home.
+  if (ctx.v113 ? !ctx.v113.view.sectionVisible(id) : (!searching && !tabActive)) return null;
+  if (!ctx.v113 && searching && !isMatchedBySearch) return null;
   const hasChangedField = fieldKeys.length === 0 || fieldKeys.some(k => ctx.changedFieldKeys.includes(k));
   if (ctx.changedOnly && fieldKeys.length > 0 && !hasChangedField) return null;
   const v101CanCollapse = ctx.allowCollapse !== false; // V10.1 (SECTION 20BG): "Allow Category Collapse" is read here
@@ -95818,7 +95843,7 @@ const SettingsSection: React.FC<{
         <div className="flex items-center gap-2 flex-wrap">
           <h4 className="text-lg font-bold">{title}</h4>
           {searching && (
-            <span className={`text-[10px] px-2 py-0.5 rounded-full ${ctx.buttonSecondary}`}>{SETTINGS_HUB_TAB_LABELS[effectiveTab]}</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full ${ctx.buttonSecondary}`}>{ctx.v113 ? v113SectionGroupLabel(id) : SETTINGS_HUB_TAB_LABELS[effectiveTab] /* V11.0 (SECTION 20BN): the group, in the layered view */}</span>
           )}
           {chips.map(chip => (
             <span key={chip} className={`text-[10px] px-2 py-0.5 rounded-full ${ctx.buttonSecondary}`}>{chip}</span>
@@ -95839,7 +95864,7 @@ const SettingsSection: React.FC<{
       </div>
       {description && <div className="text-xs opacity-75 mt-1">{description}</div>}
       {warning && <div className="text-xs mt-1 text-amber-500">⚠️ {warning}</div>}
-      {!collapsed && <div className="mt-3 space-y-4">{children}</div>}
+      {!collapsed && <div className="mt-3 space-y-4">{children}{ctx.v113 ? ctx.v113.extras(id) : null /* V11.0 (SECTION 20BN): blocks and rows whose home is this section */}</div>}
     </div>
   );
 };
@@ -99844,6 +99869,9 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
+  // V11.0 (SECTION 20BN): with the layered Settings on, ⭐ Essentials takes the Simple view's place and the five goal groups the Advanced view's.
+  const v113On = v113LayersOn(gameSettings);
+  const v113Group = v113ActiveGroup(uiState);
   if (!isOpen) return null;
 
   return (
@@ -99899,15 +99927,15 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
                 <div className={`flex p-1 rounded-lg border ${v99Shell.switcher}`}>
                   <button
                     type="button"
-                    onClick={() => setViewMode('simple')}
+                    onClick={() => { setViewMode('simple'); if (v113On && updateUiState) updateUiState({ v113Group: 'essentials', v113GroupTab: uiState?.settingsActiveTab || 'home' }); /* V11.0 (SECTION 20BN) */ }}
                     className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
-                      viewMode === 'simple'
+                      (v113On ? viewMode !== 'experience' && v113Group === 'essentials' : viewMode === 'simple') // V11.0 (SECTION 20BN): with the layers on the button lights by group
                         ? 'bg-sky-600 text-white shadow'
                         : v99Shell.tabIdle
                     }`}
                     data-testid="settings-view-simple"
                   >
-                    ✨ Simple
+                    {v113On ? '⭐ Essentials' : '✨ Simple'}{/* V11.0 (SECTION 20BN) */}
                   </button>
                   <button
                     type="button"
@@ -99923,14 +99951,15 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
                   </button>
                   <button
                     type="button"
-                    onClick={() => setViewMode('advanced')}
+                    onClick={() => { setViewMode('advanced'); if (v113On && v113Group === 'essentials' && updateUiState) updateUiState({ v113Group: 'match', v113GroupTab: uiState?.settingsActiveTab || 'home' }); /* V11.0 (SECTION 20BN) */ }}
                     className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
-                      viewMode === 'advanced'
+                      (v113On ? viewMode !== 'experience' && v113Group !== 'essentials' : viewMode === 'advanced') // V11.0 (SECTION 20BN): with the layers on the button lights by group
                         ? 'bg-sky-600 text-white shadow'
                         : v99Shell.tabIdle
                     }`}
+                    data-testid="settings-view-advanced" /* V11.0 (SECTION 20BN): a test id for the layered view's "All settings" */
                   >
-                    ⚙️ Advanced Settings
+                    {v113On ? '🗂️ All settings' : '⚙️ Advanced Settings'}{/* V11.0 (SECTION 20BN) */}
                   </button>
                 </div>
               </div>
@@ -99949,7 +99978,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
         </div>
 
         {/* Content Body */}
-        {viewMode === 'simple' && gameSettings ? (
+        {viewMode === 'simple' && gameSettings && !v113On /* V11.0 (SECTION 20BN): the layered view shows ⭐ Essentials instead */ ? (
           <SimpleSettingsPanel
             settings={gameSettings}
             onChange={(key, value) => { if (onSimpleSettingChange) onSimpleSettingChange(key, value); else if (onUpdateSettings) onUpdateSettings(prev => ({ ...prev, ...({ [key]: value } as unknown as Partial<GameSettingsState>) })); }}
@@ -134428,6 +134457,7 @@ export const V95_MATCH_SCOPED_SETTING_KEYS = [
 export const V95_PROFILE_SCOPED_SETTING_KEYS: readonly string[] = [
   'rivalRecapEnabled', // V10.1 (SECTION 20BA): a display preference, remembered between visits
   'findAnythingEnabled', // V11.0 (SECTION 20BL): an interface preference, remembered between visits, never in a save
+  'settingsLayersEnabled', // V11.0 (SECTION 20BN): an interface preference, remembered between visits, never in a save
   'allowSettingsCategoryCollapse',
   'startSettingsCategoryCollapsed',
   'settingsCategoryNavigationMode',
@@ -136955,6 +136985,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101en', label: 'V10.1 Release: Engine Integrity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101EngineSelfTests()) },
   // V11.0 (SECTION 20BM): one suite per V11.0 package (UX-2: Find Anything).
   { id: 'v110fa', label: 'V11.0 UX-2: Find Anything', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV110FindAnythingSelfTests()) },
+  { id: 'v113sl', label: 'V11.0 UX-3: Settings Layers', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV113SettingsLayersSelfTests()) }, // V11.0 (SECTION 20BO)
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
@@ -217375,6 +217406,7 @@ export const V101_SUITE_MANIFEST: ReadonlyArray<readonly [string, string]> = [
   ['runV101SettingsSelfTests', 'v101st'], ['runV101AdviceSelfTests', 'v101ai'], ['runV101WorldSelfTests', 'v101wl'],
   ['runV101ContentSelfTests', 'v101ct'], ['runV101EngineSelfTests', 'v101en'],
   ['runV110FindAnythingSelfTests', 'v110fa'], // V11.0 (SECTION 20BM)
+  ['runV113SettingsLayersSelfTests', 'v113sl'], // V11.0 (SECTION 20BO)
   ['runV102StrategicInfrastructureNetworksSelfTests', 'v102'], ['runV103NationalMegaprojectSelfTests', 'v103'], ['runV104NationalDevelopmentSelfTests', 'v104'],
   ['runV105InnovationCapabilitiesSelfTests', 'v105'], ['runV106ResilienceSystemicRiskSelfTests', 'v106'], ['runV107DynamicNationalPrioritiesSelfTests', 'v107'],
   ['runV108RegionalCompetitionSelfTests', 'v108'], ['runV109StrategicCapitalSelfTests', 'v109'], ['runV1010WorkforceHumanCapitalSelfTests', 'v1010'],
@@ -218287,7 +218319,7 @@ export function v110WindowSurfaceId(windowId: string, settings: { readonly findA
 // The data block below is generated from V11.0_UX_MAP.md (UX-1); v110fa walks every id in it.
 // ============================================================================
 
-export type V110FindKind = 'action' | 'screen' | 'setting' | 'section' | 'shortcut' | 'lab' | 'ask';
+export type V110FindKind = 'action' | 'screen' | 'setting' | 'section' | 'shortcut' | 'lab' | 'ask' | 'essential'; // V11.0 (SECTION 20BO): + the 12 Essentials
 export type V110FindLayer = 'play' | 'intelligence' | 'lab';
 /** The game's own handlers a result may call (the AustraliaGame component hands the real ones to useV110FindAnything). */
 export type V110FindCall = 'endTurn' | 'saveGame' | 'clearNotifications' | 'uiRescue' | 'toggleMap' | 'openNegotiations' | 'openTuningLab'
@@ -219217,6 +219249,7 @@ function v110KeyAsLabel(key: string): string {
 export function v110SettingLabels(key: string): string[] {
   const out: string[] = [];
   const add = (label: unknown) => { const text = typeof label === 'string' ? label.replace(/\s+/g, ' ').trim() : ''; if (text && !out.includes(text)) out.push(text); };
+  add(v113SettingLabel(key)); // V11.0 (SECTION 20BO): the one label table comes first (the layered rows use it too)
   add(SIMPLE_SETTINGS.find(row => row.key === key)?.label);
   add(SETTINGS_HUB_FIELD_META[key]?.label);
   add(SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(row => row.key === key)?.label);
@@ -219335,6 +219368,7 @@ export function buildV110FindIndex(input: V110FindIndexInput = v110DefaultIndexI
       settingKey: key, ...(note ? { note } : {}), ...(needs ? { needs } : {}), ...(home ? { sectionId: home.id } : {}),
     });
   });
+  v113EssentialEntries(out.length).forEach(entry => out.push(entry)); // V11.0 (SECTION 20BO): the 12 Essentials, last in the index
   return out;
 }
 
@@ -219347,8 +219381,8 @@ export function v110FindIndex(): V110FindEntry[] {
 
 // ---- Ranking ----------------------------------------------------------------------------------------------------------------------
 export const V110_FIND_MAX_RESULTS = 40;
-const V110_KIND_ORDER: Readonly<Record<V110FindKind, number>> = { ask: 0, action: 1, screen: 2, shortcut: 3, lab: 4, section: 5, setting: 6 };
-const V110_KIND_BONUS: Readonly<Record<V110FindKind, number>> = { ask: 0, action: 60, screen: 55, shortcut: 20, lab: 10, section: 8, setting: 0 }; // a window or action wins an equal match with a setting
+const V110_KIND_ORDER: Readonly<Record<V110FindKind, number>> = { ask: 0, action: 1, screen: 2, essential: 3, shortcut: 4, lab: 5, section: 6, setting: 7 }; // V11.0 (SECTION 20BO): + essential
+const V110_KIND_BONUS: Readonly<Record<V110FindKind, number>> = { ask: 0, action: 60, screen: 55, essential: 25, shortcut: 20, lab: 10, section: 8, setting: 0 }; // a window or action wins an equal match with a setting; an Essentials choice wins one with its settings
 /** What the box shows before you type: the everyday actions and windows. */
 export const V110_FIND_SUGGESTED: readonly string[] = ['action:end_turn', 'screen:travel_modal', 'screen:challenges_modal', 'screen:market_modal', 'screen:resource_market_modal',
   'screen:workshop_modal', 'screen:save_load_modal', 'screen:settings_hub', 'screen:help_shortcuts_modal', 'screen:progress_dashboard'];
@@ -219374,21 +219408,10 @@ function v110EntryText(entry: V110FindEntry): V110EntryText {
   return text;
 }
 function v110ScorePrepared(entry: V110FindEntry, pq: V110PreparedQuery): number {
-  if (!pq.q) return 0;
-  const t = v110EntryText(entry);
-  if (!pq.tokens.every(token => t.hay.includes(token))) return 0;
-  let score = 1;
-  if (t.key && (pq.compact === t.key || pq.q === t.keyWords)) score += 1000;
-  if (t.title === pq.q) score += 900;
-  else if (t.title.startsWith(pq.q)) score += 500;
-  else if (t.title.includes(pq.q)) score += 200;
-  pq.tokens.forEach(token => {
-    if (v110WordStarts(t.title, token)) score += 80; else if (t.title.includes(token)) score += 40;
-    if (t.key && t.key.includes(token) && !t.title.includes(token)) score += 30; // the key counts when the words of the title do not already
-    if (v110WordStarts(entry.keywords, token)) score += 15; else if (entry.keywords.includes(token)) score += 5;
-    if (t.where.includes(token)) score += 3;
-  });
-  return score + V110_KIND_BONUS[entry.kind];
+  // V11.0 (SECTION 20BO): every word of the query must start a word of the entry, and a squashed key matches only from its start
+  // (it used to match anywhere inside, so "tent" found persisTENT and inTENT). The scoring itself moved to v113ScoreEntry.
+  const score = v113ScoreEntry(entry, pq.q, pq.tokens, pq.compact);
+  return score > 0 ? score + V110_KIND_BONUS[entry.kind] : 0;
 }
 /** One entry's score for a query (0 = no match: every word of the query must appear somewhere in the entry). */
 export function v110ScoreEntry(entry: V110FindEntry, query: string): number {
@@ -219414,7 +219437,8 @@ export function v110FindSearch(index: readonly V110FindEntry[], query: string, l
   }
   const hits: V110FindHit[] = [];
   const pq = v110PrepareQuery(text);
-  index.forEach(entry => { const score = v110ScorePrepared(entry, pq); if (score > 0) hits.push({ entry, score }); });
+  const everyday = v113SynonymTargets(text); // V11.0 (SECTION 20BO): everyday words ("harder", "mute", "restart") lift the place they mean
+  index.forEach(entry => { const score = v110ScorePrepared(entry, pq) + (everyday.includes(entry.id) ? V113_SYNONYM_BOOST : 0); if (score > 0) hits.push({ entry, score }); });
   hits.sort((a, b) => (b.score - a.score) || (V110_KIND_ORDER[a.entry.kind] - V110_KIND_ORDER[b.entry.kind]) || (a.entry.order - b.entry.order));
   const ranked = hits.slice(0, Math.max(0, limit - 1));
   if (text.length >= 2) {
@@ -219485,7 +219509,10 @@ export function v110FindAvailability(entry: V110FindEntry, ctx: V110FindContext)
 export interface V110FindResult { entry: V110FindEntry; score: number; availability: V110FindAvailability }
 /** Search and availability together: what the dialog lists. */
 export function v110FindResults(index: readonly V110FindEntry[], query: string, ctx: V110FindContext, limit: number = V110_FIND_MAX_RESULTS): V110FindResult[] {
-  return v110FindSearch(index, query, limit).map(hit => ({ ...hit, availability: v110FindAvailability(hit.entry, ctx) }));
+  return v110FindSearch(index, query, limit).map(hit => {
+    const entry = v113LayeredEntry(hit.entry, ctx.settings); // V11.0 (SECTION 20BO): with the layered Settings on, a setting opens its new home
+    return { ...hit, entry, availability: v110FindAvailability(entry, ctx) };
+  });
 }
 
 // ---- Opening a result: the same calls the buttons make -----------------------------------------------------------------------------
@@ -219570,7 +219597,7 @@ export function v110FindStatus(results: readonly V110FindResult[], query: string
 }
 
 // ---- The dialog ----------------------------------------------------------------------------------------------------------------------
-export const V110_FIND_KIND_LABELS: Readonly<Record<V110FindKind, string>> = { action: 'Action', screen: 'Screen', setting: 'Setting', section: 'Settings section', shortcut: 'Shortcut', lab: 'LAB card', ask: 'Ask' };
+export const V110_FIND_KIND_LABELS: Readonly<Record<V110FindKind, string>> = { essential: 'Essentials', action: 'Action', screen: 'Screen', setting: 'Setting', section: 'Settings section', shortcut: 'Shortcut', lab: 'LAB card', ask: 'Ask' }; // V11.0 (SECTION 20BO): + Essentials
 export const V110_FIND_LISTBOX_ID = 'v110-find-listbox';
 export const v110FindOptionId = (index: number): string => `v110-find-opt-${index}`;
 /** The theme classes the dialog uses (resolveThemeStyles provides them). */
@@ -219998,7 +220025,7 @@ export function runV110FindAnythingSelfTests(): V9SelfTestResult[] {
     const settingIds = index.filter(entry => entry.kind === 'setting').map(entry => entry.settingKey || '');
     const missing = [...V110_MAP_SETTING_KEYS, 'findAnythingEnabled'].filter(key => settingIds.filter(id => id === key).length !== 1);
     const uncovered = keys.filter(key => !settingIds.includes(key));
-    return (V110_MAP_SETTING_KEYS.length === 599 && keys.length === 600 && missing.length === 0 && uncovered.length === 0 && settingIds.length === keys.length) || json({ missing: missing.slice(0, 10), uncovered });
+    return (V110_MAP_SETTING_KEYS.length === 599 && keys.length === 600 + V113_SETTING_KEYS.length /* V11.0 (SECTION 20BN): + the Settings layers switch */ && missing.length === 0 && uncovered.length === 0 && settingIds.length === keys.length) || json({ missing: missing.slice(0, 10), uncovered });
   });
   check('v110fa_19_every_setting_found_by_key', 'Every one of the 600 settings is the first result when you type its key', () => {
     const wrong = keys.filter(key => { const top = v110FindSearch(index, key, 5)[0]; return !top || top.entry.id !== `setting:${key}`; });
@@ -220206,6 +220233,1880 @@ export function runV110FindAnythingSelfTests(): V9SelfTestResult[] {
     const sectionIds = new Set([...SETTINGS_HUB_SECTION_INDEX.map(s => s.id), V110_BALANCE_LAB_SECTION.id]);
     const gone = [...V110_MAP_SECTION_IDS.filter(id => !sectionIds.has(id)), ...V110_MAP_SETTING_KEYS.filter(key => !(key in DEFAULT_GAME_SETTINGS))];
     return (json(counts) === json([61, 28, 87, 599, 17, 48]) && gone.length === 0) || json({ counts, gone: gone.slice(0, 10) });
+  });
+  return results;
+}
+
+
+// ============================================================================
+// SECTION 20BN: V11.0 SETTINGS LAYERS — ESSENTIALS, FIVE GOAL GROUPS, ONE HOME PER SETTING (UX-3)
+// ============================================================================
+// Package UX-3. Off by default: one profile setting, settingsLayersEnabled, read with === true. Off = Settings exactly as V11.0
+// delivered it after UX-2 (plus this switch's own row). On:
+//   ⭐ Essentials   Settings opens on the 12 choices most players want (V113EssentialsPage); the Simple view's place.
+//   five groups    🎮 Match & rules · 🤖 Your rival · 👥 Teams & automation · 🧭 Help, screen & sound · 🔬 Records & tools
+//                  replace the 11 tabs. Every existing section is drawn as it is; only WHICH sections show follows the group
+//                  (V113_SECTION_GROUP, map §6). The settings search still searches everything and shows each hit in its home.
+//   one home       every setting has exactly one home (V113_HOME_KEYS, map §7): a control homed elsewhere is not drawn at its
+//                  old place (V113Hub.keep), a block of controls homed elsewhere is drawn in its home (V113Hub.place), and a
+//                  setting whose control lived outside Settings (a window, the LAB, the Intelligence tab) gets a row in its home
+//                  that writes through the same call that control makes (V113_ROWS).
+//   gates          Teams & automation shows its master switch and the three solo automation sections (Auto Mode, Human Player
+//                  Automation, Priority Resolution) until a Team Mode match runs or teamCompetitiveAiEnabled is on.
+//   inactive       the 20 settings with no effect in this version, and deterministicRngActive (nothing reads it), show only with
+//                  "Show inactive" on.
+//   presets only   the settings with no control of their own are listed read-only, with their current value ("Set by presets").
+// Keys, defaults, scopes and saved values never change; how a match plays never changes (rules stamp 1010). Nothing here
+// reads the clock or draws a random number. Suite v113sl (runV113SettingsLayersSelfTests).
+// ============================================================================
+
+export type V113GroupId = 'essentials' | 'match' | 'rival' | 'teams' | 'help' | 'tools';
+export interface V113Group { id: V113GroupId; icon: string; label: string; goal: string }
+export const V113_GROUPS: readonly V113Group[] = [
+  { id: 'essentials', icon: '⭐', label: 'Essentials', goal: 'The 12 choices most players want. Everything else is one click away.' },
+  { id: 'match', icon: '🎮', label: 'Match & rules', goal: 'How a match plays: length, goal, actions, challenges, money, regions and content.' },
+  { id: 'rival', icon: '🤖', label: 'Your rival', goal: 'How strong your rival is, how it thinks and what it remembers.' },
+  { id: 'teams', icon: '👥', label: 'Teams & automation', goal: 'Team Mode, AI teammates, automation and oversight.' },
+  { id: 'help', icon: '🧭', label: 'Help, screen & sound', goal: 'Guidance, assistants, look, sound, accessibility and layout.' },
+  { id: 'tools', icon: '🔬', label: 'Records & tools', goal: 'Replays, records, diagnostics, balance tools and the reference library.' },
+];
+export const V113_GROUP_IDS: readonly V113GroupId[] = ['essentials', 'match', 'rival', 'teams', 'help', 'tools'];
+export function v113GroupMeta(id: V113GroupId): V113Group { return V113_GROUPS.find(g => g.id === id) || V113_GROUPS[0]; }
+export function isV113GroupId(value: unknown): value is V113GroupId { return typeof value === 'string' && (V113_GROUP_IDS as readonly string[]).includes(value); }
+
+// ---- The switch -----------------------------------------------------------------------------------------------------------------
+//   settingsLayersEnabled  boolean, false  NEW (UX-3), profile setting. Off = Settings as V11.0 delivered it after UX-2.
+export type V113BooleanSettingKey = 'settingsLayersEnabled';
+export const V113_SETTING_KEYS: readonly V113BooleanSettingKey[] = ['settingsLayersEnabled'];
+export const V113_SECTION_ID = 'interface.settingsLayers';
+export const V113_SECTION_TITLE = '🗂️ Settings Layout';
+export const V113_LABEL = 'Essentials and goal groups';
+export const V113_DESCRIPTION = 'Settings opens on ⭐ Essentials, the 12 choices most players want, and everything else is filed under five goals (Match & rules, Your rival, Teams & automation, Help, screen & sound, Records & tools) instead of 11 tabs. Every setting keeps its key, default and value, and the settings search still finds all of them. Turn it off any time for the classic tabs.';
+/** True only when the layered Settings is switched on (a real true; anything else is off). */
+export function v113LayersOn(settings: { readonly settingsLayersEnabled?: unknown } | null | undefined): boolean {
+  return settings?.settingsLayersEnabled === true;
+}
+export function isV113SettingKeyName(key: unknown): boolean {
+  return typeof key === 'string' && (V113_SETTING_KEYS as readonly string[]).includes(key);
+}
+
+// ---- The layered view's own blocks (homes that are not a hub section) ------------------------------------------------------------
+export type V113PseudoId = 'v113.essentials' | 'v113.rivalExtras' | 'v113.classicRival' | 'v113.dailyJournal' | 'v113.classicRules' | 'v113.askAgain'
+  | 'v113.turnSummaries' | 'v113.classicLook' | 'v113.teamOs' | 'v113.teamsGate' | 'v113.presetsOnly' | 'v113.internal';
+export const V113_PSEUDO: Readonly<Record<V113PseudoId, { group: V113GroupId | null; title: string; place: 'head' | 'tail' | 'none' }>> = {
+  'v113.essentials': { group: 'essentials', title: '⭐ Essentials', place: 'head' },
+  'v113.dailyJournal': { group: 'match', title: '📅 Daily Challenge & Match Journal', place: 'head' },
+  'v113.classicRules': { group: 'match', title: '🏛️ Classic rules', place: 'tail' },
+  'v113.askAgain': { group: 'match', title: '✋ Confirmation questions', place: 'tail' },
+  'v113.rivalExtras': { group: 'rival', title: '🏁 Rival extras', place: 'head' },
+  'v113.classicRival': { group: 'rival', title: '🤖 Classic rival', place: 'tail' },
+  'v113.teamsGate': { group: 'teams', title: '👥 Team Mode AI', place: 'head' },
+  'v113.teamOs': { group: 'teams', title: '🧠 Team Intelligence OS', place: 'tail' },
+  'v113.turnSummaries': { group: 'help', title: '🧾 Turn summaries', place: 'head' },
+  'v113.classicLook': { group: 'help', title: '🎨 Classic look & feel', place: 'tail' },
+  'v113.presetsOnly': { group: null, title: '🔒 Set by presets', place: 'tail' },
+  'v113.internal': { group: null, title: 'Kept by the game', place: 'none' },
+};
+export function isV113PseudoId(id: unknown): id is V113PseudoId { return typeof id === 'string' && Object.prototype.hasOwnProperty.call(V113_PSEUDO, id); }
+
+/** Sections every key of which now lives elsewhere: the layered view does not draw them (the classic view still does). */
+export const V113_DISSOLVED_SECTIONS: readonly string[] = ['quickSetup.core', 'interface.firstRun', 'interface.mapSound', 'competition.competitiveActions', 'gameplay.v99', 'gameplay.v100', 'gameplay.v101'];
+
+
+// ---- The map, as data: which group each section belongs to (§6) and the one home of every setting (§7) ------------------------------
+/** Each settings section's goal group (map §6). The Essentials group holds the Settings dashboard and the presets. */
+export const V113_SECTION_GROUP: Readonly<Record<string, V113GroupId>> = {
+  "home.dashboard": 'essentials',
+  "quickSetup.presets": 'essentials',
+  "quickSetup.core": 'match',
+  "mechanicsDirectory.directory": 'tools',
+  "teamModeAi.overview": 'tools',
+  "gameplay.core": 'match',
+  "gameplay.actionLimits": 'match',
+  "gameplay.actionOverride": 'match',
+  "gameplay.challengeRules": 'match',
+  "gameplay.expansions": 'match',
+  "gameplay.matchVariety": 'match',
+  "gameplay.scenarioMode": 'match',
+  "gameplay.rivalryCampaign": 'match',
+  "gameplay.v101": 'match',
+  "gameplay.v100": 'match',
+  "gameplay.v99": 'match',
+  "economy.winCondition": 'match',
+  "economy.matchShape": 'match',
+  "economy.loans": 'match',
+  "competition.regionControl": 'match',
+  "competition.regionalStanding": 'match',
+  "competition.externalTerritories": 'match',
+  "competition.negotiations": 'match',
+  "competition.competitiveActions": 'match',
+  "ai.settings": 'rival',
+  "aiStrategyLab.main": 'rival',
+  "aiTeams.strategySliders": 'rival',
+  "teamModeAi.aiThinkingAlgorithm": 'rival',
+  "teamModeAi.algorithmBuilder": 'rival',
+  "ai.adaptive": 'rival',
+  "ai.memory": 'rival',
+  "ai.persistentMemory": 'rival',
+  "ai.opponentMind": 'rival',
+  "ai.communication": 'rival',
+  "teamModeAi.teamBrain": 'teams',
+  "teamModeAi.competitiveAi": 'teams',
+  "teamModeAi.actionOverrides": 'teams',
+  "teamModeAi.sharedActionBank": 'teams',
+  "teamModeAi.actionLending": 'teams',
+  "teamModeAi.teamPlans": 'teams',
+  "teamModeAi.reservations": 'teams',
+  "teamModeAi.threatTargeting": 'teams',
+  "teamModeAi.endgameAcceleration": 'teams',
+  "teamModeAi.emergencyActions": 'teams',
+  "teamModeAi.teamInitiative": 'teams',
+  "teamModeAi.comboBonuses": 'teams',
+  "teamModeAi.cashVault": 'teams',
+  "teamModeAi.performanceSync2": 'teams',
+  "teamModeAi.parallelPlanning": 'teams',
+  "teamModeAi.actionSequences": 'teams',
+  "aiTeams.coPilot": 'help',
+  "teamModeAi.actionApproval": 'teams',
+  "teamModeAi.actionRequirements": 'teams',
+  "advancedSystems.humanAutomation": 'teams',
+  "autoMode.main": 'teams',
+  "autoMode.advanced": 'teams',
+  "teamModeAi.economyGovernor": 'teams',
+  "teamModeAi.treasury": 'teams',
+  "teamModeAi.overseer": 'teams',
+  "teamModeAi.governanceControlSurface": 'teams',
+  "teamModeAi.auditor": 'teams',
+  "advancedSystems.priority": 'teams',
+  "advancedSystems.decisionTransparency": 'tools',
+  "advancedSystems.gameActivityLedger": 'tools',
+  "advancedSystems.aiPipelineInspector": 'tools',
+  "advancedSystems.diag2Overlay": 'tools',
+  "advancedSystems.coPilotStartPhase": 'tools',
+  "advancedSystems.postMatchDebrief": 'tools',
+  "advancedSystems.replaySafety": 'tools',
+  "advancedSystems.balanceLab": 'tools',
+  "interface.categoryNavigation": 'help',
+  "interface.startScreen": 'help',
+  "interface.floatingUi": 'help',
+  "interface.aiAssistants": 'help',
+  "interface.launcherDock": 'help',
+  "interface.quickActionsVisibility": 'help',
+  "interface.layoutPresets": 'help',
+  "interface.modalSizes": 'help',
+  "interface.uiRescue": 'help',
+  "interface.safeAreaPreview": 'help',
+  "interface.accessibility": 'help',
+  "interface.appearance": 'help',
+  "interface.firstRun": 'help',
+  "interface.mapSound": 'help',
+  "interface.changelog": 'help',
+  "interface.uxAssist": 'help',
+  "interface.notifications": 'help',
+  "interface.findAnything": 'help',
+  "interface.settingsLayers": 'help'
+};
+/** The single home of every setting (map §7, "V11.0 home"): a section id, or one of the layered view's own blocks (v113.*). */
+export const V113_HOME_KEYS: Readonly<Record<string, readonly string[]>> = {
+  "advancedSystems.aiPipelineInspector": ['aiPipelineInspectorEnabled'],
+  "advancedSystems.coPilotStartPhase": ['coPilotStartPhaseOverlayEnabled'],
+  "advancedSystems.decisionTransparency": ['decisionTransparencyEnabled', 'decisionTransparencyVisibilityScope', 'decisionTransparencyViewMode', 'decisionTransparencyRealtimeBreakdown', 'decisionTransparencyTimeline', 'decisionTransparencySettingContributions', 'decisionTransparencyReasonExplanations', 'decisionTransparencyAlternativeActions', 'decisionTransparencyPriorityFlow', 'decisionTransparencyMaxHistoryRetained', 'decisionTransparencyDetailLevel', 'decisionTransparencyExplanationDepth', 'decisionTransparencyTimelineLength', 'decisionTransparencySamplingDensity', 'decisionTransparencyPanelDensity', 'decisionTransparencyMultiAiOverviewEnabled', 'decisionTransparencyShowPerAiMiniCards', 'decisionTransparencyShowAdaptiveActorBreakdown', 'decisionTransparencyShowTeamAdaptiveSource', 'decisionTransparencyShowActorAppliedEffects', 'decisionTransparencyDefaultGroupView', 'decisionTransparencyShowOnlyActiveAis', 'decisionTransparencyShowUnaffectedAis', 'decisionTransparencyMaxVisibleAiCards', 'decisionTransparencyPerAiTimelineDensity', 'decisionTransparencyPerAiTimelineLength'],
+  "advancedSystems.diag2Overlay": ['diag2OverlayEnabled'],
+  "advancedSystems.gameActivityLedger": ['gameActivityLedgerEnabled', 'gameActivityLedgerPreserveBookmarks', 'gameActivityLedgerPreserveRootCausal', 'gameActivityLedgerDetailLevel', 'gameActivityLedgerIncludeInSaveFile', 'gameActivityLedgerMaxEvents', 'gameActivityLedgerRetentionPolicy', 'gameActivityLedgerRecordingPaused', 'ledgerDiagnosticsEnabled', 'ledgerPruneRetentionLimit', 'ledgerAutoPruneEnabled', 'ledgerExportCompressionEnabled'],
+  "advancedSystems.humanAutomation": ['humanAutomationEnabled', 'humanAutomationTransparencyEnabled', 'automationSequenceLaunchEnabled', 'automationSlotProgressionEnabled', 'automationRunHistoryEnabled', 'automationExtendedTriggersEnabled', 'automationExtendedActionsEnabled', 'automationConflictWarningsEnabled', 'automationDailyDigestEnabled', 'automationImportExportEnabled'],
+  "advancedSystems.postMatchDebrief": ['postMatchDebriefEnabled'],
+  "advancedSystems.priority": ['settingPriorityMode', 'maxConcurrentHighInfluenceSettings', 'conflictResolutionStrength', 'deprioritizeLowImpactSettings', 'priorityTransparencyEnabled', 'manualPriorityWeights'],
+  "advancedSystems.replaySafety": ['aiDeterministic', 'aiReplayRecordingEnabled', 'aiReplayMaxEvents', 'randomnessMode', 'worldRngMode', 'aiDeterministicSeed', 'worldRngSeed', 'replayComparisonEnabled', 'replayComparisonToleranceThreshold', 'replayComparisonIgnoreMinorTiming', 'deterministicRngActive', 'whatIfTimelinesEnabled', 'canonicalActionRoutingV97', 'replaySmartCheckpointsEnabled', 'replayTurningPointDetectionEnabled', 'replayDeterministicValidationEnabled', 'replayWhatIfBranchingEnabled', 'replayDeveloperDiagnosticsEnabled', 'replayAutoOpenAtMatchEnd', 'replayDetailLevel'],
+  "ai.adaptive": ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier', 'enablePersistentOpponentModels', 'enableAiCalibrationLearning', 'opponentModelDecayRate', 'opponentModelWeight', 'opponentThreatWeightsEnabled', 'rivalDossierPanelEnabled', 'adaptiveAiPatternMemoryStrength', 'adaptiveAiRubberBandingStrength', 'adaptiveAiNetWorthThreshold', 'adaptiveAiLevelDifference', 'adaptiveAiChallengeDifference', 'adaptiveAiConsecutiveDays', 'adaptiveAiMaxDifficulty', 'adaptiveAiAffectedModes', 'adaptiveAiTeamComebackStrength', 'adaptiveAiTriggerSensitivity', 'adaptiveAiSupportFocus', 'adaptiveAiRiskBias', 'adaptiveAiEconomyRecoveryBias', 'adaptiveAiDisruptionBias', 'adaptiveAiShowDecisionTransparency', 'adaptiveAiShowActiveModifiers', 'aiCalibrationLearningRate', 'enableCounterfactualEvaluation', 'projectedOutcomeEnabled', 'projectedOutcomeHorizon', 'projectedOutcomeMode', 'deterministicMode'],
+  "ai.communication": ['aiCommunicationEnabled', 'aiCommunicationProactiveEnabled', 'aiCommunicationProactiveFrequency', 'aiCommunicationAutonomyLevel'],
+  "ai.memory": ['aiMemoryEnabled', 'aiMemoryInfluenceStrength', 'aiMemoryInspectionEnabled', 'aiMemoryFullInspectionEnabled', 'aiStrategicLearningEnabled', 'aiStrategicLearningStrength'],
+  "ai.opponentMind": ['opponentPersonalityEnabled'],
+  "ai.persistentMemory": ['aiPersistentMemoryEnabled', 'aiPersistentLearningEnabled', 'aiPersistentIdentityMode', 'aiPersistentAskOnAbandon', 'aiPersistentAivsAiEnabled'],
+  "ai.settings": ['aiRegionsMajorityRushEnabled', 'aiUsesMarketModifiers', 'aiSpecialAbilitiesEnabled', 'aiAffectsEconomy', 'aiWinConditionSpendingEnabled', 'aiWinConditionAdaptationV2Enabled', 'teammatePerformanceSyncEnabled', 'directiveStrength', 'aiFairnessLevel', 'aiPersonalityVariance', 'aiPlanningDepth', 'aiReplayPolicy', 'aiEngineVersion', 'aiGrandTourPriority', 'aiMarketModifierAwareness', 'aiSpecialAbilityPriority', 'aiEconomyInteractionWeight', 'aiWinConditionSpendingStrength', 'aiRegionRushIntensity', 'aiNegotiationParticipationWeight', 'aiNegotiationValuationWeight', 'teammatePerformanceSyncStrength', 'aiEffectivenessScorecardEnabled', 'aiEffectivenessBlunderThresholdRoi', 'aiEffectivenessTrackCompliance', 'aiEconomicCheats'],
+  "aiStrategyLab.main": ['aiStrategyLabEnabled', 'aiStrategyLabScope', 'aiStrategyLabPreset', 'aiStrategyLabScorePreviewEnabled', 'aiStrategyLabWarningsEnabled', 'aiStrategyLabDesignerNotesEnabled', 'playerTeammateAiPreset', 'opponentAiPreset', 'balanceLabEnabled', 'balanceLabAutoStressTracking', 'balanceLabSandboxMode'],
+  "aiTeams.coPilot": ['coPilotSettings', 'guardianAiSettings', 'strategyPlannerSettings', 'commandCenterSettings', 'defaultGuardianOpeningStyle', 'showGuardianFloatingButton', 'showGuardianInQuickActions', 'enableGuardianSidePanelAccess', 'hideGuardianFloatingButtonWhileCenterOpen', 'hideGuardianFloatingButtonWhileAnotherBlockingModalOpen', 'guardianFloatingPosition', 'allowGuardianFloatingButtonDragging', 'rememberGuardianFloatingPosition', 'playerIntentExplainRoutineActions', 'playerIntentExplainMode'],
+  "aiTeams.strategySliders": ['aiEvaluationFactors', 'aiStrategyLabSafeRangesEnabled', 'aiStrategyLabExtremeModeEnabled', 'aiStrategyLabSeparateProfilesEnabled'],
+  "autoMode.advanced": ['preserveReplayDeterminism'],
+  "autoMode.main": ['autoModeSettings', 'autoModeEnabled', 'permissionMode', 'allowStrategyChanges', 'allowEconomyChanges', 'allowActionManagementChanges', 'allowNumericalModifiers'],
+  "competition.externalTerritories": ['externalTerritoriesEnabled', 'expeditionsRelicsEnabled', 'expeditionModeEnabled', 'territoryEquipmentGateEnabled', 'multiTurnJourneyEnabled', 'territoryTravelMode', 'survivalMechanicsEnabled', 'dailySupplyConsumptionRate', 'forcedRetreatEnabled', 'aiRelicEquipPriority'],
+  "competition.negotiations": ['negotiationMode', 'negotiationOptions'],
+  "competition.regionalStanding": ['regionalStandingEnabled', 'regionalContractsEnabled', 'stateInfrastructureEnabled', 'infrastructureEnabled', 'regionalStandingDecayRate', 'aiStandingWeight', 'aiStandingPriority', 'aiRegionalContractPriority'],
+  "economy.loans": ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans', 'advancedLoansAccessMode', 'loanTierUnlockSpeedMultiplier', 'aiLoanRiskWeight', 'aiLoanRepaymentPriority', 'aiLoanRefinancingWeight', 'aiLoanEmergencyOnly'],
+  "economy.matchShape": ['matchShapeEnabled', 'matchObjectiveWeight', 'comebackStrength', 'comebackFullGap', 'finalStretchPct'],
+  "economy.winCondition": ['winConditionTieBreakers', 'allowCashOut'],
+  "gameplay.actionLimits": ['maxActionsPerTurn', 'aiMaxActionsPerTurn', 'actionPointConsumptionSettings'],
+  "gameplay.actionOverride": ['allowActionOverride', 'overrideCost'],
+  "gameplay.challengeRules": ['dynamicWagerEnabled', 'doubleOrNothingEnabled', 'challengeApproachesEnabled', 'expandedChallengeContentEnabled', 'proceduralChallengesEnabled'],
+  "gameplay.core": ['aiActionsPerDay', 'showDayTransition'],
+  "gameplay.expansions": ['investmentsEnabled', 'equipmentShopEnabled', 'sabotageEnabled', 'aiSabotagePriority', 'aiInvestmentPriority', 'aiEquipmentPurchasePriority', 'aiInfrastructurePriority', 'aiCrisisMitigationPriority'],
+  "gameplay.matchVariety": ['v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'v93ContentThemes', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled'],
+  "gameplay.rivalryCampaign": ['rivalryCampaignEnabled'],
+  "gameplay.scenarioMode": ['scenarioModeEnabled', 'selectedScenarioId', 'scenarioEngineV73Enabled', 'customScenarioBuilderEnabled', 'campaignEngineEnabled', 'campaignModeEnabled', 'narrativeEngineEnabled', 'dynamicCrisisChainsEnabled', 'dynamicCrisesEnabled', 'publicStabilityEnabled', 'nationalEventsEnabled', 'careerProgressionEnabled', 'achievementsEnabled', 'fogOfWarEnabled', 'aiRivalryEnabled'],
+  "interface.accessibility": ['accessibilitySettings', 'diagnosticsSettings'],
+  "interface.aiAssistants": ['aiCommandCenterUiEnabled', 'askGameAiUiEnabled', 'aiTuningLabUiEnabled'],
+  "interface.appearance": ['teamOverviewDensity'],
+  "interface.categoryNavigation": ['allowSettingsCategoryCollapse', 'startSettingsCategoryCollapsed', 'settingsCategoryNavigationMode', 'rememberCategoryNavigationState', 'rememberCategoryNavigationMode', 'autoCollapseCategoriesOnNarrow'],
+  "interface.findAnything": ['findAnythingEnabled'],
+  "interface.floatingUi": ['conflictControlSettings', 'conflictControlEnabled', 'conflictAllowRelocation', 'conflictReturnToPreferred', 'conflictShowExplanations', 'floatingUiPriorityMatrix'],
+  "interface.launcherDock": ['launcherSettings', 'dockSettings'],
+  "interface.layoutPresets": ['presetSettings'],
+  "interface.modalSizes": ['modalSizeSettings', 'autoHideSettings', 'notificationLaneSettings'],
+  "interface.notifications": ['notificationSettings', 'notificationClearShortcut'],
+  "interface.quickActionsVisibility": ['keepQuickActionsReopenHandleWhenClosed', 'fullyHideQuickActionsWhenClosed'],
+  "interface.safeAreaPreview": ['safeAreaPreviewSettings'],
+  "interface.settingsLayers": ['settingsLayersEnabled'],
+  "interface.startScreen": ['startScreenConflictProtection', 'showFloatingControlsOnStartScreen', 'startScreenFloatingLayout', 'restoreEligibleFloatingControlsAfterMatchStarts', 'hideGameplaySidePanelsOnStartScreen'],
+  "interface.uiRescue": ['uiRescueSettings', 'rescueSettings'],
+  "interface.uxAssist": ['uxAssistPackEnabled', 'simplifiedActionBarEnabled', 'disabledActionFeedbackEnabled', 'interactiveMapEnabled', 'winConditionCoachEnabled', 'settingsPresetsEnabled', 'groupedInventoryCardsEnabled'],
+  "teamModeAi.actionApproval": ['aiActionApprovalEnabled', 'aiActionApprovalMode', 'aiActionApprovalSelectedTypes', 'aiActionApprovalHighRiskThresholds', 'aiActionApprovalTeammateOverrides', 'aiActionApprovalRejectionOutcome', 'aiActionApprovalTransparencyEnabled', 'aiActionApprovalAutoRulesEnabled', 'aiActionApprovalAutoRules'],
+  "teamModeAi.actionLending": ['teamAiActionLendingEnabled', 'teamAiMaxLentActionsPerActorPerDay', 'teamAiMaxReceivedActionsPerActorPerDay', 'teamAiActionLendingMinimumValueGain', 'teamAiActionLendingRequiresCommittedPlan', 'teamAiActionLendingTransparencyEnabled'],
+  "teamModeAi.actionOverrides": ['teamAiActionOverridesEnabled', 'teamAiOverridePolicy', 'friendlyAiOverridePolicy', 'teamAiOverrideMaxPerActorPerDay', 'teamAiOverrideMaxPerTeamPerDay', 'teamAiOverrideBaseCostMultiplier', 'teamAiOverrideMinimumDecisionScore', 'teamAiOverrideMinimumCashReserve', 'teamAiOverrideEscalatingCostEnabled', 'teamAiOverrideFatigueEnabled', 'teamAiOverrideTransparencyEnabled'],
+  "teamModeAi.actionRequirements": ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'],
+  "teamModeAi.actionSequences": ['teamAiActionSequencesEnabled', 'teamAiActionSequencesTransparencyEnabled', 'teamAiSequenceInterruptsEnabled', 'teamAiPhaseSequenceSwitchingEnabled'],
+  "teamModeAi.aiThinkingAlgorithm": ['aiAlgorithmForFriendlyTeam', 'aiAlgorithmForEnemyTeam', 'aiAlgorithmForOpponent', 'aiThinkingDepth', 'planSwitchingCost', 'aiTacticalIntelligence', 'teamAiTacticalLookaheadDepth', 'teamAiCandidateEvaluationWidth', 'opponentGenomeId'],
+  "teamModeAi.algorithmBuilder": ['aiAlgorithmBuilderEnabled', 'aiAlgorithmBuilderDefaultEditorMode'],
+  "teamModeAi.auditor": ['teamAiAuditorSystemEnabled', 'teamAiAuditorModeForFriendlyTeam', 'teamAiAuditorModeForEnemyTeam', 'teamAiAuditorShowStatusCard', 'teamAiAuditorDashboardEnabled', 'teamAiAuditorAutomaticRecoveryMinConfidence', 'teamAiAuditorAutomaticRecoveryMaxPerDay', 'teamAiAuditorSafeModeEnabled', 'teamAiAuditorSafeModeEscalatedIncidentThreshold'],
+  "teamModeAi.cashVault": ['teamCashVaultEnabled', 'automaticCashLockingEnabled', 'vaultProtectionMode', 'vaultLockPercentage', 'vaultMilestoneSizeMultiplier', 'vaultMinimumWorkingCash', 'vaultCountProtectedCashTowardVictory', 'vaultTransparencyEnabled'],
+  "teamModeAi.comboBonuses": ['teamComboBonusesEnabled', 'teamComboBonusStrength', 'teamComboWindowActions', 'teamComboBonusesTransparencyEnabled'],
+  "teamModeAi.competitiveAi": ['teamModeAiSystemProfile', 'teamCompetitiveAiEnabled', 'teamModeAiDifficultyPreset', 'friendlyTeamAiPreset', 'enemyTeamAiPreset', 'teamDifficultyOverrides', 'teamModeAiSystemsEnabled'],
+  "teamModeAi.economyGovernor": ['teamEconomyGovernorEnabled', 'economyCashFloor', 'economyRecoveryTarget', 'economyMinimumChallengeProbability', 'economyRecoverySpendingCap', 'economyReserveStrength', 'economyEndgameCashConversionEnabled', 'economySpendingApprovalStrictness', 'economyGovernorTransparencyEnabled', 'teamAiGovernorRestrictionDetectionEnabled', 'teamAiGovernorRestrictionTransparencyEnabled', 'teamAiProductiveRecoveryLadderEnabled', 'teamAiGovernorAutomaticExceptionsEnabled', 'teamAiGovernorExceptionConsecutiveTurnsThreshold', 'teamAiGovernorExceptionMaxReserveBreach', 'teamAiGovernorExceptionMinProbability', 'teamAiGovernorExceptionMinEvRatio', 'teamAiGovernorExceptionMaxCost', 'governorCategoryPolicy'],
+  "teamModeAi.emergencyActions": ['teamAiEmergencyActionsEnabled', 'teamAiEmergencyActionCooldownDays', 'teamAiEmergencyActionsPerGame', 'teamAiEmergencyActionStrength', 'teamAiEmergencyActionsForFriendlyTeam', 'teamAiEmergencyActionsForEnemyTeam', 'teamAiEmergencyActionsTransparencyEnabled'],
+  "teamModeAi.endgameAcceleration": ['teamAiEndgameAccelerationEnabled', 'teamAiEndgameStartPercent', 'teamAiEndgameAggressionMultiplier', 'teamAiEndgameOverrideBias', 'teamAiEndgameCashConversionStrength', 'teamAiEndgameAccelerationTransparencyEnabled'],
+  "teamModeAi.governanceControlSurface": ['governanceControlSurfaceEnabled', 'humanGovernanceVetoEnabled', 'teamGovernanceModeOverrides', 'governanceWeightSettings', 'governanceLeaderVoteWeight', 'governanceMemberVoteWeight', 'governanceVoteThreshold', 'governanceConsensusThreshold', 'governanceVetoUsesPerMatch'],
+  "teamModeAi.overseer": ['directiveBudgetEnabled', 'directivesPerTurn', 'directiveEscalationCost', 'overseerWinConditionCounterStrategyEnabled', 'teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiStrategicCommandEnabledForFriendlyTeam', 'teamAiStrategicCommandEnabledForEnemyTeam', 'teamAiStrategicCommandInterventionsEnabled', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiOverseerDashboardEnabled', 'teamAiSafeModeEnabled', 'teamAiSafeModeRestrictedActorThreshold', 'teamAiStrategicCommandPersonality', 'teamAiAdaptiveOverseerPersonality', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays', 'teamGovernanceMode', 'overseerAutoResolveThreshold'],
+  "teamModeAi.parallelPlanning": ['parallelAiPlanningEnabled', 'parallelAiPlanningCoordinationStrictness', 'parallelAiPlanningSabotageCoordinationEnabled', 'parallelAiPlanningTransparencyEnabled'],
+  "teamModeAi.performanceSync2": ['teammatePerformanceSync2Enabled', 'teammatePerformanceSync2Strength', 'teammatePerformanceSync2StrategyLearningEnabled', 'teammatePerformanceSync2ChallengeExpertiseEnabled', 'teammatePerformanceSync2ChallengeExpertiseMaxBonus', 'guaranteedRecoveryProtocolEnabled', 'guaranteedRecoveryMinimumChallengeProbability', 'teammatePerformanceSync2TransparencyEnabled', 'teammatePerformanceSyncAssistScope', 'teammatePerformanceSyncMomentumEnabled', 'teammatePerformanceSyncExpertiseDecayEnabled', 'teammatePerformanceSyncExpertiseDecayRate'],
+  "teamModeAi.reservations": ['teamAiReservationStrictness', 'friendlyAiRespectPlayerReservations', 'friendlyAiMayRequestReservedResource', 'teamAiReservationTransparencyEnabled'],
+  "teamModeAi.sharedActionBank": ['teamActionBankEnabled', 'teamActionBankBonusActionsPerDay', 'teamActionBankDistributionMode', 'teamActionBankReserveActions', 'teamActionBankMaxDrawsPerActorPerDay', 'teamActionBankTransparencyEnabled'],
+  "teamModeAi.teamBrain": ['teamBrainModeV63', 'teamBrainV63Enabled', 'teamBrainStrategyModesEnabled', 'teamBrainPersonalitiesEnabled', 'teamBrainTeammateSupportEnabled', 'teamBrainOpponentPressureEnabled', 'teamBrainComebackLogicEnabled', 'teamBrainRecoveryLogicEnabled', 'teamBrainTravelDisciplineEnabled', 'teamBrainResourceLogicEnabled', 'teamBrainExplanationEnabled', 'teamBrainTeammateSupportBias', 'teamBrainOpponentPressureBias', 'teamBrainTravelDiscipline', 'teamBrainRiskScaling'],
+  "teamModeAi.teamInitiative": ['teamInitiativeEnabled', 'teamInitiativeMaximum', 'teamInitiativeGainMultiplier', 'teamInitiativeDecayEnabled', 'teamInitiativeVisibleToPlayer', 'teamInitiativeTransparencyEnabled'],
+  "teamModeAi.teamPlans": ['teamAiPlanCommitmentEnabled', 'teamAiPlanCommitmentStrength', 'teamAiPlanMaximumDurationDays', 'teamAiPlanReevaluationFrequency', 'teamAiPlanInterruptionSensitivity', 'teamAiPlanTransparencyEnabled'],
+  "teamModeAi.threatTargeting": ['teamAiThreatTargetingEnabled', 'teamAiThreatTargetingStrength', 'teamAiThreatReevaluationFrequency', 'teamAiThreatFocusDuration', 'teamAiMayTargetFriendlyAiTeammate', 'teamAiThreatTargetingTransparencyEnabled'],
+  "teamModeAi.treasury": ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'],
+  "v113.classicLook": ['classicStickyToasts', 'classicPlayScreenLayout'],
+  "v113.classicRival": ['classicRivalV99'],
+  "v113.classicRules": ['classicRulesV100'],
+  "v113.dailyJournal": ['dailyFixedRulesEnabled', 'matchJournalEnabled'],
+  "v113.essentials": ['totalDays', 'winCondition', 'actionLimitsEnabled', 'playerActionsPerDay', 'experienceMode', 'matchRecoveryEnabled', 'warnBeforeUnloadEnabled', 'rivalTurnPace', 'guidedFirstRunEnabled', 'visualMode', 'soundEnabled', 'soundVolume', 'reducedMotion', 'playerIntentOnboardingEnabled', 'guidedLearning'],
+  "v113.internal": ['v93RecentRare', 'aiDifficulty', 'smartSettingsProfile', 'autoModeDiagnosticsDrawerOpen', 'deferredTransactions', 'playerIntentOnboardingDismissed'],
+  "v113.rivalExtras": ['rivalRecapEnabled', 'rivalRacesEnabled'],
+  "v113.teamOs": ['teamIntelligenceOsEnabled', 'teamOsAuthorityLevel', 'teamOsEnemyEnabled', 'teamOsFullInspectionEnabled'],
+  "v113.turnSummaries": ['turnDigestEnabled']
+};
+
+
+// ---- Homes and groups ----------------------------------------------------------------------------------------------------------------
+let v113HomeIndex: Map<string, string> | null = null;
+/** The one home of a setting (a section id or a v113.* block), or null for a key the map does not know. */
+export function v113HomeOf(key: string): string | null {
+  if (!v113HomeIndex) {
+    v113HomeIndex = new Map();
+    Object.entries(V113_HOME_KEYS).forEach(([home, keys]) => keys.forEach(k => v113HomeIndex!.set(k, home)));
+  }
+  return v113HomeIndex.get(key) || null;
+}
+/** The group a home belongs to (null for internal state and the presets-only list, which every group shows its share of). */
+export function v113GroupOfHome(home: string | null | undefined): V113GroupId | null {
+  if (!home) return null;
+  if (isV113PseudoId(home)) return V113_PSEUDO[home].group;
+  return V113_SECTION_GROUP[home] || null;
+}
+export function v113GroupOfKey(key: string): V113GroupId | null { return v113GroupOfHome(v113HomeOf(key)); }
+/** The title of a home, as the layered view shows it. */
+export function v113HomeTitle(home: string): string {
+  if (isV113PseudoId(home)) return V113_PSEUDO[home].title;
+  if (home === V110_BALANCE_LAB_SECTION.id) return V110_BALANCE_LAB_SECTION.title;
+  return SETTINGS_HUB_SECTION_INDEX.find(s => s.id === home)?.title || home;
+}
+/** The group chip a section shows on a search hit in the layered view (a section the map does not know is filed under Records & tools). */
+export function v113SectionGroupLabel(id: string): string {
+  const g: V113GroupId = V113_SECTION_GROUP[id] || 'tools';
+  return `${v113GroupMeta(g).icon} ${v113GroupMeta(g).label}`;
+}
+/** Which group a tab lands on when something opens Settings on a tab and names no section or setting. */
+export const V113_TAB_GROUP: Readonly<Record<SettingsHubTabId, V113GroupId>> = {
+  home: 'essentials', quickSetup: 'essentials', mechanicsDir: 'tools', gameplay: 'match', economy: 'match', competition: 'match',
+  aiTeams: 'rival', automation: 'teams', oversight: 'teams', replayDiag: 'tools', interfaceAcc: 'help',
+};
+/** Where a request to open Settings lands in the layered view: the home of the named setting, else the named section's group, else the tab's. */
+export function v113GroupForNav(sectionId: string | null | undefined, fieldKey: string | null | undefined, tab: string | null | undefined): V113GroupId {
+  const byKey = fieldKey ? v113GroupOfKey(fieldKey) : null;
+  if (byKey) return byKey;
+  if (sectionId) {
+    if (sectionId === 'quickSetup.core' || sectionId === 'interface.firstRun' || sectionId === 'interface.mapSound') return 'essentials';
+    if (sectionId === 'competition.competitiveActions' || sectionId === 'gameplay.v99' || sectionId === 'gameplay.v100' || sectionId === 'gameplay.v101') return 'match';
+    const g = v113GroupOfHome(sectionId);
+    if (g) return g;
+  }
+  return tab && Object.prototype.hasOwnProperty.call(V113_TAB_GROUP, tab) ? V113_TAB_GROUP[tab as SettingsHubTabId] : 'essentials';
+}
+/** The group the layered view shows: the one last chosen (or navigated to) while the hub stayed on the same tab, else the tab's own group. */
+export function v113ActiveGroup(ui: { readonly v113Group?: unknown; readonly v113GroupTab?: unknown; readonly settingsActiveTab?: unknown } | null | undefined): V113GroupId {
+  const tab = typeof ui?.settingsActiveTab === 'string' ? ui.settingsActiveTab : 'home';
+  if (isV113GroupId(ui?.v113Group) && ui?.v113GroupTab === tab) return ui.v113Group;
+  return Object.prototype.hasOwnProperty.call(V113_TAB_GROUP, tab) ? V113_TAB_GROUP[tab as SettingsHubTabId] : 'essentials';
+}
+/** How many settings live in each group (the nav shows it). Essentials counts its 15 keys; internal state counts nowhere. */
+export function v113GroupKeyCounts(): Record<V113GroupId, number> {
+  const out: Record<V113GroupId, number> = { essentials: 0, match: 0, rival: 0, teams: 0, help: 0, tools: 0 };
+  Object.entries(V113_HOME_KEYS).forEach(([home, keys]) => { const g = v113GroupOfHome(home); if (g) out[g] += keys.length; });
+  return out;
+}
+
+// ---- Gates ---------------------------------------------------------------------------------------------------------------------------------
+/** Teams & automation: the sections a solo player sees before Team Mode or the master switch is on (they work in any match). */
+export const V113_TEAMS_SOLO_SECTIONS: readonly string[] = ['autoMode.main', 'autoMode.advanced', 'advancedSystems.humanAutomation', 'advancedSystems.priority'];
+export const V113_TEAMS_MASTER_KEY = 'teamCompetitiveAiEnabled';
+/** The team settings show once a Team Mode match is running or the Team Mode AI master switch is on. */
+export function v113TeamsOpen(settings: { readonly teamCompetitiveAiEnabled?: unknown } | null | undefined, teamMode: boolean): boolean {
+  return teamMode === true || settings?.teamCompetitiveAiEnabled === true;
+}
+/** Settings the layered view keeps behind "Show inactive": the 20 with no effect in this version, and deterministicRngActive (nothing reads it). */
+export const V113_INACTIVE_EXTRA: readonly string[] = ['deterministicRngActive'];
+export function v113Inactive(key: string): boolean {
+  return v99InertSettingReason(key) !== null || V113_INACTIVE_EXTRA.includes(key);
+}
+export function v113InactiveKeys(): string[] { return Object.keys(DEFAULT_GAME_SETTINGS).filter(v113Inactive); }
+/** Settings with no effect that have no control in Settings either (two Adaptive AI values nothing draws, three replay switches only
+ *  Replay Studio's presets set): listed read-only like the rest, behind Show inactive, so every one of the 21 can be seen. */
+export const V113_READONLY_INACTIVE: readonly string[] = ['adaptiveAiMaxDifficulty', 'aiCalibrationLearningRate', 'replayTurningPointDetectionEnabled', 'replayWhatIfBranchingEnabled', 'replayDeveloperDiagnosticsEnabled'];
+/** Settings with no control of their own: shown read-only with their value ("Set by presets"): no control anywhere, a reset only, or presets only. */
+export function v113PresetOnlyKeys(): string[] {
+  return Object.keys(DEFAULT_GAME_SETTINGS).filter(key => {
+    const verdict = V110_SETTING_VERDICTS[key];
+    return verdict === 'no-control' || verdict === 'reset-only' || key === 'deterministicRngActive' || V113_READONLY_INACTIVE.includes(key);
+  });
+}
+
+// ---- The layered view ----------------------------------------------------------------------------------------------------------------------
+export interface V113ViewInput {
+  group: V113GroupId;
+  showInactive: boolean;
+  teamsOpen: boolean;
+  /** The hub's own search hits (section ids), or null when nothing is typed. */
+  searchMatchedIds: ReadonlySet<string> | null;
+  /** The sections of the hub index, with their keys (the default is the live index; tests pass their own). */
+  sections?: ReadonlyArray<{ id: string; fieldKeys: readonly string[] }>;
+}
+export interface V113View {
+  group: V113GroupId;
+  searching: boolean;
+  showInactive: boolean;
+  teamsOpen: boolean;
+  /** Draw this hub section now? */
+  sectionVisible: (id: string) => boolean;
+  /** Draw this layered block now? */
+  pseudoVisible: (id: V113PseudoId) => boolean;
+  /** Draw the control for `key` at the place `at` (a section id or a v113.* block)? */
+  keyVisible: (key: string, at: string) => boolean;
+}
+/** Where a search hit shows in the layered view: the hit section (unless it was dissolved) and the home of every setting it holds. */
+export function v113SearchHomes(matched: ReadonlySet<string>, sections: ReadonlyArray<{ id: string; fieldKeys: readonly string[] }>): Set<string> {
+  const homes = new Set<string>();
+  matched.forEach(id => {
+    const ownHome = v113HomeOf(id); // the hub's search also returns the keys it matched: each shows in its home
+    if (ownHome && ownHome !== 'v113.internal') homes.add(ownHome);
+    if (!V113_DISSOLVED_SECTIONS.includes(id)) homes.add(id);
+    const sec = sections.find(s => s.id === id);
+    (sec ? sec.fieldKeys : []).forEach(key => { const home = v113HomeOf(key); if (home && home !== 'v113.internal') homes.add(home); });
+  });
+  return homes;
+}
+export function v113BuildView(input: V113ViewInput): V113View {
+  const sections = input.sections || SETTINGS_HUB_SECTION_INDEX.map(s => ({ id: s.id, fieldKeys: s.fieldKeys as readonly string[] }));
+  const searching = input.searchMatchedIds !== null;
+  const homes = searching ? v113SearchHomes(input.searchMatchedIds as ReadonlySet<string>, sections) : new Set<string>();
+  const sectionVisible = (id: string): boolean => {
+    if (V113_DISSOLVED_SECTIONS.includes(id)) return false;
+    if (searching) return homes.has(id);
+    const g = V113_SECTION_GROUP[id] || 'tools'; // a section the map does not know is never lost: it shows under Records & tools
+    if (g !== input.group) return false;
+    if (g === 'teams' && !input.teamsOpen) return V113_TEAMS_SOLO_SECTIONS.includes(id);
+    return true;
+  };
+  const pseudoVisible = (id: V113PseudoId): boolean => {
+    if (id === 'v113.internal') return false;
+    if (id === 'v113.presetsOnly') return !searching;
+    if (searching) return homes.has(id) || (id === 'v113.essentials' && homes.has('v113.essentials'));
+    const meta = V113_PSEUDO[id];
+    if (meta.group !== input.group) return false;
+    if (id === 'v113.teamOs') return input.teamsOpen;
+    if (id === 'v113.teamsGate') return !input.teamsOpen;
+    return true;
+  };
+  const keyVisible = (key: string, at: string): boolean => {
+    if (v113Inactive(key) && !input.showInactive) return false;
+    const home = v113HomeOf(key);
+    return !home || home === at;
+  };
+  return { group: input.group, searching, showInactive: input.showInactive, teamsOpen: input.teamsOpen, sectionVisible, pseudoVisible, keyVisible };
+}
+
+// ---- Blocks of controls drawn in their home -----------------------------------------------------------------------------------------------------
+/** Blocks of an existing section whose settings all live in another section. The block's JSX is not copied: the section registers its
+ *  render function (V113Hub.place) and the home draws it (V113Hub.extras). Off, the block draws where it always did. */
+export const V113_MOVED_BLOCKS: Readonly<Record<string, { home: string; from: string; title: string; keys: readonly string[] }>> = {
+  'ai.settings:determinism': { home: 'advancedSystems.replaySafety', from: 'AI Difficulty', title: 'Deterministic AI, world randomness and replay recording', keys: ['aiDeterministic', 'aiDeterministicSeed', 'worldRngMode', 'worldRngSeed', 'aiReplayRecordingEnabled', 'aiReplayMaxEvents'] },
+  'ai.settings:replayStudio': { home: 'advancedSystems.replaySafety', from: 'AI Difficulty', title: 'Replay Studio and replay options', keys: ['replayAutoOpenAtMatchEnd', 'replaySmartCheckpointsEnabled', 'replayDetailLevel', 'replayDeterministicValidationEnabled'] },
+  'ai.adaptive:overseerCounter': { home: 'teamModeAi.overseer', from: 'Adaptive AI', title: 'Win-condition counter-strategies', keys: ['overseerWinConditionCounterStrategyEnabled'] },
+  'interface.uxAssist:teamProfile': { home: 'teamModeAi.competitiveAi', from: 'UX Assist Features', title: 'Team Mode AI profile', keys: ['teamModeAiSystemProfile'] },
+  'economy.winCondition:negotiationOptions': { home: 'competition.negotiations', from: 'Win Condition & Cash-Out', title: 'More negotiation options', keys: ['negotiationOptions'] },
+};
+export type V113BlockId = keyof typeof V113_MOVED_BLOCKS;
+
+/** One render of the hub in the layered view: what to draw, where. Built fresh each time the hub draws (it holds that draw's blocks). */
+export interface V113Hub {
+  view: V113View;
+  /** False when the control for `key` drawn at `at` belongs somewhere else in the layered view (or is inactive and hidden). */
+  keep: (key: string, at: string) => boolean;
+  /** Draws a block in place, or (layered) remembers it for its home and draws nothing here. */
+  place: (blockId: string, render: () => React.ReactNode) => React.ReactNode;
+  /** What a section draws after its own controls in the layered view: blocks moved into it and the rows homed in it. */
+  extras: (sectionId: string) => React.ReactNode;
+}
+export function v113CreateHub(view: V113View, rowsFor: (home: string) => React.ReactNode, movedHeading: (blockId: string) => React.ReactNode): V113Hub {
+  const parked = new Map<string, () => React.ReactNode>();
+  return {
+    view,
+    keep: (key, at) => view.keyVisible(key, at),
+    place: (blockId, render) => {
+      if (!Object.prototype.hasOwnProperty.call(V113_MOVED_BLOCKS, blockId)) return render();
+      parked.set(blockId, render);
+      return null;
+    },
+    extras: (sectionId) => {
+      const blocks = Object.entries(V113_MOVED_BLOCKS).filter(([id, meta]) => meta.home === sectionId && parked.has(id));
+      const rows = rowsFor(sectionId);
+      if (blocks.length === 0 && !rows) return null;
+      return (
+        <div className="space-y-4 mt-4 pt-3 border-t border-current border-opacity-10" data-testid={`v113-extras-${sectionId}`}>
+          {rows}
+          {blocks.map(([id]) => <div key={id} data-testid={`v113-moved-${id}`} className="space-y-4">{movedHeading(id)}{parked.get(id)!()}</div>)}
+        </div>
+      );
+    },
+  };
+}
+
+
+// ---- Rows for settings whose control lived outside their home ---------------------------------------------------------------------------------
+/** How a moved row writes: the very call the setting's own control makes. */
+export type V113WritePath =
+  | { via: 'tracked'; title: string }        // trackedSetGameSettings('direct_player_change', title, …) — the hub's sections and the LAB inspector
+  | { via: 'set'; section: string; label?: string } // updateGameSetting(key, value, { settingLabel: label, section }) — the Activity Ledger window and the UX Assist list
+  | { via: 'raw' };                          // setGameSettings(prev => …) — the Guardian AI Center window
+export type V113RowControl =
+  | { kind: 'toggle'; on?: 'true' | 'notFalse' }
+  | { kind: 'select'; options: ReadonlyArray<{ value: string; label: string }> }
+  | { kind: 'number'; min: number; max: number; step: number; fallback: number }
+  | { kind: 'explain' }                      // the Co-Pilot explanation choice: writes playerIntentExplainMode and playerIntentExplainRoutineActions together
+  | { kind: 'open'; button: string; patch: Readonly<Record<string, boolean>>; needs?: string };
+export interface V113RowSpec { key: string; home: string; label?: string; description: string; control: V113RowControl; write: V113WritePath }
+export const V113_EXPLAIN_OPTIONS: ReadonlyArray<{ value: CoPilotExplainMode; label: string }> = [
+  { value: 'routine_off', label: 'Skip routine sales' }, { value: 'high_impact', label: 'High-impact only' }, { value: 'every', label: 'Explain every action' },
+];
+const V113_GUARDIAN: V113WritePath = { via: 'raw' };
+/** The Guardian AI Center window's seven presentation switches (indexed under Co-Pilot; their control was only in that window). */
+export const GUARDIAN_PRESENTATION_KEYS_V113: readonly string[] = ['defaultGuardianOpeningStyle', 'showGuardianFloatingButton', 'enableGuardianSidePanelAccess', 'hideGuardianFloatingButtonWhileCenterOpen',
+  'hideGuardianFloatingButtonWhileAnotherBlockingModalOpen', 'allowGuardianFloatingButtonDragging', 'rememberGuardianFloatingPosition'];
+const v113Ledger = (label: string): V113WritePath => ({ via: 'set', section: 'Activity Ledger', label });
+export const V113_ROWS: readonly V113RowSpec[] = [
+  // 🧭 Help, screen & sound › Human Co-Pilot AI & Takeover Controls: the Guardian window's presentation switches, the AI Command Center, the Co-Pilot strip's explanations
+  { key: 'defaultGuardianOpeningStyle', home: 'aiTeams.coPilot', description: 'How the Guardian opens: the centred AI Center or the classic side panel.', control: { kind: 'select', options: [{ value: 'center', label: 'Centered window (default)' }, { value: 'side_panel', label: 'Side panel drawer (classic)' }] }, write: V113_GUARDIAN },
+  { key: 'showGuardianFloatingButton', home: 'aiTeams.coPilot', description: 'A floating 🛡️ button that opens the Guardian.', control: { kind: 'toggle' }, write: V113_GUARDIAN },
+  { key: 'enableGuardianSidePanelAccess', home: 'aiTeams.coPilot', description: 'Lets the Guardian open as a side panel.', control: { kind: 'toggle' }, write: V113_GUARDIAN },
+  { key: 'hideGuardianFloatingButtonWhileCenterOpen', home: 'aiTeams.coPilot', description: 'The floating button hides while the Guardian AI Center is open.', control: { kind: 'toggle' }, write: V113_GUARDIAN },
+  { key: 'hideGuardianFloatingButtonWhileAnotherBlockingModalOpen', home: 'aiTeams.coPilot', description: 'The floating button hides while another window covers the screen.', control: { kind: 'toggle' }, write: V113_GUARDIAN },
+  { key: 'allowGuardianFloatingButtonDragging', home: 'aiTeams.coPilot', description: 'You can drag the floating button to another place.', control: { kind: 'toggle' }, write: V113_GUARDIAN },
+  { key: 'rememberGuardianFloatingPosition', home: 'aiTeams.coPilot', description: 'The floating button stays where you dragged it.', control: { kind: 'toggle' }, write: V113_GUARDIAN },
+  { key: 'commandCenterSettings', home: 'aiTeams.coPilot', description: 'The AI Command Center keeps its own settings (widget, layout, alerts); they are set inside the AI Command Center.', control: { kind: 'open', button: 'Open the AI Command Center', patch: { showAiCommandCenterModal: true }, needs: 'aiCommandCenterUiEnabled' }, write: { via: 'set', section: 'AI Command Center' } },
+  { key: 'playerIntentExplainMode', home: 'aiTeams.coPilot', description: 'Which Co-Pilot moves come with a short explanation (the same choice as on the INTELLIGENCE tab).', control: { kind: 'explain' }, write: { via: 'tracked', title: 'Co-Pilot teaching' } },
+  // 🤖 Your rival › AI Difficulty: the Activity Ledger window's effectiveness scorecard
+  { key: 'aiEffectivenessScorecardEnabled', home: 'ai.settings', label: 'AI effectiveness scorecard', description: 'Scores how well each AI decision worked out (shown in the Activity Ledger).', control: { kind: 'toggle' }, write: { via: 'set', section: 'AI Scorecard', label: 'AI Effectiveness Scorecard Enabled' } },
+  { key: 'aiEffectivenessTrackCompliance', home: 'ai.settings', label: 'AI effectiveness: track compliance', description: 'The scorecard also checks whether the AI followed its directives.', control: { kind: 'toggle' }, write: { via: 'set', section: 'AI Scorecard', label: 'AI Effectiveness Track Compliance' } },
+  // 🔬 Records & tools › Game Activity Ledger: the window's housekeeping switches
+  { key: 'ledgerDiagnosticsEnabled', home: 'advancedSystems.gameActivityLedger', label: 'Ledger diagnostics', description: 'Adds integrity checks and diagnostics to the Activity Ledger.', control: { kind: 'toggle' }, write: v113Ledger('Ledger Diagnostics') },
+  { key: 'ledgerAutoPruneEnabled', home: 'advancedSystems.gameActivityLedger', label: 'Auto-prune the ledger', description: 'Old entries are removed automatically once the ledger is full.', control: { kind: 'toggle' }, write: v113Ledger('Auto-Prune Ledger') },
+  { key: 'ledgerPruneRetentionLimit', home: 'advancedSystems.gameActivityLedger', label: 'Ledger entries kept when pruning', description: 'How many entries survive an automatic prune (100 to 10,000).', control: { kind: 'number', min: 100, max: 10000, step: 1, fallback: 1000 }, write: v113Ledger('Prune Retention Limit') },
+  { key: 'ledgerExportCompressionEnabled', home: 'advancedSystems.gameActivityLedger', label: 'Compress ledger exports', description: 'Exported ledger files are compressed.', control: { kind: 'toggle' }, write: v113Ledger('Export Compression') },
+  // 👥 Teams & automation › Competitive AI: the Team Mode AI systems switch (it sat in UX Assist Features)
+  { key: 'teamModeAiSystemsEnabled', home: 'teamModeAi.competitiveAi', label: 'Team Mode AI systems', description: 'Enables the Team Mode-only system profiles.', control: { kind: 'toggle' }, write: { via: 'set', section: 'Interface → UX Assist Features', label: 'Team Mode AI Systems' } },
+  // 👥 Teams & automation › Team Intelligence OS (it lived only in the LAB inspector)
+  { key: 'teamIntelligenceOsEnabled', home: 'v113.teamOs', label: 'Team Intelligence OS', description: 'The team operating system that plans missions, roles and tasks for an AI team.', control: { kind: 'toggle', on: 'notFalse' }, write: { via: 'tracked', title: 'Team Intelligence 2.0' } },
+  { key: 'teamOsAuthorityLevel', home: 'v113.teamOs', label: 'Team OS authority', description: 'How much the Team OS may change on its own.', control: { kind: 'select', options: (Object.keys(TEAM_OS_AUTHORITY_META) as TeamOSAuthorityLevel[]).map(level => ({ value: level, label: TEAM_OS_AUTHORITY_META[level].label })) }, write: { via: 'tracked', title: 'Team Intelligence 2.0' } },
+  { key: 'teamOsEnemyEnabled', home: 'v113.teamOs', label: 'Team OS for the enemy team', description: 'The enemy AI team uses the Team OS too.', control: { kind: 'toggle', on: 'notFalse' }, write: { via: 'tracked', title: 'Team Intelligence 2.0' } },
+  { key: 'teamOsFullInspectionEnabled', home: 'v113.teamOs', label: 'Team OS full inspection (debug)', description: 'Shows every Team OS record in the LAB inspector.', control: { kind: 'toggle' }, write: { via: 'tracked', title: 'Team Intelligence 2.0' } },
+  // The "New in V9.9 / V10.0 / V10.1" switches, each filed by its goal (Q7); they write exactly as their old sections did
+  ...[...V101_FEATURE_TOGGLE_ROWS, ...V101_CLASSIC_TOGGLE_ROWS].map(row => ({ key: String(row.key), home: row.key === 'rivalRecapEnabled' ? 'v113.rivalExtras' : row.key === 'dailyFixedRulesEnabled' ? 'v113.dailyJournal' : 'v113.classicRules', label: row.label, description: row.description, control: { kind: 'toggle' } as V113RowControl, write: { via: 'tracked', title: V101_SETTINGS_HUB_SECTION_TITLE } as V113WritePath })),
+  ...[...V100_FEATURE_TOGGLE_ROWS, ...V100_CLASSIC_TOGGLE_ROWS].map(row => ({ key: String(row.key), home: row.key === 'rivalRacesEnabled' ? 'v113.rivalExtras' : 'v113.classicRival', label: row.label, description: row.description, control: { kind: 'toggle' } as V113RowControl, write: { via: 'tracked', title: V100_SETTINGS_HUB_SECTION_TITLE } as V113WritePath })),
+  ...[...V99_FEATURE_TOGGLE_ROWS, ...V99_CLASSIC_TOGGLE_ROWS].filter(row => row.key !== 'matchRecoveryEnabled' && row.key !== 'warnBeforeUnloadEnabled').map(row => ({ key: String(row.key), home: row.key === 'matchJournalEnabled' ? 'v113.dailyJournal' : row.key === 'turnDigestEnabled' ? 'v113.turnSummaries' : 'v113.classicLook', label: row.label, description: row.description, control: { kind: 'toggle' } as V113RowControl, write: { via: 'tracked', title: V99_SETTINGS_HUB_SECTION_TITLE } as V113WritePath })),
+];
+export function v113RowsFor(home: string): V113RowSpec[] { return V113_ROWS.filter(row => row.home === home); }
+
+/** What the layered rows and the Essentials page write through: the game's own setters, handed in by the main component. */
+export interface V113Writers {
+  tracked: (title: string, patch: (prev: GameSettingsState) => GameSettingsState) => void;
+  set: (key: string, value: unknown, label: string, section: string) => void;
+  raw: (patch: (prev: GameSettingsState) => GameSettingsState) => void;
+  simple: (key: string, value: boolean | string | number) => void;
+  difficulty: (value: string) => void;
+  learningMode: (mode: LearningMode) => void;
+  theme: (theme: GameTheme) => void;
+  textScale: (value: number) => void;
+  open: (patch: Record<string, unknown>) => void;
+  resetAskAgain: () => void;
+}
+export interface V113Classes { card: string; border: string; select: string; buttonSecondary: string; success: string; button: string; textMuted?: string }
+
+/** The value a moved row writes for a toggle, and whether it reads as on (the LAB's Team OS switches count "anything but false" as on). */
+export function v113ToggleState(settings: Readonly<Record<string, unknown>>, key: string, mode: 'true' | 'notFalse' = 'true'): boolean {
+  return mode === 'notFalse' ? settings[key] !== false : settings[key] === true;
+}
+/** Flips a moved toggle through the path its original control used (a tracked flip reads the previous value, as the old sections and the LAB did). */
+export function v113FlipRow(spec: V113RowSpec, on: boolean, w: V113Writers): void {
+  const mode = spec.control.kind === 'toggle' ? (spec.control.on || 'true') : 'true';
+  if (spec.write.via === 'tracked') {
+    const k = spec.key;
+    w.tracked(spec.write.title, prev => {
+      const before = (prev as unknown as Record<string, unknown>)[k];
+      const next = mode === 'notFalse' ? before === false : before !== true;
+      return { ...prev, ...({ [k]: next } as unknown as Partial<GameSettingsState>) };
+    });
+    return;
+  }
+  v113WriteRow(spec, !on, w);
+}
+/** Writes a moved row's new value through the path its original control used. */
+export function v113WriteRow(spec: V113RowSpec, value: unknown, w: V113Writers): void {
+  const label = spec.label || v113SettingLabel(spec.key);
+  if (spec.control.kind === 'explain') {
+    const mode = value as CoPilotExplainMode;
+    w.tracked(spec.write.via === 'tracked' ? spec.write.title : 'Co-Pilot teaching', prev => ({ ...prev, playerIntentExplainMode: mode, playerIntentExplainRoutineActions: mode === 'every' }));
+    return;
+  }
+  if (spec.write.via === 'tracked') { const k = spec.key; w.tracked(spec.write.title, prev => ({ ...prev, ...({ [k]: value } as unknown as Partial<GameSettingsState>) })); return; }
+  if (spec.write.via === 'set') { w.set(spec.key, value, spec.write.label || label, spec.write.section); return; }
+  const k = spec.key;
+  w.raw(prev => ({ ...prev, ...({ [k]: value } as unknown as Partial<GameSettingsState>) }));
+}
+
+export function V113Row({ spec, settings, w, cls }: { spec: V113RowSpec; settings: GameSettingsState; w: V113Writers; cls: V113Classes }): React.ReactElement {
+  const rec = settings as unknown as Record<string, unknown>;
+  const label = spec.label || v113SettingLabel(spec.key);
+  const c = spec.control;
+  const inert = v99InertSettingReason(spec.key);
+  let control: React.ReactNode = null;
+  if (c.kind === 'toggle') {
+    const on = v113ToggleState(rec, spec.key, c.on || 'true');
+    control = (
+      <button type="button" aria-pressed={on} aria-label={`${label}: ${on ? 'on' : 'off'}`} data-testid={`v113-row-${spec.key}`}
+        onClick={() => v113FlipRow(spec, on, w)} className={`px-4 py-2 rounded font-semibold shrink-0 ${on ? `${cls.success} text-white` : cls.buttonSecondary}`}>
+        {on ? 'ON' : 'OFF'}
+      </button>
+    );
+  } else if (c.kind === 'select') {
+    control = (
+      <select aria-label={label} data-testid={`v113-row-${spec.key}`} value={String(rec[spec.key] ?? '')} onChange={e => v113WriteRow(spec, e.target.value, w)} className={`${cls.select} rounded px-3 py-2 shrink-0 max-w-[16rem]`}>
+        {c.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    );
+  } else if (c.kind === 'number') {
+    const n = Number(rec[spec.key]);
+    control = (
+      <input type="number" aria-label={label} data-testid={`v113-row-${spec.key}`} min={c.min} max={c.max} step={c.step} value={Number.isFinite(n) ? n : c.min}
+        onChange={e => v113WriteRow(spec, Math.max(c.min, Math.min(c.max, Number(e.target.value) || c.fallback)), w)} className={`${cls.select} rounded px-3 py-2 w-28 shrink-0`} />
+    );
+  } else if (c.kind === 'explain') {
+    const mode = String(rec.playerIntentExplainMode || 'high_impact');
+    control = (
+      <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={label} data-testid={`v113-row-${spec.key}`}>
+        {V113_EXPLAIN_OPTIONS.map(o => (
+          <button key={o.value} type="button" role="radio" aria-checked={mode === o.value} onClick={() => v113WriteRow(spec, o.value, w)}
+            className={`px-2 py-1 rounded text-xs border ${mode === o.value ? `${cls.button} text-white` : `${cls.border} ${cls.buttonSecondary}`}`}>{o.label}</button>
+        ))}
+      </div>
+    );
+  } else {
+    const ready = !c.needs || rec[c.needs] === true;
+    control = (
+      <button type="button" disabled={!ready} onClick={() => w.open(c.patch)} data-testid={`v113-row-${spec.key}`}
+        title={ready ? undefined : `Switch on ${v113SettingLabel(c.needs || '')} first.`} className={`px-3 py-2 rounded font-semibold shrink-0 ${cls.buttonSecondary} disabled:opacity-50`}>{c.button}</button>
+    );
+  }
+  return (
+    <div id={`settings-field-${spec.key}`} data-setting-key={spec.key} className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="min-w-0">
+        <div className="font-semibold">{label}{inert ? <V99NoEffectChip settingKey={spec.key} /> : null}</div>
+        <div className="text-sm opacity-75">{spec.description}</div>
+      </div>
+      {control}
+    </div>
+  );
+}
+
+
+// ---- The layered view's own blocks --------------------------------------------------------------------------------------------------------------
+export function V113Block({ id, title, cls, note, children }: { id: string; title: string; cls: V113Classes; note?: string; children: React.ReactNode }): React.ReactElement {
+  return (
+    <div id={id} data-setting-key={id} className={`${cls.border} border rounded-lg p-4 space-y-4`} data-testid={`v113-block-${id}`}>
+      <div>
+        <h4 className="text-lg font-bold">{title}</h4>
+        {note ? <div className="text-sm opacity-75 mt-1">{note}</div> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+/** A setting's value in words, for the read-only list. */
+export function v113FormatValue(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'boolean') return value ? 'On' : 'Off';
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : String(Math.round(value * 1000) / 1000);
+  if (typeof value === 'string') return value === '' ? '—' : value.replace(/_/g, ' ');
+  if (Array.isArray(value)) return value.length === 0 ? 'none' : value.length <= 3 && value.every(v => typeof v === 'string') ? value.join(', ') : `${value.length} items`;
+  if (typeof value === 'object') { const n = Object.keys(value as Record<string, unknown>).length; return n === 0 ? 'none' : `${n} fields`; }
+  return String(value);
+}
+/** "Set by presets": the settings of a group that have no control of their own, read-only, with their current value. */
+export function V113PresetOnlyList({ group, settings, showInactive, cls }: { group: V113GroupId; settings: GameSettingsState; showInactive: boolean; cls: V113Classes }): React.ReactElement | null {
+  const rec = settings as unknown as Record<string, unknown>;
+  const keys = v113PresetOnlyKeys().filter(key => v113GroupOfKey(key) === group && (showInactive || !v113Inactive(key)));
+  if (keys.length === 0) return null;
+  return (
+    <V113Block id="v113.presetsOnly" title={V113_PSEUDO['v113.presetsOnly'].title} cls={cls}
+      note="These settings have no control of their own: presets, imported settings and saves set them. Here is what each one holds now.">
+      <dl className="space-y-1 text-sm" data-testid={`v113-presets-only-${group}`}>
+        {keys.map(key => (
+          <div key={key} id={`settings-field-${key}`} data-setting-key={key} className="flex items-baseline justify-between gap-3">
+            <dt className="min-w-0">{v113SettingLabel(key)}<V99NoEffectChip settingKey={key} />{V110_SETTING_VERDICTS[key] === 'reset-only' ? <span className="ml-2 text-[10px] opacity-70">(only a reset changes it)</span> : null}</dt>
+            <dd className="font-mono text-xs opacity-90 shrink-0" data-testid={`v113-value-${key}`}>{v113FormatValue(rec[key])}</dd>
+          </div>
+        ))}
+      </dl>
+    </V113Block>
+  );
+}
+
+// ---- ⭐ Essentials -------------------------------------------------------------------------------------------------------------------------
+export interface V113Essential { id: string; title: string; keys: readonly string[]; help: string }
+/** The 12 choices (Q6 as edited: Rival difficulty writes the match's difficulty; How much help folds the guided first match and the
+ *  onboarding hints; Rival turn speed takes the freed slot). Look includes the theme (the profile record, not a settings key). */
+export const V113_ESSENTIALS: readonly V113Essential[] = [
+  { id: 'experience', title: 'Experience', keys: ['experienceMode'], help: 'Explorer: travel and challenges. Nation: the national economy. Full: everything.' },
+  { id: 'how_to_win', title: 'How to win', keys: ['winCondition'], help: 'What decides the winner at the end.' },
+  { id: 'game_length', title: 'Game length', keys: ['totalDays'], help: 'Days on the match calendar. The match ends when the last day would begin.' },
+  { id: 'actions_per_day', title: 'Actions per day', keys: ['actionLimitsEnabled', 'playerActionsPerDay'], help: 'Each day you get a set number of actions, or as many as you like.' },
+  { id: 'rival_difficulty', title: 'Rival difficulty', keys: ['(match) aiDifficulty'], help: 'How strong your rival plays. It is part of the match, so a running match keeps the difficulty it started with.' },
+  { id: 'keep_safe', title: 'Keep my match safe', keys: ['matchRecoveryEnabled', 'warnBeforeUnloadEnabled'], help: 'An autosave you can resume, and a warning before the tab closes mid-match.' },
+  { id: 'how_much_help', title: 'How much help', keys: ['guidedLearning', 'guidedFirstRunEnabled', 'playerIntentOnboardingEnabled'], help: 'Tips while you play, and the guided first match for new players.' },
+  { id: 'rival_turn_speed', title: 'Rival turn speed', keys: ['rivalTurnPace'], help: "How quickly the rival's turn is shown. It never changes what the rival does." },
+  { id: 'look', title: 'Look', keys: ['visualMode', '(profile) theme'], help: 'The enhanced or classic look, and the colour theme.' },
+  { id: 'text_size', title: 'Text size', keys: ['accessibilitySettings.textScaleMultiplier'], help: 'Makes all the text bigger or smaller.' },
+  { id: 'motion', title: 'Motion', keys: ['reducedMotion'], help: 'Follow your device, or force motion on or off.' },
+  { id: 'sound', title: 'Sound', keys: ['soundEnabled', 'soundVolume'], help: 'Short sound effects and their volume.' },
+];
+export const V113_THEMES: readonly GameTheme[] = ['dark', 'light', 'retro', 'system'];
+function v113SimpleDescriptor(key: string): SimpleSettingDescriptor | undefined { return SIMPLE_SETTINGS.find(row => row.key === key); }
+export interface V113EssentialsProps {
+  settings: GameSettingsState;
+  difficulty: string;
+  difficultyLocked: boolean;
+  theme: string;
+  learning: LearningMode;
+  w: V113Writers;
+  cls: V113Classes;
+}
+function V113Choice({ e, cls, children }: { e: V113Essential; cls: V113Classes; children: React.ReactNode }): React.ReactElement {
+  return (
+    <div id={`v113-essential-${e.id}`} data-setting-key={`v113-essential-${e.id}`} className={`${cls.border} border rounded-lg p-3 space-y-2`} data-testid={`v113-essential-${e.id}`}>
+      <div><div className="font-semibold">{e.title}</div><div className="text-xs opacity-75">{e.help}</div></div>
+      {children}
+    </div>
+  );
+}
+function v113Toggle(label: string, on: boolean, onClick: () => void, cls: V113Classes, testId: string): React.ReactElement {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm">{label}</span>
+      <button type="button" aria-pressed={on} aria-label={`${label}: ${on ? 'on' : 'off'}`} onClick={onClick} data-testid={testId}
+        className={`px-3 py-1.5 rounded font-semibold text-sm shrink-0 ${on ? `${cls.success} text-white` : cls.buttonSecondary}`}>{on ? 'ON' : 'OFF'}</button>
+    </div>
+  );
+}
+/** ⭐ Essentials: the 12 choices, each writing through the call the game already uses for it (the Simple view's handler, the difficulty
+ *  action, the Learn tab's mode change, the theme switch, the Text size row). A locked rule says so and when a change applies. */
+export function V113EssentialsPage(p: V113EssentialsProps): React.ReactElement {
+  const rec = p.settings as unknown as Record<string, unknown>;
+  const byId = (id: string) => V113_ESSENTIALS.find(e => e.id === id)!;
+  const sel = (aria: string, value: string, options: ReadonlyArray<{ value: string; label: string }>, onChange: (v: string) => void, testId: string, disabled = false) => (
+    <select aria-label={aria} value={value} disabled={disabled} onChange={ev => onChange(ev.target.value)} data-testid={testId} className={`${p.cls.select} rounded px-3 py-2 w-full disabled:opacity-60`}>
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+  const range = (key: string, value: number, fmt: (v: number) => string, disabled = false) => {
+    const d = v113SimpleDescriptor(key);
+    return (
+      <label className="flex items-center gap-3 text-sm">
+        <input type="range" aria-label={d ? d.label : key} min={d?.min ?? 0} max={d?.max ?? 100} step={d?.step ?? 1} value={value} disabled={disabled}
+          onChange={ev => p.w.simple(key, Number(ev.target.value))} className="flex-1" data-testid={`v113-essential-input-${key}`} />
+        <span className="w-28 text-right">{fmt(value)}</span>
+      </label>
+    );
+  };
+  const exp = v113SimpleDescriptor('experienceMode');
+  const days = Number(rec.totalDays) || DEFAULT_GAME_SETTINGS.totalDays;
+  const perDay = Number(rec.playerActionsPerDay) || DEFAULT_GAME_SETTINGS.playerActionsPerDay;
+  const vol = sanitizeSoundVolume(rec.soundVolume);
+  const lookOptions = v113SimpleDescriptor('visualMode')?.options || [{ value: 'enhanced', label: 'Enhanced' }, { value: 'classic', label: 'Classic' }];
+  const motionOptions = v113SimpleDescriptor('reducedMotion')?.options || [{ value: 'system', label: 'Follow system' }, { value: 'on', label: 'Reduce' }, { value: 'off', label: 'Full motion' }];
+  return (
+    <V113Block id="v113.essentials" title="⭐ Essentials" cls={p.cls} note="The 12 choices most players want. Everything else is filed under the five groups above, and the search finds every setting.">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3" data-testid="v113-essentials">
+        <V113Choice e={byId('experience')} cls={p.cls}>
+          {sel('Experience', String(rec.experienceMode || 'full'), exp?.options || [], v => p.w.simple('experienceMode', v), 'v113-essential-input-experienceMode')}
+        </V113Choice>
+        <V113Choice e={byId('how_to_win')} cls={p.cls}>
+          {sel('How to win', String(rec.winCondition || 'money'), WIN_METRIC_OPTIONS.map(o => ({ value: o, label: WIN_METRIC_LABELS[o] })), v => p.w.simple('winCondition', v), 'v113-essential-input-winCondition')}
+          <V101RuleLockNote ruleKey="winCondition" settings={p.settings} />
+        </V113Choice>
+        <V113Choice e={byId('game_length')} cls={p.cls}>
+          {range('totalDays', days, v => `${v} days`)}
+          <div className="text-xs opacity-75">{v101GameLengthLabel(days)}</div>
+          <V101RuleLockNote ruleKey="totalDays" settings={p.settings} />
+        </V113Choice>
+        <V113Choice e={byId('actions_per_day')} cls={p.cls}>
+          {v113Toggle('Daily action limit', rec.actionLimitsEnabled === true, () => p.w.simple('actionLimitsEnabled', rec.actionLimitsEnabled !== true), p.cls, 'v113-essential-input-actionLimitsEnabled')}
+          {range('playerActionsPerDay', perDay, v => `${v} a day`, rec.actionLimitsEnabled !== true)}
+        </V113Choice>
+        <V113Choice e={byId('rival_difficulty')} cls={p.cls}>
+          {sel('Rival difficulty', p.difficulty, Object.keys(AI_DIFFICULTY_PROFILES).map(key => ({ value: key, label: String((AI_DIFFICULTY_PROFILES[key] as { name?: unknown }).name || key) })), v => p.w.difficulty(v), 'v113-essential-input-aiDifficulty', p.difficultyLocked)}
+          {p.difficultyLocked ? <div className="text-xs opacity-80" role="note" data-testid="v113-difficulty-locked">🔒 {V101_RULE_LOCK_REASON}</div> : null}
+        </V113Choice>
+        <V113Choice e={byId('keep_safe')} cls={p.cls}>
+          {v113Toggle(V99_FEATURE_TOGGLE_ROWS.find(r => r.key === 'matchRecoveryEnabled')?.label || 'Autosave & Resume', rec.matchRecoveryEnabled === true, () => p.w.simple('matchRecoveryEnabled', rec.matchRecoveryEnabled !== true), p.cls, 'v113-essential-input-matchRecoveryEnabled')}
+          {v113Toggle(V99_FEATURE_TOGGLE_ROWS.find(r => r.key === 'warnBeforeUnloadEnabled')?.label || 'Warn before closing the tab mid-match', rec.warnBeforeUnloadEnabled === true, () => p.w.simple('warnBeforeUnloadEnabled', rec.warnBeforeUnloadEnabled !== true), p.cls, 'v113-essential-input-warnBeforeUnloadEnabled')}
+        </V113Choice>
+        <V113Choice e={byId('how_much_help')} cls={p.cls}>
+          <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="Tips while you play" data-testid="v113-essential-input-guidedLearning">
+            {LEARNING_MODE_OPTIONS.map(o => (
+              <button key={o.id} type="button" role="radio" aria-checked={p.learning === o.id} title={o.detail} onClick={() => p.w.learningMode(o.id)}
+                className={`px-2 py-1 rounded text-xs border ${p.learning === o.id ? `${p.cls.button} text-white` : `${p.cls.border} ${p.cls.buttonSecondary}`}`}>{o.label}</button>
+            ))}
+          </div>
+          {v113Toggle('Guided first match', rec.guidedFirstRunEnabled !== false, () => p.w.simple('guidedFirstRunEnabled', rec.guidedFirstRunEnabled === false), p.cls, 'v113-essential-input-guidedFirstRunEnabled')}
+        </V113Choice>
+        <V113Choice e={byId('rival_turn_speed')} cls={p.cls}>
+          {sel('Rival turn speed', String(rec.rivalTurnPace || 'normal'), RIVAL_TURN_PACE_OPTIONS.map(o => ({ value: o.id, label: `${o.label} — ${o.hint}` })), v => p.w.simple('rivalTurnPace', v), 'v113-essential-input-rivalTurnPace')}
+        </V113Choice>
+        <V113Choice e={byId('look')} cls={p.cls}>
+          {sel('Look', resolveVisualMode(p.settings), lookOptions, v => p.w.simple('visualMode', v), 'v113-essential-input-visualMode')}
+          <div className={`flex ${p.cls.border} border rounded overflow-hidden w-fit`} role="radiogroup" aria-label="Theme" data-testid="v113-essential-input-theme">
+            {V113_THEMES.map(t => (
+              <button key={t} type="button" role="radio" aria-checked={p.theme === t} onClick={() => p.w.theme(t)}
+                className={`px-3 py-1.5 text-sm font-semibold capitalize ${p.theme === t ? `${p.cls.button} text-white` : p.cls.buttonSecondary}`}>{t}</button>
+            ))}
+          </div>
+        </V113Choice>
+        <V113Choice e={byId('text_size')} cls={p.cls}>
+          <V101TextScaleControl value={(rec.accessibilitySettings as { textScaleMultiplier?: unknown } | undefined)?.textScaleMultiplier} buttonClassName={p.cls.buttonSecondary} onChange={next => p.w.textScale(next)} />
+        </V113Choice>
+        <V113Choice e={byId('motion')} cls={p.cls}>
+          {sel('Motion', isReducedMotionPreference(rec.reducedMotion) ? String(rec.reducedMotion) : 'system', motionOptions, v => p.w.simple('reducedMotion', v), 'v113-essential-input-reducedMotion')}
+        </V113Choice>
+        <V113Choice e={byId('sound')} cls={p.cls}>
+          {v113Toggle('Sound effects', rec.soundEnabled !== false, () => p.w.simple('soundEnabled', rec.soundEnabled === false), p.cls, 'v113-essential-input-soundEnabled')}
+          {range('soundVolume', vol, v => `${Math.round(v * 100)}%`, rec.soundEnabled === false)}
+        </V113Choice>
+      </div>
+    </V113Block>
+  );
+}
+
+// ---- The group bar (in place of the 11 tabs) ----------------------------------------------------------------------------------------------------
+export function V113GroupNav({ active, searching, showInactive, inactiveCount, onGroup, onShowInactive, onClassic, cls }: {
+  active: V113GroupId; searching: boolean; showInactive: boolean; inactiveCount: number;
+  onGroup: (g: V113GroupId) => void; onShowInactive: (on: boolean) => void; onClassic: () => void; cls: V113Classes;
+}): React.ReactElement {
+  const counts = v113GroupKeyCounts();
+  return (
+    <div className={`px-3 py-1.5 border-b ${cls.border} ${searching ? 'opacity-70' : ''} flex items-center gap-1.5 flex-wrap shrink-0`} role="tablist" aria-label="Settings groups" data-testid="v113-group-nav">
+      {V113_GROUPS.map(g => (
+        <button key={g.id} type="button" role="tab" aria-selected={!searching && active === g.id} title={g.goal} onClick={() => onGroup(g.id)} data-testid={`v113-group-${g.id}`}
+          className={`px-3 py-1.5 rounded text-xs font-semibold whitespace-nowrap shrink-0 ${!searching && active === g.id ? `${cls.button} text-white font-bold` : cls.buttonSecondary}`}>
+          {g.icon} {g.label} <span className="opacity-70 font-normal">{counts[g.id]}</span>
+        </button>
+      ))}
+      <label className="ml-auto flex items-center gap-1.5 text-xs whitespace-nowrap shrink-0" title="Settings that have no effect in this version">
+        <input type="checkbox" checked={showInactive} onChange={e => onShowInactive(e.target.checked)} data-testid="v113-show-inactive" />
+        Show inactive ({inactiveCount})
+      </label>
+      <button type="button" onClick={onClassic} className={`px-2 py-1 rounded text-[11px] whitespace-nowrap shrink-0 ${cls.buttonSecondary}`} data-testid="v113-classic-layout" title="Back to the 11 classic tabs">Classic tabs</button>
+    </div>
+  );
+}
+
+
+// ---- The Learn tab's mode change, shared ------------------------------------------------------------------------------------------------------------
+/** What choosing a Guided Learning mode writes (the INTELLIGENCE › Learn buttons and Essentials › How much help call this one function). */
+export function v113LearningModeSettings(prev: GameSettingsState, mode: LearningMode, turn: number): GameSettingsState {
+  if (mode === 'off') return { ...prev, playerIntentOnboardingEnabled: false };
+  const cur = sanitizeLearningState(prev.guidedLearning);
+  const learning = cur.skipGuidance || cur.welcome === 'pending' ? applyLearningEvent(cur, { kind: 'welcome', welcome: 'started', turn }) : cur;
+  return { ...prev, playerIntentOnboardingEnabled: true, smartSettingsProfile: { ...(prev.smartSettingsProfile || {}), guidance: mode } as unknown as GameSettingsState['smartSettingsProfile'], guidedLearning: learning };
+}
+
+// ---- The controller: what the Settings hub draws in the layered view --------------------------------------------------------------------------
+export interface V113Deps {
+  settings: GameSettingsState;
+  ui: { readonly v113Group?: unknown; readonly v113GroupTab?: unknown; readonly v113ShowInactive?: unknown; readonly settingsActiveTab?: unknown };
+  teamMode: boolean;
+  difficulty: string;
+  difficultyLocked: boolean;
+  learning: LearningMode;
+  theme: string;
+  w: V113Writers;
+  cls: V113Classes;
+  updateUiState: (patch: Record<string, unknown>) => void;
+  askAgainPrefs: Readonly<Partial<Record<string, boolean>>> | null | undefined;
+  disabledClassName: string;
+}
+export interface V113Layers {
+  on: boolean;
+  group: V113GroupId;
+  /** The hub for one draw (null with the switch off: the hub draws exactly as before). */
+  hub: (searchMatchedIds: ReadonlySet<string> | null) => V113Hub | null;
+  nav: (searching: boolean) => React.ReactElement;
+  head: (hub: V113Hub) => React.ReactNode;
+  tail: (hub: V113Hub) => React.ReactNode;
+}
+export function v113SettingsLayers(d: V113Deps): V113Layers {
+  const on = v113LayersOn(d.settings);
+  const group = v113ActiveGroup(d.ui);
+  const showInactive = d.ui.v113ShowInactive === true;
+  const teamsOpen = v113TeamsOpen(d.settings, d.teamMode);
+  const tab = typeof d.ui.settingsActiveTab === 'string' ? d.ui.settingsActiveTab : 'home';
+  const rowsNode = (rows: V113RowSpec[]): React.ReactNode => (rows.length === 0 ? null : (
+    <div className="space-y-4">{rows.map(spec => <V113Row key={spec.key} spec={spec} settings={d.settings} w={d.w} cls={d.cls} />)}</div>
+  ));
+  const block = (id: V113PseudoId, hub: V113Hub): React.ReactNode => {
+    if (!hub.view.pseudoVisible(id)) return null;
+    if (id === 'v113.essentials') return <V113EssentialsPage key={id} settings={d.settings} difficulty={d.difficulty} difficultyLocked={d.difficultyLocked} theme={d.theme} learning={d.learning} w={d.w} cls={d.cls} />;
+    if (id === 'v113.presetsOnly') return <V113PresetOnlyList key={id} group={group} settings={d.settings} showInactive={showInactive} cls={d.cls} />;
+    if (id === 'v113.askAgain') {
+      return (
+        <V113Block key={id} id={id} title={V113_PSEUDO[id].title} cls={d.cls} note={'Questions you answered with “Don’t ask me again” can be turned back on here.'}>
+          <V99AskAgainRow prefs={d.askAgainPrefs} onReset={d.w.resetAskAgain} buttonClassName={d.cls.buttonSecondary} disabledClassName={d.disabledClassName} />
+        </V113Block>
+      );
+    }
+    if (id === 'v113.teamsGate') {
+      const hidden = Object.entries(V113_HOME_KEYS).filter(([home]) => v113GroupOfHome(home) === 'teams' && !V113_TEAMS_SOLO_SECTIONS.includes(home)).reduce((n, [, keys]) => n + keys.length, 0) - 1;
+      const masterOn = d.settings.teamCompetitiveAiEnabled === true;
+      return (
+        <V113Block key={id} id={id} title={V113_PSEUDO[id].title} cls={d.cls}
+          note={`${hidden} team settings appear while a Team Mode match is running or this switch is on. Auto Mode, Human Player Automation and Priority Resolution work in any match and are below.`}>
+          <div id={`settings-field-${V113_TEAMS_MASTER_KEY}`} data-setting-key={V113_TEAMS_MASTER_KEY} className="flex items-center justify-between gap-3">
+            <div><div className="font-semibold">Enable Competitive AI</div><div className="text-sm opacity-75">Coordinated, harder Team Mode AI opponents and teammates.</div></div>
+            <button type="button" aria-pressed={masterOn} data-testid="v113-teams-master" onClick={() => d.w.tracked('Team Brain', prev => ({ ...prev, teamCompetitiveAiEnabled: !prev.teamCompetitiveAiEnabled }))}
+              className={`px-4 py-2 rounded font-semibold shrink-0 ${masterOn ? `${d.cls.success} text-white` : d.cls.buttonSecondary}`}>{masterOn ? 'ON' : 'OFF'}</button>
+          </div>
+        </V113Block>
+      );
+    }
+    const rows = v113RowsFor(id).filter(spec => hub.view.keyVisible(spec.key, id));
+    if (rows.length === 0) return null;
+    return <V113Block key={id} id={id} title={V113_PSEUDO[id].title} cls={d.cls}>{rowsNode(rows)}</V113Block>;
+  };
+  const blocksAt = (place: 'head' | 'tail', hub: V113Hub): React.ReactNode[] =>
+    (Object.keys(V113_PSEUDO) as V113PseudoId[]).filter(id => V113_PSEUDO[id].place === place).map(id => block(id, hub)).filter(node => node !== null);
+  return {
+    on,
+    group,
+    hub: (searchMatchedIds) => {
+      if (!on) return null;
+      const view = v113BuildView({ group, showInactive, teamsOpen, searchMatchedIds });
+      return v113CreateHub(view,
+        home => rowsNode(v113RowsFor(home).filter(spec => view.keyVisible(spec.key, home))),
+        blockId => { const meta = V113_MOVED_BLOCKS[blockId]; return <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70 mb-2">{meta.title} · moved here from {meta.from}</div>; });
+    },
+    nav: (searching) => (
+      <V113GroupNav active={group} searching={searching} showInactive={showInactive} inactiveCount={v113InactiveKeys().length} cls={d.cls}
+        onGroup={g => d.updateUiState({ v113Group: g, v113GroupTab: tab })}
+        onShowInactive={value => d.updateUiState({ v113ShowInactive: value })}
+        onClassic={() => { d.w.set('settingsLayersEnabled', false, V113_LABEL, 'Interface → Settings Layout'); d.updateUiState({ settingsActiveTab: V113_GROUP_TAB[group] }); }} />
+    ),
+    head: hub => <>{blocksAt('head', hub)}</>,
+    tail: hub => <>{blocksAt('tail', hub)}</>,
+  };
+}
+
+/** The body of Settings › Interface & Accessibility › 🗂️ Settings Layout (the switch's own row; the classic view shows it too). */
+export function V113LayoutSettingsBody({ on, onToggle, onClassName, offClassName }: { on: boolean; onToggle: () => void; onClassName: string; offClassName: string }): React.ReactElement {
+  return (
+    <div className="space-y-3 text-xs" data-testid="v113-layout-settings">
+      <div id="settings-field-settingsLayersEnabled" data-setting-key="settingsLayersEnabled" className="flex items-center justify-between gap-3">
+        <div>
+          <div className="font-semibold text-sm">{V113_LABEL}</div>
+          <div className="opacity-75">{V113_DESCRIPTION} (Off by default)</div>
+        </div>
+        <button type="button" id="v113-setting-settingsLayersEnabled" data-testid="v113-setting-settingsLayersEnabled" aria-pressed={on} aria-label={`${V113_LABEL}: ${on ? 'on' : 'off'}`}
+          onClick={onToggle} className={`px-4 py-2 rounded font-semibold shrink-0 ${on ? onClassName : offClassName}`}>{on ? 'ON' : 'OFF'}</button>
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================================
+// SECTION 20BO: V11.0 FIND ANYTHING FIXES — WORD STARTS, EVERYDAY WORDS, ONE LABEL TABLE, CTRL+K IN HELP (UX-3)
+// ============================================================================
+// a. A word of the query matches only at the start of a word (of the title, the key in words, where it lives, its keywords); a
+//    squashed key ("findanythingenabled") matches only from its start. "tent" no longer finds persisTENT, "rain" no longer bRAIN.
+// b. Everyday words: easy / hard / difficulty → Rival difficulty; speed / fast / slow → Rival turn speed; music / mute → Sound;
+//    restart / new game / new match / exit → Leave match and Main menu; theme / dark mode → Look; days → Game length;
+//    hint → How much help. The 12 Essentials are results of their own.
+// c. One label table (v113SettingLabel) for the layered rows and Find Anything: the game's own labels, and labels written for the
+//    329 settings that had none (V113_SETTING_LABELS).
+// d. The Help window lists Ctrl/⌘+K while Find Anything is on.
+// With the layered Settings on, a setting's result opens its new home. Off, every result opens where it did after UX-2.
+// ============================================================================
+
+/** Labels for the settings that had none of their own (329: their title was the key turned into words). Written for players; "AI", never "Ai". */
+export const V113_SETTING_LABELS: Readonly<Record<string, string>> = {
+  opponentGenomeId: "Tuned champion opponent",
+  actionPointConsumptionSettings: "Action point costs",
+  survivalMechanicsEnabled: "Survival mechanics (territories)",
+  dailySupplyConsumptionRate: "Daily supply use (territories)",
+  forcedRetreatEnabled: "Forced retreat (territories)",
+  aiMaxActionsPerTurn: "Rival's actions per turn (maximum)",
+  allowActionOverride: "Allow action overrides",
+  overrideCost: "Override base cost",
+  doubleOrNothingEnabled: "Double-or-nothing wagers",
+  investmentsEnabled: "Regional investments",
+  equipmentShopEnabled: "Equipment shop (gear with lasting bonuses)",
+  sabotageEnabled: "Sabotage actions",
+  aiUsesMarketModifiers: "AI follows market price swings",
+  aiWinConditionSpendingEnabled: "AI spends toward the win condition",
+  aiRegionsMajorityRushEnabled: "AI region majority rush",
+  teammatePerformanceSyncEnabled: "AI teammates share how they perform",
+  overseerAutoResolveThreshold: "Overseer settles conflicts on its own above",
+  aiDeterministicSeed: "AI random seed",
+  worldRngSeed: "World random seed",
+  aiReplayMaxEvents: "Replay recording: maximum events",
+  aiReplayPolicy: "Replay reconstruction policy",
+  replaySmartCheckpointsEnabled: "Smart checkpoints in replays",
+  replayTurningPointDetectionEnabled: "Find turning points in replays",
+  replayDeterministicValidationEnabled: "Check that replays reproduce exactly",
+  replayWhatIfBranchingEnabled: "What-if branches in replays",
+  replayDeveloperDiagnosticsEnabled: "Developer diagnostics in replays",
+  replayAutoOpenAtMatchEnd: "Open the Replay Studio at match end",
+  replayDetailLevel: "How much detail replays keep",
+  aiEngineVersion: "Rival AI engine version",
+  aiPersonalityVariance: "How much the rival's personality varies",
+  aiGrandTourPriority: "How much the rival chases the Grand Tour",
+  aiMarketModifierAwareness: "How closely the rival watches market modifiers",
+  aiSpecialAbilityPriority: "How often the rival uses special abilities",
+  aiWinConditionSpendingStrength: "How hard the rival spends toward the goal",
+  aiRegionRushIntensity: "How hard the rival rushes for regions",
+  aiSabotagePriority: "How much the rival favours sabotage",
+  aiInvestmentPriority: "How much the rival favours investments",
+  aiEquipmentPurchasePriority: "How much the rival favours buying equipment",
+  aiNegotiationParticipationWeight: "How willing the rival is to negotiate",
+  aiNegotiationValuationWeight: "How the rival values negotiation offers",
+  teammatePerformanceSyncStrength: "How strongly AI teammates share how they perform",
+  aiStrategyLabEnabled: "Use the AI Strategy Lab",
+  aiStrategyLabScope: "AI Strategy Lab applies to",
+  playerTeammateAiPreset: "Your AI teammate preset",
+  opponentAiPreset: "Rival AI preset",
+  aiEvaluationFactors: "What the rival weighs when it decides",
+  adaptiveAiPatternMemoryStrength: "How long adaptive AI remembers your patterns",
+  adaptiveAiRubberBandingStrength: "How strongly adaptive AI catches up",
+  advancedLoansAccessMode: "Who can use advanced loans",
+  loanEventsEnabled: "Random loan events",
+  earlyRepaymentEnabled: "Early loan repayment",
+  loanRefinancingEnabled: "Allow loan refinancing",
+  defaultPenaltyMultiplier: "Loan default penalty multiplier",
+  interestAccrualRate: "Loan interest accrual rate",
+  maxSimultaneousLoans: "Maximum loans at once",
+  loanTierUnlockSpeedMultiplier: "Loan tier unlock speed",
+  aiLoanRiskWeight: "How much loan risk worries the rival",
+  aiLoanRepaymentPriority: "How quickly the rival repays loans",
+  aiLoanRefinancingWeight: "How readily the rival refinances loans",
+  aiLoanEmergencyOnly: "AI takes emergency loans only",
+  adaptiveAiNetWorthThreshold: "Adaptive AI net-worth trigger",
+  adaptiveAiLevelDifference: "Adaptive AI level-gap trigger",
+  adaptiveAiChallengeDifference: "Adaptive AI challenge-gap trigger",
+  adaptiveAiConsecutiveDays: "Adaptive AI days in a row before it reacts",
+  adaptiveAiMaxDifficulty: "Adaptive AI difficulty ceiling",
+  adaptiveAiAggressionMultiplier: "Adaptive AI: extra aggression",
+  adaptiveAiPatternLearning: "Adaptive AI learns your patterns",
+  adaptiveAiRubberBanding: "Adaptive AI catch-up (rubber-banding)",
+  adaptiveAiAffectedModes: "Adaptive AI: game modes it affects",
+  adaptiveAiTeamComebackStrength: "How hard an AI team fights back when behind",
+  adaptiveAiTriggerSensitivity: "How soon adaptive AI kicks in",
+  adaptiveAiSupportFocus: "Adaptive AI: focus on helping teammates",
+  adaptiveAiEconomyRecoveryBias: "Adaptive AI: lean toward rebuilding its economy",
+  adaptiveAiDisruptionBias: "Adaptive AI: lean toward disrupting you",
+  adaptiveAiShowDecisionTransparency: "Adaptive AI: link to decision transparency",
+  adaptiveAiShowActiveModifiers: "Show which adaptive AI boosts are active",
+  opponentModelDecayRate: "How fast old reads of your moves fade",
+  opponentModelWeight: "Opponent model scoring weight",
+  opponentThreatWeightsEnabled: "Opponent threat weights per win condition",
+  rivalDossierPanelEnabled: "Rival intelligence dossier panel",
+  settingPriorityMode: "Priority Resolution mode",
+  maxConcurrentHighInfluenceSettings: "Maximum high-influence settings at once",
+  conflictResolutionStrength: "How firmly priority conflicts are resolved",
+  deprioritizeLowImpactSettings: "Deprioritise low-impact settings",
+  priorityTransparencyEnabled: "Explain how priority conflicts were resolved",
+  manualPriorityWeights: "Manual major-system weights",
+  decisionTransparencyViewMode: "Decision Transparency: view",
+  decisionTransparencyMaxHistoryRetained: "Decision transparency history kept",
+  decisionTransparencyTimelineLength: "Decision Transparency: decisions kept on the timeline",
+  decisionTransparencySamplingDensity: "Decision Transparency: how many decisions are sampled",
+  decisionTransparencyPanelDensity: "Decision Transparency: panel spacing",
+  decisionTransparencyDefaultGroupView: "Decision Transparency: grouping shown first",
+  decisionTransparencyMaxVisibleAiCards: "Decision transparency: AI cards shown",
+  decisionTransparencyPerAiTimelineDensity: "Decision Transparency: spacing of each AI's timeline",
+  decisionTransparencyPerAiTimelineLength: "Decision Transparency: length of each AI's timeline",
+  scenarioEngineV73Enabled: "Scenario engine (V7.3)",
+  customScenarioBuilderEnabled: "Scenario builder (your own scenarios)",
+  dynamicCrisisChainsEnabled: "Crisis chains",
+  campaignEngineEnabled: "Campaign chapters",
+  narrativeEngineEnabled: "Story decisions (Narrative Engine)",
+  publicStabilityEnabled: "Public stability meter",
+  nationalEventsEnabled: "Country-wide events",
+  careerProgressionEnabled: "Career levels and unlocks",
+  achievementsEnabled: "Achievements and badges",
+  aiRivalryEnabled: "AI rivalry and diplomacy",
+  winConditionTieBreakers: "Tie-breaker order",
+  allowCashOut: "Allow cashing out region positions",
+  playerIntentOnboardingEnabled: "Onboarding hints",
+  playerIntentOnboardingDismissed: "Dismissed onboarding cards (kept by the game)",
+  guidedLearning: "Guided Learning progress",
+  v93ContentEnabled: "Dynamic situations (contracts, decisions, events, crises)",
+  autoModeDiagnosticsDrawerOpen: "Diagnostics drawer stays open",
+  infrastructureEnabled: "Infrastructure (master switch)",
+  deferredTransactions: "Changes waiting for the next match",
+  aiDifficulty: "Rival difficulty (settings copy, unused)",
+  gameActivityLedgerPreserveBookmarks: "Activity Ledger: keep bookmarks when pruning",
+  gameActivityLedgerPreserveRootCausal: "Activity Ledger: keep root causes when pruning",
+  rivalTurnPace: "Rival turn speed",
+  classicStickyToasts: "Classic sticky notifications",
+  v93StartingPackage: "Starting package",
+  v93RegionalOpening: "Regional opening",
+  v93ContentThemes: "Content themes",
+  v93ContractAbundance: "Contract abundance",
+  v93CrisisIntensity: "Crisis intensity",
+  v93RareEventFrequency: "Rare event frequency",
+  v93RecentRare: "Recent rare events (kept by the game)",
+  playerIntentExplainRoutineActions: "Explain every Co-Pilot action",
+  playerIntentExplainMode: "Explanations of Co-Pilot moves",
+  teamModeAiDifficultyPreset: "Team Mode difficulty",
+  friendlyTeamAiPreset: "Friendly teammate AI",
+  enemyTeamAiPreset: "Enemy team AI",
+  teamAiOverridePolicy: "Enemy team override policy",
+  friendlyAiOverridePolicy: "Friendly teammate override policy",
+  teamAiOverrideMaxPerActorPerDay: "Overrides per player per day (maximum)",
+  teamAiOverrideMaxPerTeamPerDay: "Overrides per team per day (maximum)",
+  teamAiOverrideBaseCostMultiplier: "Override cost multiplier",
+  teamAiOverrideMinimumDecisionScore: "Override minimum decision score",
+  teamAiOverrideMinimumCashReserve: "Override minimum cash reserve",
+  teamActionBankEnabled: "Shared action bank",
+  teamActionBankBonusActionsPerDay: "Action bank bonus actions per day",
+  teamActionBankDistributionMode: "Action bank distribution",
+  teamActionBankReserveActions: "Action bank reserve (kept unless urgent)",
+  teamActionBankMaxDrawsPerActorPerDay: "Action bank draws per player per day (maximum)",
+  teamActionBankTransparencyEnabled: "Action bank transparency",
+  teamAiMaxLentActionsPerActorPerDay: "Actions lent per player per day (maximum)",
+  teamAiMaxReceivedActionsPerActorPerDay: "Actions received per player per day (maximum)",
+  teamAiActionLendingMinimumValueGain: "Action lending minimum value gain",
+  teamAiActionLendingRequiresCommittedPlan: "Action lending needs a committed plan",
+  teamAiActionLendingTransparencyEnabled: "Action lending transparency",
+  teamAiPlanCommitmentEnabled: "Team plans",
+  teamAiPlanCommitmentStrength: "Team plan commitment strength",
+  teamAiPlanReevaluationFrequency: "Team plan re-evaluation (days)",
+  teamAiPlanInterruptionSensitivity: "Team plan interruption sensitivity",
+  teamAiPlanTransparencyEnabled: "Team plan transparency",
+  friendlyAiRespectPlayerReservations: "Friendly AI respects your reservations",
+  friendlyAiMayRequestReservedResource: "Friendly AI may ask for a reserved resource",
+  teamAiThreatTargetingEnabled: "Threat targeting",
+  teamAiThreatTargetingStrength: "Threat targeting strength",
+  teamAiThreatReevaluationFrequency: "Threat re-evaluation (turns)",
+  teamAiThreatFocusDuration: "Threat focus duration (turns)",
+  teamAiMayTargetFriendlyAiTeammate: "Threat targeting may target a friendly AI teammate",
+  teamAiEndgameAccelerationEnabled: "Endgame acceleration",
+  teamAiEndgameStartPercent: "Endgame acceleration starts at (share of the match)",
+  teamAiEndgameOverrideBias: "Endgame override bias",
+  teamAiEndgameCashConversionStrength: "Endgame cash conversion strength",
+  teamAiEmergencyActionsEnabled: "Emergency actions",
+  teamAiEmergencyActionCooldownDays: "Emergency action cooldown (days)",
+  teamAiEmergencyActionsPerGame: "Emergency action uses per match",
+  teamAiEmergencyActionStrength: "Emergency action strength",
+  teamAiEmergencyActionsForFriendlyTeam: "Emergency actions for the friendly team",
+  teamAiEmergencyActionsForEnemyTeam: "Emergency actions for the enemy team",
+  teamInitiativeEnabled: "Team initiative points",
+  teamInitiativeMaximum: "Most initiative a team can hold",
+  teamInitiativeGainMultiplier: "How fast teams gain initiative",
+  teamInitiativeDecayEnabled: "Unused initiative fades",
+  teamInitiativeVisibleToPlayer: "Show team initiative",
+  teamComboBonusesEnabled: "Bonuses for team combo moves",
+  teamComboBonusStrength: "Combo bonus strength",
+  teamComboWindowActions: "Combo window (actions)",
+  teamAiReservationTransparencyEnabled: "Reservation transparency",
+  teamAiThreatTargetingTransparencyEnabled: "Threat targeting transparency",
+  teamAiEndgameAccelerationTransparencyEnabled: "Endgame acceleration transparency",
+  teamAiEmergencyActionsTransparencyEnabled: "Emergency action transparency",
+  teamInitiativeTransparencyEnabled: "Show team initiative details",
+  teamComboBonusesTransparencyEnabled: "Combo bonus transparency",
+  automaticCashLockingEnabled: "Automatic cash locking (vault)",
+  vaultProtectionMode: "Cash vault protection mode",
+  vaultMilestoneSizeMultiplier: "Vault milestone size",
+  vaultMinimumWorkingCash: "Cash kept outside the vault",
+  vaultCountProtectedCashTowardVictory: "Vault cash counts toward victory",
+  vaultTransparencyEnabled: "Show cash vault details",
+  teamOsEnemyEnabled: "Team OS for the enemy team",
+  teamOsFullInspectionEnabled: "Team OS full inspection (debug)",
+  economyRecoveryTarget: "Economy governor recovery target",
+  economyMinimumChallengeProbability: "Economy governor minimum challenge odds",
+  economyEndgameCashConversionEnabled: "Economy governor endgame cash conversion",
+  economyGovernorTransparencyEnabled: "Show Economy Governor decisions",
+  teamAiGovernorRestrictionDetectionEnabled: "Governor restriction detection",
+  teamAiGovernorRestrictionTransparencyEnabled: "Governor restriction transparency",
+  teamAiProductiveRecoveryLadderEnabled: "Productive recovery ladder",
+  teamAiGovernorAutomaticExceptionsEnabled: "Governor automatic exceptions",
+  teamAiGovernorExceptionConsecutiveTurnsThreshold: "Governor exception: restricted turns in a row",
+  teamAiGovernorExceptionMaxReserveBreach: "Governor exception: maximum reserve breach",
+  teamAiGovernorExceptionMinProbability: "Governor exception: minimum success odds",
+  teamAiGovernorExceptionMinEvRatio: "Governor exception: minimum expected-value ratio",
+  teamAiGovernorExceptionMaxCost: "Governor exception: maximum cost",
+  teammatePerformanceSync2Enabled: "Teammate performance sync 2.0",
+  teammatePerformanceSync2Strength: "Performance sync 2.0 strength",
+  teammatePerformanceSync2StrategyLearningEnabled: "Performance sync 2.0 strategy learning",
+  teammatePerformanceSync2ChallengeExpertiseEnabled: "Performance sync 2.0 challenge expertise",
+  teammatePerformanceSync2ChallengeExpertiseMaxBonus: "Challenge expertise maximum bonus",
+  guaranteedRecoveryProtocolEnabled: "Guaranteed recovery for a struggling AI teammate",
+  guaranteedRecoveryMinimumChallengeProbability: "Guaranteed recovery minimum challenge odds",
+  teammatePerformanceSync2TransparencyEnabled: "Performance sync 2.0 transparency",
+  teammatePerformanceSyncAssistScope: "Performance sync assist scope",
+  governorCategoryPolicy: "Economy Governor: spending by category",
+  teamDifficultyOverrides: "Per-team difficulty overrides",
+  teammatePerformanceSyncMomentumEnabled: "Performance sync momentum",
+  teammatePerformanceSyncExpertiseDecayEnabled: "Performance sync expertise decay",
+  teammatePerformanceSyncExpertiseDecayRate: "Expertise decay rate",
+  parallelAiPlanningSabotageCoordinationEnabled: "Parallel planning: coordinate sabotage",
+  parallelAiPlanningTransparencyEnabled: "Parallel planning transparency",
+  teamAiActionSequencesEnabled: "Teammate action sequences",
+  aiActionApprovalEnabled: "Approve AI teammates' actions",
+  actionRequirementsEnabled: "Requirements before actions run",
+  actionRequirementGroups: "Action requirement rules",
+  actionRequirementsTransparencyEnabled: "Action requirement transparency",
+  aiActionApprovalMode: "Which AI actions need approval",
+  aiActionApprovalSelectedTypes: "AI actions that need approval",
+  aiActionApprovalHighRiskThresholds: "High-risk thresholds for approval",
+  aiActionApprovalTeammateOverrides: "Approval rules per teammate",
+  aiActionApprovalRejectionOutcome: "When you reject an AI action",
+  aiActionApprovalTransparencyEnabled: "Explain AI action approvals",
+  aiActionApprovalAutoRulesEnabled: "Automatic approval rules",
+  aiActionApprovalAutoRules: "Automatic approval rule values",
+  teamAiActionSequencesTransparencyEnabled: "Action sequence transparency",
+  teamAiSequenceInterruptsEnabled: "Action sequences can be interrupted",
+  teamAiPhaseSequenceSwitchingEnabled: "Action sequences switch with the match phase",
+  notificationSettings: "Notification size and layout",
+  notificationClearShortcut: "Clear-notifications shortcut",
+  teamTreasuryEnabledForFriendlyTeam: "Team treasury for the friendly team",
+  teamTreasuryEnabledForEnemyTeam: "Team treasury for the enemy team",
+  teamTreasuryShowInUi: "Show the team treasury",
+  teamTreasuryShowTransactions: "Show treasury transactions",
+  teamTreasuryAllowManualContributions: "Allow manual treasury contributions",
+  teamTreasuryAllowProtectedCashContribution: "Allow contributing vault-protected cash",
+  teamAiTreasuryContributionEnabled: "AI teammates contribute to the treasury",
+  treasuryAutomaticContributionEnabled: "Automatic treasury contributions",
+  treasuryAutomaticContributionPolicy: "Automatic contribution shares",
+  teamTreasuryMaxAutoContributionPerActorPerDay: "Automatic contribution per player per day (maximum)",
+  teamTreasuryMinPersonalCashRemaining: "Minimum personal cash left after contributing",
+  teamTreasuryMinContributionAmount: "Minimum contribution amount",
+  teamTreasuryContributionCooldownDays: "Contribution cooldown (days)",
+  teamTreasuryDisableContributionDuringRecovery: "No contributions during recovery",
+  teamTreasuryReserve: "Team treasury: cash held in reserve",
+  teamTreasuryDynamicReserveEnabled: "Dynamic treasury reserve",
+  teamTreasuryAllowHumanFundingRequests: "You can request treasury funding",
+  teamTreasuryAllowAiFundingRequests: "AI teammates can request treasury funding",
+  teamTreasuryAllowRequestsAtZeroCash: "Funding requests allowed at zero cash",
+  teamTreasuryEmergencyOperatingTarget: "Treasury emergency operating target",
+  teamTreasuryMaxWithdrawalPerRequest: "Treasury withdrawal per request (maximum)",
+  teamTreasuryMaxWithdrawalPerActorPerDay: "Treasury withdrawal per player per day (maximum)",
+  teamTreasuryRequireApprovalForFriendlyAiWithdrawals: "Approve friendly AI withdrawals",
+  teamTreasuryAllowPartialApproval: "Allow partial approval of requests",
+  teamTreasuryRequireIntendedAction: "Requests must name the intended action",
+  teamTreasuryReturnUnusedRestrictedFunds: "Return unused restricted funds",
+  teamTreasuryRequestCooldownDays: "Funding request cooldown (days)",
+  teamAiTreasuryRequestsEnabled: "AI teammates make treasury requests",
+  countTeamTreasuryTowardVictory: "Treasury counts toward victory",
+  teamAiStrategicCommandMaxSpendingPercent: "Strategic command maximum spending",
+  teamAiStrategicCommandTreasuryAllocationCap: "Strategic command treasury allocation cap",
+  teamAiStrategicCommandOverrideBias: "Strategic command override bias",
+  teamAiStrategicCommandEnabledForFriendlyTeam: "Strategic command for the friendly team",
+  teamAiStrategicCommandEnabledForEnemyTeam: "Strategic command for the enemy team",
+  teamAiStrategicCommandInterventionsEnabled: "Strategic command interventions",
+  teamAiAdaptiveOverseerEnabled: "Adaptive team AI overseer",
+  teamAiAdaptiveOverseerAuthorityMode: "Overseer authority mode",
+  teamAiOverseerShowStatusCard: "Show the overseer status card",
+  teamAiOverseerTransparencyEnabled: "Overseer transparency",
+  teamAiOverseerDashboardEnabled: "Overseer dashboard",
+  teamAiSafeModeEnabled: "Safe mode auto-trigger",
+  teamAiSafeModeRestrictedActorThreshold: "Safe mode: restricted players threshold",
+  teamAiStrategicCommandPersonality: "Strategic command personality",
+  teamAiAdaptiveOverseerPersonality: "Overseer personality",
+  teamAiAdaptiveOverseerComebackEnterPercent: "Overseer comeback mode: enter at",
+  teamAiAdaptiveOverseerComebackExitPercent: "Overseer comeback mode: exit at",
+  teamAiAdaptiveOverseerProtectLeadEnterPercent: "Overseer protect-the-lead: enter at",
+  teamAiAdaptiveOverseerProtectLeadExitPercent: "Overseer protect-the-lead: exit at",
+  teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: "Overseer recovery mode: restricted turns",
+  teamAiAdaptiveOverseerMinimumStrategyDurationDays: "Overseer minimum strategy duration (days)",
+  overseerWinConditionCounterStrategyEnabled: "Overseer win-condition counter-strategies",
+  teamAiAuditorSystemEnabled: "AI operations auditor",
+  teamAiAuditorModeForFriendlyTeam: "Auditor mode for the friendly team",
+  teamAiAuditorModeForEnemyTeam: "Auditor mode for the enemy team",
+  teamAiAuditorShowStatusCard: "Show the auditor status card",
+  teamAiAuditorDashboardEnabled: "Auditor dashboard",
+  teamAiAuditorAutomaticRecoveryMinConfidence: "Auditor automatic recovery minimum confidence",
+  teamAiAuditorAutomaticRecoveryMaxPerDay: "Auditor automatic recoveries per day (maximum)",
+  teamAiAuditorSafeModeEnabled: "Auditor safe mode",
+  teamAiAuditorSafeModeEscalatedIncidentThreshold: "Auditor safe mode: escalated incidents threshold",
+  aiAlgorithmBuilderEnabled: "Build your own AI algorithm",
+  aiAlgorithmBuilderDefaultEditorMode: "AI algorithm builder editor mode",
+  aiEffectivenessBlunderThresholdRoi: "AI effectiveness: return below which a move is a blunder",
+  aiTacticalIntelligence: "Rival's tactical intelligence",
+  aiEconomicCheats: "AI economic advantages",
+  projectedOutcomeEnabled: "Show projected outcomes",
+  projectedOutcomeMode: "How outcomes are projected",
+  deterministicMode: "Adaptive AI: deterministic mode",
+  humanGovernanceVetoEnabled: "You can veto team decisions",
+  teamGovernanceModeOverrides: "Governance mode per team",
+  governanceMemberVoteWeight: "Weight of each member's vote",
+  governanceVoteThreshold: "Governance vote approval threshold",
+  governanceConsensusThreshold: "Votes needed for team consensus",
+  governanceVetoUsesPerMatch: "Governance vetoes per match",
+  governanceWeightSettings: "Governance weights (leader, consensus, risk)",
+  defaultGuardianOpeningStyle: "Guardian opens as",
+  showGuardianFloatingButton: "Guardian floating button",
+  enableGuardianSidePanelAccess: "Guardian side panel access",
+  hideGuardianFloatingButtonWhileCenterOpen: "Hide the Guardian button while its centre is open",
+  hideGuardianFloatingButtonWhileAnotherBlockingModalOpen: "Hide the Guardian button behind other windows",
+  guardianFloatingPosition: "Guardian button position",
+  allowGuardianFloatingButtonDragging: "Allow dragging the Guardian button",
+  rememberGuardianFloatingPosition: "Remember the Guardian button position",
+  coPilotSettings: "Co-Pilot options",
+  guardianAiSettings: "Guardian AI options",
+  commandCenterSettings: "AI Command Center settings",
+  strategyPlannerSettings: "Strategy Planner options",
+  smartSettingsProfile: "Smart settings profile (kept by the game)",
+  presetSettings: "Interface layout preset options"
+};
+
+const V113_ACRONYMS: ReadonlyArray<[RegExp, string]> = [[/\bAi\b/g, 'AI'], [/\bUi\b/g, 'UI'], [/\bUx\b/g, 'UX'], [/\bRng\b/g, 'RNG'], [/\bRoi\b/g, 'ROI'], [/\bOs\b/g, 'OS'], [/\bId\b/g, 'ID'], [/\bAp\b/g, 'AP'], [/\bEv\b/g, 'EV']];
+/** "Ai pipeline" → "AI pipeline" (whole words only). */
+export function v113FixAcronyms(text: string): string { return V113_ACRONYMS.reduce((s, [re, rep]) => s.replace(re, rep), String(text || '')); }
+/** The one label of a setting, shared by the layered rows and Find Anything: a written label, else the label the game already gives it. */
+export function v113SettingLabel(key: string): string {
+  if (key === 'findAnythingEnabled') return V110_FIND_LABEL;
+  if (key === 'settingsLayersEnabled') return V113_LABEL;
+  const own = V113_SETTING_LABELS[key];
+  if (own) return own;
+  const given = SIMPLE_SETTINGS.find(row => row.key === key)?.label || SETTINGS_HUB_FIELD_META[key]?.label
+    || SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(row => row.key === key)?.label || V110_SETTING_LABELS[key];
+  if (given) return v113FixAcronyms(given.replace(/\s+/g, ' ').trim());
+  const words = v110KeyWords(key).replace(/ enabled$/, '');
+  return v113FixAcronyms(words ? words.charAt(0).toUpperCase() + words.slice(1) : key);
+}
+
+// ---- a. Word starts --------------------------------------------------------------------------------------------------------------------------
+interface V113EntryText { title: string; key: string; keyWords: string; where: string; all: string }
+const V113_ENTRY_TEXT = new WeakMap<V110FindEntry, V113EntryText>();
+function v113EntryText(entry: V110FindEntry): V113EntryText {
+  const cached = V113_ENTRY_TEXT.get(entry);
+  if (cached) return cached;
+  const title = v110Normalize(entry.title);
+  const key = entry.settingKey ? entry.settingKey.toLowerCase() : '';
+  const keyWords = entry.settingKey ? v110KeyWords(entry.settingKey) : '';
+  const where = v110Normalize(entry.where);
+  const text: V113EntryText = { title, key, keyWords, where, all: ` ${title} ${keyWords} ${where} ${entry.keywords} ` };
+  V113_ENTRY_TEXT.set(entry, text);
+  return text;
+}
+/** True when `token` starts a word of `text`. */
+export function v113WordStart(text: string, token: string): boolean { return text.startsWith(token) || text.includes(` ${token}`); }
+/** The score of one entry: 0 unless every word of the query starts a word of the entry, or the query is the start of its key. */
+export function v113ScoreEntry(entry: V110FindEntry, q: string, tokens: readonly string[], compact: string): number {
+  if (!q) return 0;
+  const t = v113EntryText(entry);
+  const keyHit = Boolean(t.key) && compact.length >= 3 && t.key.startsWith(compact);
+  const wordsHit = tokens.every(token => t.all.includes(` ${token}`));
+  if (!keyHit && !wordsHit) return 0;
+  let score = 1;
+  if (t.key && (compact === t.key || q === t.keyWords)) score += 1000;
+  else if (keyHit && !tokens.every(token => v113WordStart(t.title, token))) score += 30; // the key counts when the words of the title do not already
+  if (t.title === q) score += 900;
+  else if (t.title.startsWith(q)) score += 500;
+  else if (t.title.includes(` ${q}`)) score += 200;
+  tokens.forEach(token => {
+    if (v113WordStart(t.title, token)) score += 80;
+    else if (t.keyWords && v113WordStart(t.keyWords, token)) score += 30;
+    if (v113WordStart(entry.keywords, token)) score += 15;
+    if (v113WordStart(t.where, token)) score += 3;
+  });
+  return score;
+}
+
+// ---- b. Everyday words --------------------------------------------------------------------------------------------------------------------------
+export const V113_FIND_SYNONYMS: ReadonlyArray<{ words: readonly string[]; targets: readonly string[] }> = [
+  { words: ['easy', 'easier', 'hard', 'harder', 'hardest', 'difficulty', 'difficult', 'tougher'], targets: ['essential:rival_difficulty'] },
+  { words: ['speed', 'fast', 'faster', 'slow', 'slower'], targets: ['essential:rival_turn_speed'] },
+  { words: ['music', 'mute', 'unmute', 'audio', 'volume'], targets: ['essential:sound'] },
+  { words: ['restart', 'new game', 'new match', 'exit', 'quit', 'start over'], targets: ['action:leave_match', 'screen:main_menu'] },
+  { words: ['theme', 'dark mode', 'light mode', 'dark', 'colours', 'colors'], targets: ['essential:look'] },
+  { words: ['days', 'how long', 'match length'], targets: ['essential:game_length'] },
+  { words: ['hint', 'hints', 'tips', 'tutorial'], targets: ['essential:how_much_help'] },
+];
+/** The results an everyday word stands for. A word counts when the query is it, holds it as a whole word, or (4 letters or more) is its start. */
+export function v113SynonymTargets(query: string): string[] {
+  const q = v110Normalize(query);
+  if (!q) return [];
+  const out: string[] = [];
+  const padded = ` ${q} `;
+  V113_FIND_SYNONYMS.forEach(s => {
+    if (s.words.some(w => padded.includes(` ${w} `) || (q.length >= 4 && w.startsWith(q)))) s.targets.forEach(t => { if (!out.includes(t)) out.push(t); });
+  });
+  return out;
+}
+export const V113_SYNONYM_BOOST = 850;
+
+// ---- The 12 Essentials as results ---------------------------------------------------------------------------------------------------------------
+/** Where each Essentials choice is in the classic Settings (Find Anything opens it there while the layered view is off). */
+export const V113_ESSENTIAL_CLASSIC_ROUTES: Readonly<Record<string, V110FindRoute>> = {
+  experience: { kind: 'settings', tab: 'home' },
+  how_to_win: { kind: 'settings', tab: 'quickSetup', section: 'quickSetup.core', field: 'winCondition' },
+  game_length: { kind: 'settings', tab: 'quickSetup', section: 'quickSetup.core', field: 'totalDays' },
+  actions_per_day: { kind: 'settings', tab: 'gameplay', section: 'gameplay.actionLimits', field: 'actionLimitsEnabled' },
+  rival_difficulty: { kind: 'settings', tab: 'quickSetup', section: 'quickSetup.core', field: 'aiDifficulty' },
+  keep_safe: { kind: 'settings', tab: 'gameplay', section: 'gameplay.v99', field: 'matchRecoveryEnabled' },
+  how_much_help: { kind: 'layer', layer: 'intelligence', anchor: '#v9-intel-learn' },
+  rival_turn_speed: { kind: 'settings', tab: 'gameplay', section: 'gameplay.v99', field: 'rivalTurnPace' },
+  look: { kind: 'settings', tab: 'interfaceAcc', section: 'interface.appearance' },
+  text_size: { kind: 'settings', tab: 'interfaceAcc', section: 'interface.accessibility', field: 'v101-text-scale-label' },
+  motion: { kind: 'settings', tab: 'interfaceAcc', section: 'interface.mapSound', field: 'reducedMotion' },
+  sound: { kind: 'settings', tab: 'interfaceAcc', section: 'interface.mapSound', field: 'soundEnabled' },
+};
+/** One result per Essentials choice (they are listed after every other entry; their order is fixed). */
+export function v113EssentialEntries(firstOrder: number): V110FindEntry[] {
+  return V113_ESSENTIALS.map((e, i) => {
+    const route = V113_ESSENTIAL_CLASSIC_ROUTES[e.id];
+    const keys = e.keys.filter(k => !k.startsWith('(') && !k.includes('.'));
+    return {
+      id: `essential:${e.id}`, kind: 'essential' as V110FindKind, title: e.title, where: v110RouteWhere(route),
+      route, keywords: v110Normalize(`${e.title} essentials ${e.help} ${keys.map(k => `${v113SettingLabel(k)} ${v110KeyWords(k)}`).join(' ')}`),
+      ...(route.kind === 'layer' ? { needs: { match: true } } : {}), order: firstOrder + i,
+    };
+  });
+}
+
+// ---- With the layered Settings on, a setting opens its new home -------------------------------------------------------------------------------
+/** The classic tab nearest each group (where "Classic tabs" lands, and the tab a layered result opens on when its home is not a hub section). */
+export const V113_GROUP_TAB: Readonly<Record<V113GroupId, SettingsHubTabId>> = { essentials: 'home', match: 'gameplay', rival: 'aiTeams', teams: 'aiTeams', help: 'interfaceAcc', tools: 'replayDiag' };
+/** The result as the layered view shows it (unchanged while the layered view is off, and for internal state). */
+export function v113LayeredEntry(entry: V110FindEntry, settings: { readonly settingsLayersEnabled?: unknown } | null | undefined): V110FindEntry {
+  if (!v113LayersOn(settings)) return entry;
+  if (entry.kind === 'essential') {
+    const id = entry.id.replace(/^essential:/, '');
+    return { ...entry, where: 'Settings › ⭐ Essentials', route: { kind: 'settings', tab: 'home', field: `v113-essential-${id}` }, needs: undefined };
+  }
+  if (entry.kind === 'setting' && entry.settingKey) {
+    const key = entry.settingKey;
+    const home = v113HomeOf(key);
+    const group = v113GroupOfHome(home);
+    if (!home || !group || home === 'v113.internal') return entry;
+    const meta = v113GroupMeta(group);
+    const section = isV113PseudoId(home) ? undefined : home;
+    const tab = section ? (SETTINGS_HUB_SECTION_INDEX.find(s => s.id === section)?.tab || V113_GROUP_TAB[group]) : V113_GROUP_TAB[group];
+    const where = `Settings › ${meta.icon} ${meta.label}${home === 'v113.essentials' ? '' : ` › ${v113HomeTitle(home)}`}${v113Inactive(key) ? ' (Show inactive)' : ''}`;
+    const route: V110FindRoute = home === 'v113.essentials'
+      ? { kind: 'settings', tab: 'home', field: key }
+      : section ? { kind: 'settings', tab, section, field: key } : { kind: 'settings', tab, field: key };
+    return { ...entry, where, route, needs: undefined };
+  }
+  if (entry.kind === 'section' && entry.sectionId) {
+    const id = entry.sectionId;
+    if (V113_DISSOLVED_SECTIONS.includes(id)) return { ...entry, where: 'Settings › each of its settings now has its own home' };
+    const group = V113_SECTION_GROUP[id];
+    return group ? { ...entry, where: `Settings › ${v113GroupMeta(group).icon} ${v113GroupMeta(group).label}` } : entry;
+  }
+  return entry;
+}
+
+// ---- d. Ctrl/⌘+K in the Help window -------------------------------------------------------------------------------------------------------------
+/** The key the Help window shows for Find Anything (the window prints keys in capitals: CTRL/⌘+K). */
+export const V113_FIND_HELP_KEY = 'ctrl/⌘+k';
+/** The shortcut list the Help window shows: the classic list, plus Ctrl/⌘+K while Find Anything is on. */
+export function v113HelpShortcuts(settings: { readonly findAnythingEnabled?: unknown } | null | undefined): typeof KEYBOARD_SHORTCUTS {
+  if (!v110FindAnythingOn(settings)) return KEYBOARD_SHORTCUTS;
+  const withFind = { ...KEYBOARD_SHORTCUTS, [V113_FIND_HELP_KEY]: { action: 'findAnything', label: V110_FIND_LABEL, description: 'One search box for every action, screen, setting, shortcut and LAB card' } };
+  return withFind;
+}
+
+
+// ---- Suite v113sl ------------------------------------------------------------------------------------------------------------------------
+export const V113_SUITE_IDS: readonly string[] = ['v113sl'];
+/** Fingerprints of V10.1 (taken from the V10.1 file before UX-3): the defaults of its 599 settings and its profile and match scope lists. */
+export const V113_V101_FINGERPRINTS = { defaults: 'dcb4ea4a', profile: 'd3c29432', profileCount: 62, match: '71084305', matchCount: 36 } as const;
+export function v113Fingerprint(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(16).padStart(8, '0');
+}
+/** An element of a tree built from plain elements, with this section's own hook-free components drawn out (no renderer needed). */
+export interface V113TreeNode { type: string; props: Record<string, unknown> }
+const V113_DRAWN_OUT: ReadonlyArray<unknown> = [V113Block, V113Choice, V113Row, V113PresetOnlyList, V113EssentialsPage, V113GroupNav, V113LayoutSettingsBody];
+const V113_NAMED: ReadonlyArray<[unknown, string]> = [[V101TextScaleControl, 'V101TextScaleControl'], [V101RuleLockNote, 'V101RuleLockNote'], [V99NoEffectChip, 'V99NoEffectChip'], [V99AskAgainRow, 'V99AskAgainRow']];
+export function v113Tree(node: React.ReactNode, out: V113TreeNode[] = []): V113TreeNode[] {
+  if (node === null || node === undefined || typeof node === 'boolean' || typeof node === 'string' || typeof node === 'number') return out;
+  if (Array.isArray(node)) { node.forEach(child => v113Tree(child as React.ReactNode, out)); return out; }
+  if (!React.isValidElement(node)) return out;
+  const props = (node.props || {}) as Record<string, unknown>;
+  const t: unknown = node.type;
+  if (typeof t === 'function' && V113_DRAWN_OUT.includes(t)) { v113Tree((t as (p: Record<string, unknown>) => React.ReactNode)(props), out); return out; }
+  if (t === React.Fragment) { v113Tree(props.children as React.ReactNode, out); return out; }
+  const named = V113_NAMED.find(([fn]) => fn === t);
+  out.push({ type: typeof t === 'string' ? t : named ? named[1] : 'component', props });
+  v113Tree(props.children as React.ReactNode, out);
+  return out;
+}
+/** Writers that only record what was asked of them (the tests check that each control calls the game's own setter). */
+export function v113RecordingWriters(log: string[], state?: { settings: GameSettingsState }): V113Writers {
+  const apply = (patch: (prev: GameSettingsState) => GameSettingsState) => { if (state) state.settings = patch(state.settings); };
+  return {
+    tracked: (title, patch) => { log.push(`tracked:${title}`); apply(patch); },
+    set: (key, value, label, section) => { log.push(`set:${key}=${JSON.stringify(value)}|${label}|${section}`); if (state) state.settings = { ...state.settings, ...({ [key]: value } as unknown as Partial<GameSettingsState>) }; },
+    raw: patch => { log.push('raw'); apply(patch); },
+    simple: (key, value) => log.push(`simple:${key}=${JSON.stringify(value)}`),
+    difficulty: value => log.push(`difficulty:${value}`),
+    learningMode: mode => log.push(`learn:${mode}`),
+    theme: theme => log.push(`theme:${theme}`),
+    textScale: value => log.push(`textScale:${value}`),
+    open: patch => log.push(`open:${JSON.stringify(patch)}`),
+    resetAskAgain: () => log.push('resetAskAgain'),
+  };
+}
+const V113_TEST_CLASSES: V113Classes = { card: 'card', border: 'border', select: 'select', buttonSecondary: 'secondary', success: 'success', button: 'button' };
+type V113Handler = (arg?: unknown) => void;
+const v113Fire = (node: V113TreeNode | undefined, prop: 'onChange' | 'onClick', arg?: unknown): boolean => {
+  const fn = node ? node.props[prop] : undefined;
+  if (typeof fn !== 'function') return false;
+  (fn as V113Handler)(arg);
+  return true;
+};
+
+export function runV113SettingsLayersSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  // A check that could not run returns a text starting with SKIPPED: it is reported as skipped (passed: false, skipped: true), never as a pass.
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try {
+      const r = fn();
+      if (r !== true && /^SKIPPED\b/.test(r)) results.push({ id, name, passed: false, skipped: true, detail: r });
+      else results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) });
+    } catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  const keys = Object.keys(DEFAULT_GAME_SETTINGS);
+  const sectionIds = [...SETTINGS_HUB_SECTION_INDEX.map(s => s.id), V110_BALANCE_LAB_SECTION.id];
+  const on = (over: Partial<GameSettingsState> = {}): GameSettingsState => ({ ...createDefaultGameSettings(), settingsLayersEnabled: true, ...over });
+  const view = (over: Partial<V113ViewInput> = {}): V113View => v113BuildView({ group: 'match', showInactive: false, teamsOpen: true, searchMatchedIds: null, ...over });
+  const deps = (settings: GameSettingsState, over: Partial<V113Deps> = {}, log: string[] = []): V113Deps => ({
+    settings, ui: { settingsActiveTab: 'home' }, teamMode: false, difficulty: 'medium', difficultyLocked: false, learning: 'guided', theme: 'dark',
+    w: v113RecordingWriters(log), cls: V113_TEST_CLASSES, updateUiState: patch => log.push(`ui:${json(patch)}`), askAgainPrefs: null, disabledClassName: 'disabled', ...over,
+  });
+  const index = buildV110FindIndex();
+  const byId = new Map(index.map(entry => [entry.id, entry]));
+  const top = (q: string, n: number) => v110FindSearch(index, q, n).map(h => h.entry.id);
+
+  // ---- 1. The switch ------------------------------------------------------------------------------------------------------------------------
+  check('v113sl_01_switch_defaults_off', 'The layered Settings is off by default, only a real true turns it on, and it is read with === true', () => {
+    const d = createDefaultGameSettings();
+    const junk = sanitizeGameSettings({ ...d, settingsLayersEnabled: 'yes' } as unknown as Partial<GameSettingsState>);
+    const one = sanitizeGameSettings({ ...d, settingsLayersEnabled: 1 } as unknown as Partial<GameSettingsState>);
+    const yes = sanitizeGameSettings({ ...d, settingsLayersEnabled: true });
+    return (DEFAULT_GAME_SETTINGS.settingsLayersEnabled === false && d.settingsLayersEnabled === false && junk.settingsLayersEnabled === false && one.settingsLayersEnabled === false
+      && yes.settingsLayersEnabled === true && !v113LayersOn(d) && !v113LayersOn({ settingsLayersEnabled: 'true' }) && !v113LayersOn(null) && v113LayersOn({ settingsLayersEnabled: true })) || json({ junk: junk.settingsLayersEnabled, one: one.settingsLayersEnabled });
+  });
+  check('v113sl_02_switch_is_a_profile_setting', 'It is a profile setting (remembered between visits, never written into or read back from a save), filed under Interface & Accessibility, and the catalog describes it', () => {
+    const save: SaveGameData = JSON.parse(json(createV95SaveFixture()));
+    (save.gameSettings as unknown as Record<string, unknown>).settingsLayersEnabled = true;
+    const restored = validateSaveDataCore(save).gameSettings as unknown as Record<string, unknown>;
+    const sections = SETTINGS_HUB_SECTION_INDEX.filter(s => (s.fieldKeys as readonly string[]).includes('settingsLayersEnabled'));
+    const catalog = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(row => row.key === 'settingsLayersEnabled');
+    return (V95_PROFILE_SCOPED_SETTING_KEYS.includes('settingsLayersEnabled') && !(V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('settingsLayersEnabled')
+      && V99_PERSISTED_PROFILE_SETTING_KEYS.includes('settingsLayersEnabled') && !('settingsLayersEnabled' in restored) && sections.length === 1 && sections[0].id === V113_SECTION_ID
+      && sections[0].tab === 'interfaceAcc' && !/v\d|new in/i.test(sections[0].title) && Boolean(catalog) && catalog!.label === V113_LABEL && catalog!.defaultValue === false && isV113SettingKeyName('settingsLayersEnabled'))
+      || json({ restored: restored.settingsLayersEnabled, sections: sections.map(s => s.id), catalog: Boolean(catalog) });
+  });
+  check('v113sl_03_suite_registered', 'v113sl is registered once, quick tier, right after v110fa, and the suite manifest is whole', () => {
+    const spec = V95_EXISTING_SUITES.filter(s => s.id === 'v113sl');
+    const ids = V95_EXISTING_SUITES.map(s => s.id);
+    const problems = v101CheckSuiteManifest(V95_EXISTING_SUITES);
+    return (spec.length === 1 && spec[0].tier === 'quick' && spec[0].label.startsWith('V11.0 ') && ids.indexOf('v113sl') === ids.indexOf('v110fa') + 1 && json(V113_SUITE_IDS) === json(['v113sl'])
+      && V101_SUITE_MANIFEST.some(([fn, where]) => fn === 'runV113SettingsLayersSelfTests' && where === 'v113sl') && problems.length === 0) || json({ spec: spec.length, problems });
+  });
+  check('v113sl_04_off_is_ux2', 'Off, nothing changes: no hub, no group bar, every Find Anything result is the very same object, and Help gets the very same shortcut list', () => {
+    const layers = v113SettingsLayers(deps(createDefaultGameSettings()));
+    const same = index.every(entry => v113LayeredEntry(entry, createDefaultGameSettings()) === entry);
+    return (!layers.on && layers.hub(null) === null && layers.hub(new Set(['gameplay.core'])) === null && same && v113HelpShortcuts(createDefaultGameSettings()) === KEYBOARD_SHORTCUTS) || json({ on: layers.on, same });
+  });
+  check('v113sl_05_keys_defaults_scopes_kept', 'Every setting keeps its key, default and scope: V10.1\'s 599 defaults and its profile and match lists are unchanged, and the only new keys are the two V11.0 switches', () => {
+    const mapKeys = V110_MAP_SETTING_KEYS.slice().sort();
+    const defaults = v113Fingerprint(json(mapKeys.map(k => [k, (DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>)[k]])));
+    const fresh = ['findAnythingEnabled', 'settingsLayersEnabled'];
+    const profile = V95_PROFILE_SCOPED_SETTING_KEYS.filter(k => !fresh.includes(k)).slice().sort();
+    const match = (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).filter(k => !fresh.includes(k)).slice().sort();
+    const extra = keys.filter(k => !V110_MAP_SETTING_KEYS.includes(k));
+    const f = V113_V101_FINGERPRINTS;
+    return (defaults === f.defaults && v113Fingerprint(json(profile)) === f.profile && profile.length === f.profileCount && v113Fingerprint(json(match)) === f.match && match.length === f.matchCount
+      && json(extra.slice().sort()) === json(fresh) && keys.length === 601) || json({ defaults, profile: v113Fingerprint(json(profile)), match: v113Fingerprint(json(match)), extra });
+  });
+
+  // ---- 2. The map, walked ---------------------------------------------------------------------------------------------------------------------
+  check('v113sl_06_walk_every_setting_one_home', 'Walk: each of the 601 settings has exactly one home, every home is a real section or a layered block, and no home names an unknown key', () => {
+    const seen = new Map<string, string[]>();
+    Object.entries(V113_HOME_KEYS).forEach(([home, ks]) => ks.forEach(k => seen.set(k, [...(seen.get(k) || []), home])));
+    const twice = [...seen.entries()].filter(([, homes]) => homes.length !== 1).map(([k]) => k);
+    const missing = keys.filter(k => !seen.has(k));
+    const unknown = [...seen.keys()].filter(k => !keys.includes(k));
+    const badHomes = Object.keys(V113_HOME_KEYS).filter(home => !isV113PseudoId(home) && !sectionIds.includes(home));
+    return (twice.length === 0 && missing.length === 0 && unknown.length === 0 && badHomes.length === 0 && seen.size === 601) || json({ twice, missing, unknown, badHomes });
+  });
+  check('v113sl_07_walk_every_section_grouped', 'Walk: all 89 sections (the map\'s 87 — 86 indexed and the Balance Lab — plus Find Anything\'s and Settings Layout\'s) belong to one of the six groups', () => {
+    const missing = sectionIds.filter(id => !isV113GroupId(V113_SECTION_GROUP[id]));
+    const stale = Object.keys(V113_SECTION_GROUP).filter(id => !sectionIds.includes(id));
+    const mapped = [...V110_MAP_SECTION_IDS, V110_FIND_SECTION_ID, V113_SECTION_ID].every(id => isV113GroupId(V113_SECTION_GROUP[id]));
+    return (missing.length === 0 && stale.length === 0 && mapped && Object.keys(V113_SECTION_GROUP).length === 89 && V110_MAP_SECTION_IDS.length === 87) || json({ missing, stale });
+  });
+  check('v113sl_08_group_counts', 'The five goal groups hold the map\'s counts: Match & rules 100, Your rival 104, Teams & automation 251, Help, screen & sound 62 (+ the new switch), Records & tools 61 (+ deterministicRngActive); Essentials 15', () => {
+    const counts = v113GroupKeyCounts();
+    const internal = (V113_HOME_KEYS['v113.internal'] || []).length;
+    return (json(counts) === json({ essentials: 15, match: 100, rival: 104, teams: 251, help: 63, tools: 62 }) && internal === 6 && v113HomeOf('deterministicRngActive') === 'advancedSystems.replaySafety'
+      && v113HomeOf('settingsLayersEnabled') === V113_SECTION_ID) || json({ counts, internal });
+  });
+  check('v113sl_09_walk_single_homes_named_by_the_map', 'The misfiled 18 (§11.4) live where their control is or get a row there; the version switches are filed by goal; nothing keeps a second home', () => {
+    const want: Record<string, string> = {
+      directiveBudgetEnabled: 'teamModeAi.overseer', directivesPerTurn: 'teamModeAi.overseer', directiveEscalationCost: 'teamModeAi.overseer', preserveReplayDeterminism: 'autoMode.advanced',
+      aiEffectivenessScorecardEnabled: 'ai.settings', aiEffectivenessTrackCompliance: 'ai.settings', commandCenterSettings: 'aiTeams.coPilot', ledgerDiagnosticsEnabled: 'advancedSystems.gameActivityLedger',
+      ledgerPruneRetentionLimit: 'advancedSystems.gameActivityLedger', ledgerAutoPruneEnabled: 'advancedSystems.gameActivityLedger', ledgerExportCompressionEnabled: 'advancedSystems.gameActivityLedger',
+      rivalRecapEnabled: 'v113.rivalExtras', rivalRacesEnabled: 'v113.rivalExtras', dailyFixedRulesEnabled: 'v113.dailyJournal', matchJournalEnabled: 'v113.dailyJournal', turnDigestEnabled: 'v113.turnSummaries',
+      classicRulesV100: 'v113.classicRules', classicRivalV99: 'v113.classicRival', matchRecoveryEnabled: 'v113.essentials', rivalTurnPace: 'v113.essentials', teamIntelligenceOsEnabled: 'v113.teamOs',
+    };
+    GUARDIAN_PRESENTATION_KEYS_V113.forEach(k => { want[k] = 'aiTeams.coPilot'; });
+    const wrong = Object.entries(want).filter(([k, home]) => v113HomeOf(k) !== home).map(([k]) => `${k} -> ${v113HomeOf(k)}`);
+    const rowless = V113_ROWS.filter(row => v113HomeOf(row.key) !== row.home).map(row => row.key);
+    return (wrong.length === 0 && rowless.length === 0 && Object.keys(want).length === 28) || json({ wrong, rowless });
+  });
+
+  // ---- 3. Essentials -------------------------------------------------------------------------------------------------------------------------
+  const essentialsTree = (over: Partial<V113EssentialsProps> = {}, log: string[] = []) => v113Tree(V113EssentialsPage({ settings: on(), difficulty: 'medium', difficultyLocked: false, theme: 'dark', learning: 'guided', w: v113RecordingWriters(log), cls: V113_TEST_CLASSES, ...over }));
+  const byTestId = (tree: V113TreeNode[], id: string) => tree.find(n => n.props['data-testid'] === id);
+  check('v113sl_10_essentials_twelve', 'Essentials has the 12 choices of the brief, in its order, each drawn with its own anchor', () => {
+    const titles = V113_ESSENTIALS.map(e => e.title);
+    const tree = essentialsTree();
+    const drawn = V113_ESSENTIALS.filter(e => tree.some(n => n.props['data-setting-key'] === `v113-essential-${e.id}`)).length;
+    return (json(titles) === json(['Experience', 'How to win', 'Game length', 'Actions per day', 'Rival difficulty', 'Keep my match safe', 'How much help', 'Rival turn speed', 'Look', 'Text size', 'Motion', 'Sound']) && drawn === 12) || json({ titles, drawn });
+  });
+  check('v113sl_11_essentials_write_through_the_games_calls', 'Each Essentials control writes through the call the game already uses (the Simple view\'s handler, the difficulty action, the Learn tab, the theme, Text size)', () => {
+    const log: string[] = [];
+    const tree = essentialsTree({}, log);
+    const fire = (key: string, prop: 'onChange' | 'onClick', arg?: unknown) => v113Fire(byTestId(tree, `v113-essential-input-${key}`), prop, arg);
+    const ok = [fire('experienceMode', 'onChange', { target: { value: 'nation' } }), fire('winCondition', 'onChange', { target: { value: 'regions' } }), fire('totalDays', 'onChange', { target: { value: '45' } }),
+      fire('actionLimitsEnabled', 'onClick'), fire('aiDifficulty', 'onChange', { target: { value: 'hard' } }), fire('matchRecoveryEnabled', 'onClick'), fire('warnBeforeUnloadEnabled', 'onClick'),
+      fire('guidedFirstRunEnabled', 'onClick'), fire('rivalTurnPace', 'onChange', { target: { value: 'fast' } }), fire('visualMode', 'onChange', { target: { value: 'classic' } }),
+      fire('reducedMotion', 'onChange', { target: { value: 'on' } }), fire('soundEnabled', 'onClick'), fire('soundVolume', 'onChange', { target: { value: '0.4' } })];
+    tree.filter(n => n.props.role === 'radio').forEach(n => v113Fire(n, 'onClick'));
+    v113Fire(tree.find(n => n.type === 'V101TextScaleControl'), 'onChange', 1.25);
+    const d = DEFAULT_GAME_SETTINGS;
+    const want = ['simple:experienceMode="nation"', 'simple:winCondition="regions"', 'simple:totalDays=45', `simple:actionLimitsEnabled=${d.actionLimitsEnabled !== true}`, 'difficulty:hard', `simple:matchRecoveryEnabled=${d.matchRecoveryEnabled !== true}`,
+      `simple:warnBeforeUnloadEnabled=${d.warnBeforeUnloadEnabled !== true}`, `simple:guidedFirstRunEnabled=${d.guidedFirstRunEnabled === false}`, 'simple:rivalTurnPace="fast"', 'simple:visualMode="classic"', 'simple:reducedMotion="on"', `simple:soundEnabled=${d.soundEnabled === false}`,
+      'simple:soundVolume=0.4', ...LEARNING_MODE_OPTIONS.map(o => `learn:${o.id}`), ...V113_THEMES.map(t => `theme:${t}`), 'textScale:1.25'];
+    const missing = want.filter(w => !log.includes(w));
+    return (ok.every(Boolean) && missing.length === 0 && !log.some(l => l.startsWith('tracked:') || l.startsWith('set:') || l === 'raw')) || json({ ok, missing, log });
+  });
+  check('v113sl_12_difficulty_is_match_state', 'Rival difficulty shows and writes the match\'s difficulty (SET_AI_DIFFICULTY), never the unused aiDifficulty key; a running V10.1 match locks it and says the change waits for the next match', () => {
+    const tree = essentialsTree({ settings: on({ aiDifficulty: 'easy' } as Partial<GameSettingsState>), difficulty: 'expert' });
+    const select = byTestId(tree, 'v113-essential-input-aiDifficulty');
+    const locked = essentialsTree({ difficultyLocked: true });
+    const lockedSelect = byTestId(locked, 'v113-essential-input-aiDifficulty');
+    const note = byTestId(locked, 'v113-difficulty-locked');
+    const free = gameStateReducer({ ...initialGameState, aiDifficulty: 'medium' }, { type: 'SET_AI_DIFFICULTY', payload: 'hard' });
+    const essentialsKeys = V113_ESSENTIALS.find(e => e.id === 'rival_difficulty')!.keys;
+    const noteText = note ? (Array.isArray(note.props.children) ? (note.props.children as unknown[]).join('') : String(note.props.children ?? '')) : '';
+    return (select?.props.value === 'expert' && select?.props.disabled === false && lockedSelect?.props.disabled === true && noteText.includes(V101_RULE_LOCK_REASON)
+      && /next match/.test(V101_RULE_LOCK_REASON) && free.aiDifficulty === 'hard' && !essentialsKeys.includes('aiDifficulty') && v113HomeOf('aiDifficulty') === 'v113.internal') || json({ value: select?.props.value, locked: lockedSelect?.props.disabled, note: Boolean(note) });
+  });
+  check('v113sl_13_look_has_the_theme', 'Look includes the theme, which lives in the profile record (the theme switch), not in a settings key; the four themes are the hub\'s own', () => {
+    const tree = essentialsTree({ theme: 'retro' });
+    const radios = tree.filter(n => n.props.role === 'radio' && n.props['aria-checked'] === true);
+    return (!('theme' in DEFAULT_GAME_SETTINGS) && json(V113_THEMES) === json(['dark', 'light', 'retro', 'system']) && V113_ESSENTIALS.find(e => e.id === 'look')!.keys.includes('(profile) theme')
+      && radios.some(n => String(n.props.children) === 'retro')) || json(radios.map(n => n.props.children));
+  });
+  check('v113sl_14_learn_mode_is_one_function', 'How much help and the Learn tab write the same thing: off clears onboarding only; a mode sets the guidance and starts a pending welcome', () => {
+    const prev: GameSettingsState = { ...createDefaultGameSettings(), playerIntentOnboardingEnabled: true };
+    const off = v113LearningModeSettings(prev, 'off', 3);
+    const guided = v113LearningModeSettings(prev, 'guided', 3);
+    const changedByOff = Object.keys(off).filter(k => json((off as unknown as Record<string, unknown>)[k]) !== json((prev as unknown as Record<string, unknown>)[k]));
+    return (json(changedByOff) === json(['playerIntentOnboardingEnabled']) && off.playerIntentOnboardingEnabled === false && guided.playerIntentOnboardingEnabled === true
+      && resolveLearningMode(guided, sanitizeLearningState(guided.guidedLearning)) === 'guided' && resolveLearningMode(off, null) === 'off') || json({ changedByOff, mode: resolveLearningMode(guided, null) });
+  });
+
+  // ---- 4. Groups, gates, inactive, presets ---------------------------------------------------------------------------------------------------
+  check('v113sl_15_five_groups_bar', 'Five goal groups and Essentials replace the 11 tabs: a tab bar of six, one selected, with Show inactive and the way back to the classic tabs', () => {
+    const tree = v113Tree(V113GroupNav({ active: 'rival', searching: false, showInactive: false, inactiveCount: 21, onGroup: () => undefined, onShowInactive: () => undefined, onClassic: () => undefined, cls: V113_TEST_CLASSES }));
+    const tabs = tree.filter(n => n.props.role === 'tab');
+    const selected = tabs.filter(n => n.props['aria-selected'] === true).map(n => n.props['data-testid']);
+    return (json(V113_GROUP_IDS) === json(['essentials', 'match', 'rival', 'teams', 'help', 'tools']) && tabs.length === 6 && json(selected) === json(['v113-group-rival'])
+      && Boolean(byTestId(tree, 'v113-show-inactive')) && Boolean(byTestId(tree, 'v113-classic-layout')) && json(V113_GROUPS.slice(1).map(g => g.label)) === json(['Match & rules', 'Your rival', 'Teams & automation', 'Help, screen & sound', 'Records & tools'])) || json({ tabs: tabs.length, selected });
+  });
+  check('v113sl_16_sections_follow_their_group', 'A group shows exactly its own sections; the seven dissolved sections never show; a section the map does not know shows under Records & tools', () => {
+    const wrong: string[] = [];
+    V113_GROUP_IDS.forEach(g => {
+      const v = view({ group: g });
+      sectionIds.forEach(id => {
+        const want = !V113_DISSOLVED_SECTIONS.includes(id) && V113_SECTION_GROUP[id] === g;
+        if (v.sectionVisible(id) !== want) wrong.push(`${g}:${id}`);
+      });
+    });
+    return (wrong.length === 0 && view({ group: 'tools' }).sectionVisible('someFuture.section') && !view({ group: 'match' }).sectionVisible('someFuture.section') && V113_DISSOLVED_SECTIONS.length === 7) || wrong.slice(0, 12).join(', ');
+  });
+  check('v113sl_17_teams_gate_closed', 'Until Team Mode or the master switch is on, Teams & automation shows the master switch and the three solo automation sections only (24 settings); the other 227 wait', () => {
+    const v = view({ group: 'teams', teamsOpen: false });
+    const shown = sectionIds.filter(id => v.sectionVisible(id)).sort();
+    const soloKeys = V113_TEAMS_SOLO_SECTIONS.reduce((n, id) => n + (V113_HOME_KEYS[id] || []).length, 0);
+    const waiting = Object.entries(V113_HOME_KEYS).filter(([home]) => v113GroupOfHome(home) === 'teams' && !V113_TEAMS_SOLO_SECTIONS.includes(home)).reduce((n, [, ks]) => n + ks.length, 0);
+    return (json(shown) === json(V113_TEAMS_SOLO_SECTIONS.slice().sort()) && v.pseudoVisible('v113.teamsGate') && !v.pseudoVisible('v113.teamOs') && soloKeys === 24 && waiting === 227
+      && v113HomeOf(V113_TEAMS_MASTER_KEY) === 'teamModeAi.competitiveAi') || json({ shown, soloKeys, waiting });
+  });
+  check('v113sl_18_teams_gate_opens', 'A Team Mode match or teamCompetitiveAiEnabled (a real true) opens every team section and the Team Intelligence OS; the gate card goes away', () => {
+    const open = view({ group: 'teams', teamsOpen: true });
+    const teamSections = sectionIds.filter(id => V113_SECTION_GROUP[id] === 'teams');
+    return (v113TeamsOpen({ teamCompetitiveAiEnabled: true }, false) && v113TeamsOpen({}, true) && !v113TeamsOpen({ teamCompetitiveAiEnabled: 'true' }, false) && !v113TeamsOpen(null, false)
+      && teamSections.every(id => open.sectionVisible(id)) && open.pseudoVisible('v113.teamOs') && !open.pseudoVisible('v113.teamsGate') && teamSections.length === 27) || json(teamSections.filter(id => !open.sectionVisible(id)));
+  });
+  check('v113sl_19_inactive_behind_show_inactive', 'The 20 no-effect settings and deterministicRngActive (nothing reads it) are drawn only with Show inactive on, wherever they are drawn', () => {
+    const inert = [...V99_INERT_SETTINGS, ...V101_INERT_SETTINGS].map(row => row.key);
+    const inactive = v113InactiveKeys();
+    const hidden = view({ showInactive: false }); const shown = view({ showInactive: true });
+    const leaks = inactive.filter(k => { const home = v113HomeOf(k) || ''; return hidden.keyVisible(k, home) || !shown.keyVisible(k, home); });
+    return (inert.length === 20 && inactive.length === 21 && inert.every(k => inactive.includes(k)) && inactive.includes('deterministicRngActive') && leaks.length === 0) || json({ inert: inert.length, inactive: inactive.length, leaks });
+  });
+  check('v113sl_20_presets_only_list', '"Set by presets" lists, read-only with their value, the 45 settings only presets set (44 with no control and deterministicRngActive), the 5 only a reset changes and the 5 with no effect that nothing in Settings draws; those with no effect wait behind Show inactive', () => {
+    const presetKeys = v113PresetOnlyKeys();
+    const noControl = presetKeys.filter(k => V110_SETTING_VERDICTS[k] === 'no-control');
+    const resetOnly = presetKeys.filter(k => V110_SETTING_VERDICTS[k] === 'reset-only');
+    const listed: string[] = [];
+    const controls: string[] = [];
+    V113_GROUP_IDS.forEach(g => {
+      const node = V113PresetOnlyList({ group: g, settings: createDefaultGameSettings(), showInactive: true, cls: V113_TEST_CLASSES });
+      v113Tree(node).forEach(n => { const key = n.props['data-setting-key']; if (n.type === 'div' && typeof key === 'string' && keys.includes(key)) listed.push(key); if (['input', 'select', 'button', 'textarea'].includes(n.type)) controls.push(n.type); });
+    });
+    const hiddenRng = v113Tree(V113PresetOnlyList({ group: 'tools', settings: createDefaultGameSettings(), showInactive: false, cls: V113_TEST_CLASSES })).some(n => n.props['data-setting-key'] === 'deterministicRngActive');
+    const drawnInactive = ['scenarioEngineV73Enabled', 'customScenarioBuilderEnabled', 'nationalEventsEnabled', 'aiPersistentAivsAiEnabled', 'priorityTransparencyEnabled', 'decisionTransparencyExplanationDepth', 'projectedOutcomeEnabled', 'governanceVetoUsesPerMatch'];
+    const unseen = v113InactiveKeys().filter(k => !presetKeys.includes(k) && !drawnInactive.includes(k)); // every setting with no effect is drawn somewhere behind Show inactive
+    return (noControl.length === 44 && resetOnly.length === 5 && presetKeys.length === 55 && presetKeys.includes('deterministicRngActive') && !presetKeys.includes('aiDifficulty') && unseen.length === 0
+      && V113_READONLY_INACTIVE.every(k => v113Inactive(k)) && json(listed.slice().sort()) === json(presetKeys.slice().sort()) && controls.length === 0 && !hiddenRng) || json({ noControl: noControl.length, resetOnly: resetOnly.length, listed: listed.length, controls, hiddenRng, unseen });
+  });
+  check('v113sl_21_presets_show_current_values', 'The read-only list shows what each setting holds now (on/off, numbers, words, lists)', () => {
+    const key = v113PresetOnlyKeys().find(k => typeof (DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>)[k] === 'boolean' && v113GroupOfKey(k) !== null && !v113Inactive(k));
+    if (!key) return 'SKIPPED: no boolean preset-only setting in a group';
+    const group = v113GroupOfKey(key)!;
+    const now = !(DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>)[key];
+    const tree = v113Tree(V113PresetOnlyList({ group, settings: { ...createDefaultGameSettings(), ...({ [key]: now } as unknown as Partial<GameSettingsState>) }, showInactive: false, cls: V113_TEST_CLASSES }));
+    const value = tree.find(n => n.props['data-testid'] === `v113-value-${key}`);
+    const formats = [v113FormatValue(true), v113FormatValue(false), v113FormatValue(3), v113FormatValue(0.12345), v113FormatValue('high_impact'), v113FormatValue([]), v113FormatValue(['a', 'b']), v113FormatValue({})];
+    return (value?.props.children === (now ? 'On' : 'Off') && json(formats) === json(['On', 'Off', '3', '0.123', 'high impact', 'none', 'a, b', 'none'])) || json({ key, value: value?.props.children, formats });
+  });
+
+  // ---- 5. One home: moved blocks, kept controls, rows -----------------------------------------------------------------------------------------
+  check('v113sl_22_moved_blocks_draw_in_their_home', 'A block of controls homed elsewhere is not drawn where it was: its home draws it (once) with "moved here from"; an unknown block draws in place', () => {
+    const v = view({ group: 'tools' });
+    const hub = v113CreateHub(v, () => null, id => <span data-testid={`moved-${id}`}>{V113_MOVED_BLOCKS[id].from}</span>);
+    const here = hub.place('ai.settings:determinism', () => <div data-testid="block-body">body</div>);
+    const inPlace = hub.place('nowhere:block', () => <div data-testid="kept">kept</div>);
+    const home = v113Tree(hub.extras('advancedSystems.replaySafety'));
+    const elsewhere = hub.extras('ai.settings');
+    const blockKeys = Object.entries(V113_MOVED_BLOCKS).filter(([, b]) => b.keys.some(k => v113HomeOf(k) !== b.home)).map(([id]) => id);
+    return (here === null && React.isValidElement(inPlace) && home.filter(n => n.props['data-testid'] === 'block-body').length === 1 && home.some(n => n.props['data-testid'] === 'moved-ai.settings:determinism')
+      && elsewhere === null && blockKeys.length === 0 && Object.keys(V113_MOVED_BLOCKS).length === 5) || json({ here: here === null, home: home.length, blockKeys });
+  });
+  check('v113sl_23_controls_kept_only_at_home', 'A control drawn away from its setting\'s home is not drawn there (keep is false), and is drawn at home', () => {
+    const hub = v113CreateHub(view(), () => null, () => null);
+    const pairs: Array<[string, string, boolean]> = [['totalDays', 'gameplay.core', false], ['totalDays', 'v113.essentials', true], ['aiActionsPerDay', 'gameplay.core', true], ['winCondition', 'competition.regionControl', false],
+      ['negotiationMode', 'economy.winCondition', false], ['negotiationMode', 'competition.negotiations', true], ['teamModeAiSystemsEnabled', 'interface.uxAssist', false], ['teamModeAiSystemsEnabled', 'teamModeAi.competitiveAi', true],
+      ['scenarioEngineV73Enabled', 'gameplay.scenarioMode', false]];
+    const wrong = pairs.filter(([k, at, want]) => hub.keep(k, at) !== want).map(([k, at]) => `${k}@${at}`);
+    return wrong.length === 0 || wrong.join(', ');
+  });
+  check('v113sl_24_rows_write_like_the_original_controls', 'Each row for a control that lived outside its home writes through the same setter, title, label and section as that control', () => {
+    const log: string[] = [];
+    const w = v113RecordingWriters(log);
+    const flip = (key: string) => { const spec = V113_ROWS.find(r => r.key === key)!; v113FlipRow(spec, false, w); return log[log.length - 1]; };
+    const got = {
+      guardian: flip('showGuardianFloatingButton'), ledger: flip('ledgerDiagnosticsEnabled'), prune: flip('ledgerAutoPruneEnabled'), scorecard: flip('aiEffectivenessScorecardEnabled'),
+      systems: flip('teamModeAiSystemsEnabled'), os: flip('teamIntelligenceOsEnabled'), v101: flip('rivalRecapEnabled'), v100: flip('classicRivalV99'), v99: flip('turnDigestEnabled'),
+    };
+    const want = { guardian: 'raw', ledger: 'set:ledgerDiagnosticsEnabled=true|Ledger Diagnostics|Activity Ledger', prune: 'set:ledgerAutoPruneEnabled=true|Auto-Prune Ledger|Activity Ledger',
+      scorecard: 'set:aiEffectivenessScorecardEnabled=true|AI Effectiveness Scorecard Enabled|AI Scorecard', systems: 'set:teamModeAiSystemsEnabled=true|Team Mode AI Systems|Interface → UX Assist Features',
+      os: 'tracked:Team Intelligence 2.0', v101: `tracked:${V101_SETTINGS_HUB_SECTION_TITLE}`, v100: `tracked:${V100_SETTINGS_HUB_SECTION_TITLE}`, v99: `tracked:${V99_SETTINGS_HUB_SECTION_TITLE}` };
+    const spec = V113_ROWS.find(r => r.key === 'ledgerPruneRetentionLimit')!;
+    const n = spec.control.kind === 'number' ? spec.control : null;
+    return (json(got) === json(want) && Boolean(n) && n!.min === 100 && n!.max === 10000 && n!.fallback === 1000) || json(got);
+  });
+  check('v113sl_25_tracked_rows_read_the_previous_value', 'A tracked row flips the value it finds (as the old sections did); the Team OS switches count "not false" as on, as the LAB does', () => {
+    const state = { settings: createDefaultGameSettings() };
+    const w = v113RecordingWriters([], state);
+    const os = V113_ROWS.find(r => r.key === 'teamIntelligenceOsEnabled')!;
+    const recap = V113_ROWS.find(r => r.key === 'rivalRecapEnabled')!;
+    const rec = () => state.settings as unknown as Record<string, unknown>;
+    const osBefore = v113ToggleState(rec(), 'teamIntelligenceOsEnabled', 'notFalse');
+    v113FlipRow(os, osBefore, w);
+    const osAfter = rec().teamIntelligenceOsEnabled;
+    const recapBefore = rec().rivalRecapEnabled;
+    v113FlipRow(recap, false, w); v113FlipRow(recap, false, w); // the flip reads prev, not the (stale) "on" it was handed
+    return (osBefore === (DEFAULT_GAME_SETTINGS.teamIntelligenceOsEnabled !== false) && osAfter === (DEFAULT_GAME_SETTINGS.teamIntelligenceOsEnabled === false) && rec().rivalRecapEnabled === recapBefore) || json({ osBefore, osAfter, recap: rec().rivalRecapEnabled });
+  });
+  check('v113sl_26_explain_row_writes_both_keys', 'The Co-Pilot explanations row writes playerIntentExplainMode and playerIntentExplainRoutineActions together, as the INTELLIGENCE tab does', () => {
+    const state = { settings: createDefaultGameSettings() };
+    const spec = V113_ROWS.find(r => r.key === 'playerIntentExplainMode')!;
+    v113WriteRow(spec, 'every', v113RecordingWriters([], state));
+    const every = { m: state.settings.playerIntentExplainMode, r: state.settings.playerIntentExplainRoutineActions };
+    v113WriteRow(spec, 'routine_off', v113RecordingWriters([], state));
+    return (every.m === 'every' && every.r === true && state.settings.playerIntentExplainMode === 'routine_off' && state.settings.playerIntentExplainRoutineActions === false && v113HomeOf('playerIntentExplainRoutineActions') === 'aiTeams.coPilot') || json({ every, now: state.settings.playerIntentExplainMode });
+  });
+  check('v113sl_27_search_shows_each_hit_in_its_home', 'Searching still searches everything: a hit in a dissolved section shows the homes of its settings; a matched key shows its own home', () => {
+    const v = view({ searchMatchedIds: new Set(['quickSetup.core']) });
+    const k = view({ searchMatchedIds: new Set(['ledgerAutoPruneEnabled']) });
+    return (!v.sectionVisible('quickSetup.core') && v.pseudoVisible('v113.essentials') && v.sectionVisible('interface.uxAssist') && k.sectionVisible('advancedSystems.gameActivityLedger') && !k.pseudoVisible('v113.presetsOnly') && v.searching) || json({ quick: v.sectionVisible('quickSetup.core'), essentials: v.pseudoVisible('v113.essentials') });
+  });
+  check('v113sl_28_navigation_lands_in_the_right_group', 'Opening Settings at a setting lands in that setting\'s group; at a section, its group; at a tab, the tab\'s group; the chosen group lasts while the tab stays', () => {
+    const got = [v113GroupForNav('quickSetup.core', 'totalDays', 'quickSetup'), v113GroupForNav(null, 'teamBrainModeV63', 'aiTeams'), v113GroupForNav('ai.memory', null, 'aiTeams'),
+      v113GroupForNav(null, null, 'replayDiag'), v113GroupForNav('gameplay.v99', null, 'gameplay'), v113GroupForNav('interface.mapSound', null, 'interfaceAcc'), v113GroupForNav(null, null, 'nonsense')];
+    const active = [v113ActiveGroup({ settingsActiveTab: 'aiTeams' }), v113ActiveGroup({ settingsActiveTab: 'aiTeams', v113Group: 'teams', v113GroupTab: 'aiTeams' }), v113ActiveGroup({ settingsActiveTab: 'gameplay', v113Group: 'teams', v113GroupTab: 'aiTeams' }), v113ActiveGroup({ v113Group: 'bogus', v113GroupTab: 'home' })];
+    return (json(got) === json(['essentials', 'teams', 'rival', 'tools', 'match', 'essentials', 'essentials']) && json(active) === json(['rival', 'teams', 'match', 'essentials'])) || json({ got, active });
+  });
+  check('v113sl_29_controller_draws_the_groups_blocks', 'The layered hub draws Essentials on the home tab, the gate card in Teams & automation until it opens, and the ask-again row with the classic rules', () => {
+    const at = (group: V113GroupId, teamMode: boolean) => {
+      const layers = v113SettingsLayers(deps(on(), { ui: { settingsActiveTab: 'home', v113Group: group, v113GroupTab: 'home' }, teamMode }));
+      const hub = layers.hub(null)!;
+      return v113Tree(<>{layers.head(hub)}{layers.tail(hub)}</>).map(n => String(n.props['data-testid'] || '')).filter(Boolean);
+    };
+    const home = at('essentials', false); const teams = at('teams', false); const teamsOpen = at('teams', true); const match = at('match', false);
+    return (home.includes('v113-essentials') && teams.includes('v113-block-v113.teamsGate') && !teams.includes('v113-block-v113.teamOs') && teamsOpen.includes('v113-block-v113.teamOs') && !teamsOpen.includes('v113-block-v113.teamsGate')
+      && match.includes('v113-block-v113.askAgain') && match.includes('v113-block-v113.classicRules') && !home.includes('v113-block-v113.askAgain')) || json({ home: home.slice(0, 6), teams: teams.slice(0, 6), match: match.slice(0, 6) });
+  });
+  check('v113sl_30_layout_switch_row', 'Settings Layout has its own switch row (off by default), and the group bar\'s "Classic tabs" turns the layered view off through the same setter and lands on the nearest classic tab', () => {
+    const log: string[] = [];
+    const layers = v113SettingsLayers(deps(on(), {}, log));
+    const nav = v113Tree(layers.nav(false));
+    v113Fire(byTestId(nav, 'v113-classic-layout'), 'onClick');
+    v113Fire(byTestId(nav, 'v113-group-teams'), 'onClick');
+    const row = v113Tree(V113LayoutSettingsBody({ on: false, onToggle: () => undefined, onClassName: 'on', offClassName: 'off' }));
+    const button = byTestId(row, 'v113-setting-settingsLayersEnabled');
+    return (log.includes('set:settingsLayersEnabled=false|Essentials and goal groups|Interface → Settings Layout') && log.includes(`ui:${json({ settingsActiveTab: 'home' })}`) // "Classic tabs" lands on the group's classic tab
+      && log.includes(`ui:${json({ v113Group: 'teams', v113GroupTab: 'home' })}`) && button?.props['aria-pressed'] === false && V113_GROUP_TAB.teams === 'aiTeams') || json(log);
+  });
+
+  // ---- 6. Find Anything ------------------------------------------------------------------------------------------------------------------------
+  check('v113sl_31_find_matches_word_starts', '"tent" and "rain" no longer return settings that only hide the letters inside a word (persisTENT, inTENT, bRAIN, tRAINing); every hit starts a word with them', () => {
+    const bad: string[] = [];
+    let hiddenInside = 0;
+    ['tent', 'rain'].forEach(q => {
+      const hits = v110FindSearch(index, q, 100000).filter(h => h.entry.kind === 'setting');
+      hits.forEach(h => { const e = h.entry; const text = ` ${v110Normalize(e.title)} ${v110KeyWords(e.settingKey || '')} ${v110Normalize(e.where)} ${e.keywords} `; if (!text.includes(` ${q}`)) bad.push(`${q}:${e.id}`); });
+      hiddenInside += index.filter(e => e.kind === 'setting' && (e.settingKey || '').toLowerCase().includes(q) && !hits.some(h => h.entry === e)).length;
+    });
+    const intent = v110FindSearch(index, 'tent', 100000).some(h => /^setting:playerIntent/.test(h.entry.id));
+    return (bad.length === 0 && hiddenInside >= 5 && !intent) || json({ bad: bad.slice(0, 8), hiddenInside, intent });
+  });
+  check('v113sl_32_squashed_key_from_its_start_only', 'A squashed key matches from its start (3 letters or more), never from inside; the whole key is still the first result', () => {
+    const prefix = top('playerIntentOnb', 5);
+    const inside = top('IntentOnboardingEnabled', 100000).some(id => id === 'setting:playerIntentOnboardingEnabled');
+    const whole = ['playerIntentOnboardingEnabled', 'settingsLayersEnabled', 'teamCompetitiveAiEnabled', 'rivalTurnPace'].filter(k => top(k, 3)[0] !== `setting:${k}`);
+    return (prefix.includes('setting:playerIntentOnboardingEnabled') && !inside && whole.length === 0 && v113ScoreEntry(byId.get('setting:rivalTurnPace')!, 'ri', ['ri'], 'ri') > 0) || json({ prefix, inside, whole });
+  });
+  check('v113sl_33_everyday_words', 'Everyday words land on the right place: easy/hard/harder/difficulty, speed/fast/slow, music/mute, restart/new game/new match/exit, theme/dark mode, days, hint', () => {
+    const want: Array<[string, string[]]> = [['easy', ['essential:rival_difficulty']], ['hard', ['essential:rival_difficulty']], ['harder', ['essential:rival_difficulty']], ['difficulty', ['essential:rival_difficulty']],
+      ['speed', ['essential:rival_turn_speed']], ['fast', ['essential:rival_turn_speed']], ['slow', ['essential:rival_turn_speed']], ['music', ['essential:sound']], ['mute', ['essential:sound']],
+      ['restart', ['action:leave_match', 'screen:main_menu']], ['new game', ['action:leave_match', 'screen:main_menu']], ['new match', ['action:leave_match', 'screen:main_menu']], ['exit', ['action:leave_match', 'screen:main_menu']],
+      ['theme', ['essential:look']], ['dark mode', ['essential:look']], ['days', ['essential:game_length']], ['hint', ['essential:how_much_help']]];
+    const wrong = want.filter(([q, ids]) => { const t = top(q, 4); return !ids.every(id => t.slice(0, ids.length + 1).includes(id)); }).map(([q]) => `${q} -> ${top(q, 3).join(' ')}`);
+    return wrong.length === 0 || wrong.join('; ');
+  });
+  check('v113sl_34_one_label_table', 'One label table: Find Anything\'s first label for every setting is v113SettingLabel, which the layered rows and the read-only list use too', () => {
+    const wrong = keys.filter(k => v110SettingLabels(k)[0] !== v113SettingLabel(k) || byId.get(`setting:${k}`)?.title !== v113SettingLabel(k));
+    const rowLabels = V113_ROWS.filter(r => !r.label).every(r => v113Tree(<V113Row spec={r} settings={createDefaultGameSettings()} w={v113RecordingWriters([])} cls={V113_TEST_CLASSES} />).some(n => n.props.children === v113SettingLabel(r.key) || (Array.isArray(n.props.children) && (n.props.children as unknown[])[0] === v113SettingLabel(r.key))));
+    return (wrong.length === 0 && rowLabels) || json({ wrong: wrong.slice(0, 8), rowLabels });
+  });
+  check('v113sl_35_real_labels', 'The 329 settings whose title was only the key in words have a written label; no setting\'s label says "Ai"', () => {
+    const written = Object.keys(V113_SETTING_LABELS);
+    const unknown = written.filter(k => !keys.includes(k));
+    const keyish = written.filter(k => { const words = v110KeyWords(k).replace(/ enabled$/, ''); return v110Normalize(V113_SETTING_LABELS[k]) === words; });
+    const ai = keys.filter(k => /\bAi\b/.test(v113SettingLabel(k)));
+    return (written.length === 329 && unknown.length === 0 && keyish.length === 0 && ai.length === 0 && v113FixAcronyms('Ai pipeline Ui') === 'AI pipeline UI') || json({ n: written.length, unknown, keyish: keyish.slice(0, 5), ai: ai.slice(0, 5) });
+  });
+  check('v113sl_36_essentials_are_results', 'The 12 Essentials are results of their own: classic routes go to where each choice lives today, layered routes to the Essentials page', () => {
+    const entries = index.filter(e => e.kind === 'essential');
+    const bad = entries.filter(e => { const r = e.route; return r.kind === 'settings' && r.section !== undefined && !sectionIds.includes(r.section); }).map(e => e.id);
+    const layered = entries.map(e => v113LayeredEntry(e, on()));
+    const layeredOk = layered.every(e => e.route.kind === 'settings' && e.route.tab === 'home' && e.route.field === `v113-essential-${e.id.replace('essential:', '')}` && e.where === 'Settings › ⭐ Essentials');
+    return (entries.length === 12 && json(entries.map(e => e.id)) === json(V113_ESSENTIALS.map(e => `essential:${e.id}`)) && bad.length === 0 && layeredOk && V110_FIND_KIND_LABELS.essential === 'Essentials') || json({ n: entries.length, bad, layeredOk });
+  });
+  check('v113sl_37_layered_results_open_the_new_home', 'With the layered Settings on, a setting\'s result names its group and opens its home (a real section on a real tab); off, it opens where it did', () => {
+    const wrong: string[] = [];
+    index.filter(e => e.kind === 'setting').forEach(e => {
+      const l = v113LayeredEntry(e, on());
+      const home = v113HomeOf(e.settingKey || '');
+      if (!home || home === 'v113.internal') { if (l !== e) wrong.push(`internal moved: ${e.id}`); return; }
+      const g = v113GroupOfHome(home);
+      if (l.route.kind !== 'settings' || !g || !l.where.startsWith(`Settings › ${v113GroupMeta(g).icon} ${v113GroupMeta(g).label}`)) { wrong.push(e.id); return; }
+      if (!isV113PseudoId(home) && (l.route.section !== home || l.route.tab !== (SETTINGS_HUB_SECTION_INDEX.find(s => s.id === home)?.tab || l.route.tab))) wrong.push(`${e.id} section`);
+      if (l.route.field !== e.settingKey) wrong.push(`${e.id} field`);
+    });
+    return (wrong.length === 0 && v113GroupForNav(null, 'totalDays', 'home') === 'essentials') || `${wrong.length}: ${wrong.slice(0, 8).join(', ')}`;
+  });
+  check('v113sl_38_help_lists_ctrl_k', 'The Help window lists Ctrl/⌘+K (Find Anything) while Find Anything is on, and only then; the classic shortcuts are all still there', () => {
+    const withFind = v113HelpShortcuts({ findAnythingEnabled: true }) as unknown as Record<string, { label: string; description: string }>;
+    const without = v113HelpShortcuts({ findAnythingEnabled: false }) as unknown as Record<string, unknown>;
+    const classic = Object.keys(KEYBOARD_SHORTCUTS);
+    const added = Object.keys(withFind).filter(k => !classic.includes(k));
+    return (json(added) === json([V113_FIND_HELP_KEY]) && withFind[V113_FIND_HELP_KEY].label === V110_FIND_LABEL && /ctrl|⌘/i.test(V113_FIND_HELP_KEY) && classic.every(k => k in withFind)
+      && without === (KEYBOARD_SHORTCUTS as unknown as Record<string, unknown>) && !(V113_FIND_HELP_KEY in KEYBOARD_SHORTCUTS)) || json({ added });
+  });
+
+  // ---- 7. Determinism and old saves ----------------------------------------------------------------------------------------------------------
+  check('v113sl_39_no_clock_no_random', 'The layered Settings and the Find Anything fixes read no clock and draw no random number; drawing and searching leave every random stream where it was', () => {
+    const fns: Array<(...args: never[]) => unknown> = [v113BuildView, v113CreateHub, v113SettingsLayers, V113EssentialsPage, V113PresetOnlyList, V113Row, v113FlipRow, v113WriteRow, v113ScoreEntry, v113SynonymTargets, v113LayeredEntry, v113SettingLabel, v113EssentialEntries, v113HelpShortcuts, v113GroupForNav, v113LearningModeSettings];
+    const text = fns.map(fn => String(fn)).join('\n');
+    if (!/v113|keyVisible|group/.test(text)) return 'SKIPPED: the function text is not readable in this build';
+    const banned = ['Math.random', 'Date.now', 'performance.now', 'new Date(', 'drawGameplayRandom', 'createSeededRng'].filter(word => text.includes(word));
+    const before = json(captureRngState());
+    v113Tree(<>{v113SettingsLayers(deps(on())).head(v113SettingsLayers(deps(on())).hub(null)!)}</>); v110FindSearch(index, 'harder'); v110FindSearch(index, 'tent');
+    const again = json(top('mute', 10)) === json(top('mute', 10)) && json(v113GroupKeyCounts()) === json(v113GroupKeyCounts());
+    return (banned.length === 0 && json(captureRngState()) === before && again) || json({ banned, rng: json(captureRngState()) === before });
+  });
+  check('v113sl_40_rules_stamp_and_old_saves', 'The rules stamp stays 1010 with the layered Settings on or off, and real V9.7, V9.8 and V10.0 saves play the same days move for move either way', () => {
+    const stamps = [v101RulesVersionForNewMatch(on()), v101RulesVersionForNewMatch(createDefaultGameSettings())];
+    const wrong: string[] = [];
+    Object.keys(V101FX_OLD_SAVES).forEach(name => {
+      const off = JSON.parse(V101FX_OLD_SAVES[name]) as SaveGameData;
+      const layered = JSON.parse(V101FX_OLD_SAVES[name]) as SaveGameData;
+      (layered.gameSettings as unknown as Record<string, unknown>).settingsLayersEnabled = true;
+      (layered.gameSettings as unknown as Record<string, unknown>).findAnythingEnabled = true;
+      const a = v101fxPlayDays(off, 2); const b = v101fxPlayDays(layered, 2);
+      if (a.error || b.error || json(a) !== json(b) || a.humanActions + a.rivalActions === 0) wrong.push(`${name}: ${json({ a, b })}`.slice(0, 300));
+    });
+    return (json(stamps) === json([1010, 1010]) && V101_RULES_VERSION === 1010 && Object.keys(V101FX_OLD_SAVES).length >= 3 && wrong.length === 0) || json({ stamps, wrong });
   });
   return results;
 }
@@ -230021,6 +231922,8 @@ function dispatchGameSettingsChange(
       const updates: Partial<typeof prev> = {
         showSettings: true,
         settingsActiveTab: targetTab,
+        v113Group: v113GroupForNav(resolvedSectionId, options?.fieldKey, targetTab), // V11.0 (SECTION 20BN): the layered view opens the group of the setting or section
+        v113GroupTab: targetTab,
         settingsSearchViewMode: 'focused',
         focusedSearchResultIndex: options?.resultIndex ?? prev.focusedSearchResultIndex ?? 0,
         settingsSearchQuery: options?.clearSearch ? '' : (options?.searchQuery !== undefined ? options.searchQuery : prev.settingsSearchQuery),
@@ -256731,6 +258634,39 @@ function dispatchGameSettingsChange(
       uiState.settingsActivePresetId !== undefined
     );
     const isSearchActive = isSettingsFilteringActive;
+    // V11.0 (SECTION 20BN): the layered Settings. Off (the default) v113Hub is null and every line of the hub draws exactly as before.
+    // Every write below is the call the setting's own control already makes.
+    const v113Layers = v113SettingsLayers({
+      settings: gameSettings,
+      ui: uiState,
+      teamMode: Boolean(isTeamMode),
+      difficulty: String(gameState.aiDifficulty || 'medium'),
+      difficultyLocked: v101RulesLocked,
+      learning: resolveLearningMode(gameSettings, glLearning),
+      theme: String(uiState.theme || 'system'),
+      w: {
+        tracked: (title, patch) => trackedSetGameSettings('direct_player_change', title, patch),
+        set: (key, value, label, section) => updateGameSetting(key as keyof GameSettingsState, value, { settingLabel: label, section, source: 'direct_player_change' }),
+        raw: patch => setGameSettings(prev => patch(prev)),
+        simple: (key, value) => wp8SimpleSettingChange(key, value),
+        difficulty: value => dispatchGameState({ type: 'SET_AI_DIFFICULTY', payload: value }),
+        learningMode: mode => trackedSetGameSettings('direct_player_change', 'Guided Learning', prev => v113LearningModeSettings(prev, mode, glTurn)),
+        theme: theme => updateUiState({ theme }),
+        textScale: next => {
+          const current = gameSettings.accessibilitySettings || createDefaultAccessibilitySettings();
+          updateGameSetting('accessibilitySettings', { ...current, textScaleMultiplier: next }, { settingLabel: 'Text Size', section: 'Interface → Accessibility', source: 'direct_player_change' });
+        },
+        open: patch => updateUiState(patch),
+        resetAskAgain: () => { setDontAskAgain({ ...DEFAULT_DONT_ASK }); addNotification('Confirmation questions are back on.', 'success', true, 'system'); },
+      },
+      cls: { card: themeStyles.card, border: themeStyles.border, select: themeStyles.select, buttonSecondary: themeStyles.buttonSecondary, success: themeStyles.success, button: themeStyles.button },
+      updateUiState: patch => updateUiState(patch),
+      askAgainPrefs: dontAskAgain,
+      disabledClassName: themeStyles.buttonDisabled,
+    });
+    const v113Hub = v113Layers.hub(settingsSearchMatchedIds);
+    const v113Keep = (key: string, at: string): boolean => !v113Hub || v113Hub.keep(key, at);
+    const v113Place = (blockId: string, render: () => React.ReactNode): React.ReactNode => (v113Hub ? v113Hub.place(blockId, render) : render());
 
     try {
     return (
@@ -257526,6 +259462,7 @@ function dispatchGameSettingsChange(
 
             {/* Task 10: 6 Category Navigation Modes */}
             {(() => {
+              if (v113Hub) return v113Layers.nav(isSearchActive); // V11.0 (SECTION 20BN): Essentials and the five goal groups in place of the 11 tabs
               const navMode: SettingsCategoryNavigationMode = gameSettings.settingsCategoryNavigationMode || 'full';
 
               if (navMode === 'hidden' || navMode === 'hidden_navigation') {
@@ -257757,9 +259694,11 @@ function dispatchGameSettingsChange(
               onToggleCollapse: toggleSettingsSection,
               allowCollapse: v101SectionCanCollapse(gameSettings), // V10.1 (SECTION 20BG): the "Allow Category Collapse" switch now decides
               border: themeStyles.border,
-              buttonSecondary: themeStyles.buttonSecondary
+              buttonSecondary: themeStyles.buttonSecondary,
+              v113: v113Hub // V11.0 (SECTION 20BN): null with the layered Settings off
             }}>
             <div className="space-y-6">
+              {v113Hub ? v113Layers.head(v113Hub) : null /* V11.0 (SECTION 20BN): Essentials and the group's own blocks */}
               <SettingsSection
                 id="home.dashboard"
                 tab="home"
@@ -258359,7 +260298,7 @@ function dispatchGameSettingsChange(
                     { key: 'settingsPresetsEnabled', label: 'Settings Presets', description: 'Enables preset cards and Reset to Classic.' },
                     { key: 'groupedInventoryCardsEnabled', label: 'Grouped Inventory Cards', description: 'Adds richer sell/craft cards in the market.' },
                     { key: 'teamModeAiSystemsEnabled', label: 'Team Mode AI Systems', description: 'Enables Team Mode-only system profiles.' }
-                  ] as Array<{ key: keyof GameSettingsState; label: string; description: string }>).map(row => {
+                  ] as Array<{ key: keyof GameSettingsState; label: string; description: string }>).filter(row => v113Keep(String(row.key), 'interface.uxAssist')).map(row => { // V11.0 (SECTION 20BN): the Team Mode AI systems switch is drawn in Competitive AI in the layered view
                     const isUxSubFeature = row.key !== 'uxAssistPackEnabled' && row.key !== 'teamModeAiSystemsEnabled' && row.key !== 'settingsPresetsEnabled'; // V10.1 (SECTION 20BG): the presets section no longer waits for the master switch
                     const active = Boolean(gameSettings[row.key]);
                     const v101UxRow = v101UxAssistRowState(gameSettings, String(row.key)); // V10.1 (SECTION 20BG): the row says what the game really does at this interface level
@@ -258382,7 +260321,7 @@ function dispatchGameSettingsChange(
                       </div>
                     );
                   })}
-                  <div id="settings-field-teamModeAiSystemProfile" data-setting-key="teamModeAiSystemProfile">
+                  {v113Place('interface.uxAssist:teamProfile', () => (<>{/* V11.0 (SECTION 20BN): drawn in Competitive AI in the layered view */}<div id="settings-field-teamModeAiSystemProfile" data-setting-key="teamModeAiSystemProfile">
                     <label className="block font-semibold mb-2">Team Mode AI System Profile</label>
                     <select
                       value={gameSettings.teamModeAiSystemProfile}
@@ -258398,7 +260337,7 @@ function dispatchGameSettingsChange(
                       ))}
                     </select>
                     <div className="text-xs opacity-75 mt-1">Profile logic only runs in Team Mode when Team Mode AI Systems is ON.</div>
-                  </div>
+                  </div></>))}{/* V11.0 (SECTION 20BN) */}
                 </div>
               </SettingsSection>
               <SettingsSection
@@ -258746,6 +260685,22 @@ function dispatchGameSettingsChange(
                 <V110FindSettingsBody
                   on={gameSettings.findAnythingEnabled === true}
                   onToggle={() => updateGameSetting('findAnythingEnabled', gameSettings.findAnythingEnabled !== true, { settingLabel: V110_FIND_LABEL, section: 'Interface → Find Anything', source: 'direct_player_change' })}
+                  onClassName={`${themeStyles.success} text-white`}
+                  offClassName={themeStyles.buttonSecondary}
+                />
+              </SettingsSection>
+
+              {/* V11.0 (SECTION 20BN): the layered Settings' switch, filed under its goal (no version in the title). Off by default. */}
+              <SettingsSection
+                id={V113_SECTION_ID}
+                tab="interfaceAcc"
+                title={V113_SECTION_TITLE}
+                chips={['Off by default']}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === V113_SECTION_ID)!.fieldKeys}
+              >
+                <V113LayoutSettingsBody
+                  on={gameSettings.settingsLayersEnabled === true}
+                  onToggle={() => updateGameSetting('settingsLayersEnabled', gameSettings.settingsLayersEnabled !== true, { settingLabel: V113_LABEL, section: 'Interface → Settings Layout', source: 'direct_player_change' })}
                   onClassName={`${themeStyles.success} text-white`}
                   offClassName={themeStyles.buttonSecondary}
                 />
@@ -259146,7 +261101,7 @@ function dispatchGameSettingsChange(
                 fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'interface.accessibility')!.fieldKeys}
               >
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between gap-3" data-testid="guided-first-run-setting">
+                  {v113Keep('guidedFirstRunEnabled', 'interface.accessibility') && (<div className="flex items-center justify-between gap-3" data-testid="guided-first-run-setting">{/* V11.0 (SECTION 20BN): drawn only in its home in the layered view */}
                     <div>
                       <div className="font-semibold">🎓 Guided first match</div>
                       <div className="text-sm opacity-75">New players start in a guided match: one goal, three actions, new tools unlocked one at a time. Switched off after the tutorial; switching it off here is permanent for this browser, and switching it on again brings it back on the next launch.</div>
@@ -259158,7 +261113,7 @@ function dispatchGameSettingsChange(
                     >
                       {gameSettings.guidedFirstRunEnabled !== false ? 'ON' : 'OFF'}
                     </button>
-                  </div>
+                  </div>)}{/* V11.0 (SECTION 20BN): in the layered view this switch is in ⭐ Essentials › How much help */}
                   <div className="flex items-center justify-between gap-3" data-testid="diagnostics-render-counter-setting">
                     <div>
                       <div className="font-semibold">Developer diagnostics (render counter)</div>
@@ -259508,15 +261463,15 @@ function dispatchGameSettingsChange(
               </SettingsSection>
               <SettingsSection id="gameplay.core" tab="gameplay" title="🎮 Core Gameplay" onReset={settingsResetHandlers.gameplay.fn} resetLabel={settingsResetHandlers.gameplay.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.core')!.fieldKeys}>
                 <div className="space-y-4">
-                  <div>
+                  {v113Keep('totalDays', 'gameplay.core') && (<div>{/* V11.0 (SECTION 20BN): drawn only in its home in the layered view */}
                     <SettingsSlider label={(v) => <>{v101TotalDaysLabel(v)}</>} id="setting-slider-2-total-days-totaldays" min="10" max="100" value={gameSettings.totalDays} onChange={(val) => trackedSetGameSettings("direct_player_change", "🎮 Core Gameplay", prev => ({ ...prev, totalDays: val }))} disabled={v101RulesLocked} className="w-full" />
                     <V101RuleLockNote ruleKey="totalDays" settings={gameSettings} />
                     <div className="text-xs opacity-75 mt-1">Currently: Day {gameState.day} of {gameSettings.totalDays} (the last day you play is day {matchLengthInDays(Number(gameSettings.totalDays))})</div>
-                  </div>
-                  <div>
+                  </div>)}{/* V11.0 (SECTION 20BN): in the layered view Game length is in ⭐ Essentials */}
+                  {v113Keep('playerActionsPerDay', 'gameplay.core') && (<div>
                     <SettingsSlider label={(v) => <>Player Actions Per Day: {v}</>} id="setting-slider-3-player-actions-per-day-playeractionsperd" min="1" max="10" value={gameSettings.playerActionsPerDay} onChange={(val) => trackedSetGameSettings("direct_player_change", "🎮 Core Gameplay", prev => ({ ...prev, playerActionsPerDay: val, maxActionsPerTurn: val }))} className="w-full" />
                     <div className="text-xs opacity-75 mt-1">Current: {player.actionsUsedThisTurn} / {gameSettings.playerActionsPerDay}</div>
-                  </div>
+                  </div>)}{/* V11.0 (SECTION 20BN) */}
                   <div>
                     <SettingsSlider label={(v) => <>AI Actions Per Day: {v}</>} id="setting-slider-4-ai-actions-per-day-aiactionsperday" min="1" max="10" value={gameSettings.aiActionsPerDay} onChange={(val) => trackedSetGameSettings("direct_player_change", "🎮 Core Gameplay", prev => ({ ...prev, aiActionsPerDay: val, aiMaxActionsPerTurn: val }))} className="w-full" />
                   </div>
@@ -259536,7 +261491,7 @@ function dispatchGameSettingsChange(
               </SettingsSection>
               <SettingsSection id="economy.winCondition" tab="economy" title="🏁 Win Condition & Cash-Out" chips={['Affects economy']} onReset={settingsResetHandlers.economy.fn} resetLabel={settingsResetHandlers.economy.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'economy.winCondition')!.fieldKeys}>
 	                <div className="space-y-4">
-	                  <div>
+	                  {v113Keep('winCondition', 'economy.winCondition') && (<div>{/* V11.0 (SECTION 20BN): drawn only in its home in the layered view */}
 	                    <label className="block font-semibold mb-2">Victory Goal</label>
 	                    <select
 	                      value={gameSettings.winCondition}
@@ -259549,7 +261504,7 @@ function dispatchGameSettingsChange(
 	                      ))}
 	                    </select>
 	                    <V101RuleLockNote ruleKey="winCondition" settings={gameSettings} />
-	                  </div>
+	                  </div>)}{/* V11.0 (SECTION 20BN): in the layered view How to win is in ⭐ Essentials */}
 	                  <div className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
 	                    {WIN_METRIC_PROFILES[gameSettings.winCondition]?.description || 'Money mode: winner is based on raw cash only.'}
 	                  </div>
@@ -259590,7 +261545,7 @@ function dispatchGameSettingsChange(
 	                      {gameSettings.allowCashOut ? 'ON' : 'OFF'}
 	                    </button>
 	                  </div>
-                    <div className="flex items-center justify-between">
+                    {v113Keep('negotiationMode', 'economy.winCondition') && (<><div className="flex items-center justify-between">{/* V11.0 (SECTION 20BN): drawn only in its home in the layered view */}
                       <div>
                         <div className="font-semibold">Enable Negotiation Mode</div>
                         <div className="text-sm opacity-75">OFF by default. Disables new deposit bidding and uses proposal-based region control.</div>
@@ -259606,8 +261561,8 @@ function dispatchGameSettingsChange(
                       {gameSettings.negotiationMode
                         ? 'Negotiation mode ON: turn transition subsystems process proposals after each end turn. Existing deposits are preserved but new deposits are blocked.'
                         : 'Negotiation mode OFF: standard deposit and bidding control works exactly as V5.0.'}
-                    </div>
-                    {gameSettings.negotiationMode && uiState.settingsViewMode !== 'advanced' && (
+                    </div></>)}{/* V11.0 (SECTION 20BN): its home is Negotiations & Cash Transfers */}
+                    {v113Place('economy.winCondition:negotiationOptions', () => (<>{/* V11.0 (SECTION 20BN): drawn in Negotiations & Cash Transfers in the layered view */}{gameSettings.negotiationMode && uiState.settingsViewMode !== 'advanced' && (
                       <div className="text-xs opacity-75">Switch to Advanced view (top of Settings) to tune negotiation auto-accept, counter-offers, and confirmation options.</div>
                     )}
                     {gameSettings.negotiationMode && uiState.settingsViewMode === 'advanced' && (
@@ -259678,7 +261633,7 @@ function dispatchGameSettingsChange(
                           <div className="text-xs opacity-75">0 = never expires</div>
                         </div>
                       </div>
-                    )}
+                    )}</>))}{/* V11.0 (SECTION 20BN) */}
 	                </div>
               </SettingsSection>
               <SettingsSection id="economy.matchShape" tab="economy" title="🎯 Match Shape" chips={['Off by default']} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'economy.matchShape')!.fieldKeys}>
@@ -259706,7 +261661,7 @@ function dispatchGameSettingsChange(
               </SettingsSection>
               <SettingsSection id="gameplay.actionLimits" tab="gameplay" title="⏱️ Action Limits" onReset={settingsResetHandlers.gameplay.fn} resetLabel={settingsResetHandlers.gameplay.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.actionLimits')!.fieldKeys}>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
+                  {v113Keep('actionLimitsEnabled', 'gameplay.actionLimits') && (<div className="flex items-center justify-between">{/* V11.0 (SECTION 20BN): drawn only in its home in the layered view */}
                     <div>
                       <div className="font-semibold">Enable Action Limits</div>
                       <div className="text-sm opacity-75">Restrict actions per turn</div>
@@ -259719,13 +261674,13 @@ function dispatchGameSettingsChange(
                     >
                       {gameSettings.actionLimitsEnabled ? 'ON' : 'OFF'}
                     </button>
-                  </div>
-                  <div>
+                  </div>)}{/* V11.0 (SECTION 20BN): in the layered view Actions per day is in ⭐ Essentials */}
+                  {v113Keep('playerActionsPerDay', 'gameplay.actionLimits') && (<div>
                     <SettingsSlider label={(v) => <>Max Actions (Human): {v}</>} id="setting-slider-7-max-actions-human-maxactionsperturn" min="1" max="10" value={gameSettings.playerActionsPerDay} onChange={(val) => trackedSetGameSettings("direct_player_change", "⏱️ Action Limits", prev => ({ ...prev, playerActionsPerDay: val, maxActionsPerTurn: val }))} className="w-full" />
-                  </div>
-                  <div>
+                  </div>)}{/* V11.0 (SECTION 20BN) */}
+                  {v113Keep('aiActionsPerDay', 'gameplay.actionLimits') && (<div>{/* V11.0 (SECTION 20BN): drawn only in its home in the layered view */}
                     <SettingsSlider label={(v) => <>Max Actions (AI): {v}</>} id="setting-slider-8-max-actions-ai-aimaxactionsperturn" min="1" max="10" value={gameSettings.aiActionsPerDay} onChange={(val) => trackedSetGameSettings("direct_player_change", "⏱️ Action Limits", prev => ({ ...prev, aiActionsPerDay: val, aiMaxActionsPerTurn: val }))} className="w-full" />
-                  </div>
+                  </div>)}{/* V11.0 (SECTION 20BN): the AI actions per day live in Core Gameplay */}
 
                   {/* ACTION POINT CONSUMPTION CONFIGURATION PANEL */}
                   <div className="border-t border-slate-700/60 pt-4 mt-4">
@@ -260234,7 +262189,7 @@ function dispatchGameSettingsChange(
                         { key: 'achievementsEnabled' as keyof GameSettingsState, label: 'Achievements System', desc: 'Career badges & achievement tracking' },
                         { key: 'fogOfWarEnabled' as keyof GameSettingsState, label: 'Fog of War System', desc: 'Hides rival details from you (the one-on-one rival still reads your wealth)' }, // V10.1 (SECTION 20BC): honest text
                         { key: 'aiRivalryEnabled' as keyof GameSettingsState, label: 'AI Rivalry System', desc: 'Dynamic rival attitudes & rivalry perks' }
-                      ].map(sw => (
+                      ].filter(sw => v113Keep(String(sw.key), 'gameplay.scenarioMode')).map(sw => ( // V11.0 (SECTION 20BN): switches with no effect wait behind Show inactive
                         <div key={String(sw.key)} className="flex items-center justify-between p-2 rounded bg-black/20 border border-white/10">
                           <div className="pr-2">
                             <div className="font-semibold text-xs">{sw.label}<V99NoEffectChip settingKey={String(sw.key)} /></div>
@@ -260459,7 +262414,7 @@ function dispatchGameSettingsChange(
                       Low: light preference • Standard: current default behavior • High: strong preference
                     </div>
                   </div>
-                  <div className="flex items-center justify-between">
+                  {v113Place('ai.settings:determinism', () => (<>{/* V11.0 (SECTION 20BN): drawn in Replay Safety & Compatibility in the layered view */}<div className="flex items-center justify-between">
                     <div>
                       <div className="font-semibold">Deterministic AI</div>
                       <div className="text-sm opacity-75">Use a seeded RNG for AI decisions</div>
@@ -260570,7 +262525,7 @@ function dispatchGameSettingsChange(
                         </button>
                       </div>
                     )}
-                  </div>
+                  </div></>))}{/* V11.0 (SECTION 20BN) */}
                   <div>
                     <div className="font-semibold mb-2">Reconstruction Policy</div>
                     <div className="text-sm opacity-75 mb-2">
@@ -260590,7 +262545,7 @@ function dispatchGameSettingsChange(
                       ))}
                     </div>
                   </div>
-                  <div>
+                  {v113Place('ai.settings:replayStudio', () => (<>{/* V11.0 (SECTION 20BN): drawn in Replay Safety & Compatibility in the layered view */}<div>
                     <div className="font-semibold mb-2">Replay Studio</div>
                     <div className="text-sm opacity-75 mb-2">
                       Watch, inspect, compare, and branch recorded matches. Playback is isolated and never changes the live game.
@@ -260627,7 +262582,7 @@ function dispatchGameSettingsChange(
                         <button onClick={() => trackedSetGameSettings('direct_player_change', 'Replay Studio', prev => ({ ...prev, replayDeterministicValidationEnabled: !prev.replayDeterministicValidationEnabled }))} className={`px-3 py-1 rounded text-xs font-semibold ${gameSettings.replayDeterministicValidationEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}>{gameSettings.replayDeterministicValidationEnabled ? 'ON' : 'OFF'}</button>
                       </label>
                     </div>
-                  </div>
+                  </div></>))}{/* V11.0 (SECTION 20BN) */}
                 </div>
               </SettingsSection>
 
@@ -263814,9 +265769,9 @@ function dispatchGameSettingsChange(
                         </button>
                       </div>
 
-                      <div>
+                      {v113Keep('governanceVetoUsesPerMatch', 'teamModeAi.governanceControlSurface') && (<div>{/* V11.0 (SECTION 20BN): drawn only in its home in the layered view */}
                         <SettingsSlider label={(v) => <>Governance Veto Uses Per Match: {v}<V99NoEffectChip settingKey="governanceVetoUsesPerMatch" /></>} id="setting-slider-governance-veto-uses" min="0" max="10" step="1" value={gameSettings.governanceVetoUsesPerMatch} onChange={(val) => trackedSetGameSettings("direct_player_change", "Governance", prev => ({ ...prev, governanceVetoUsesPerMatch: val }))} className="w-full" />
-                      </div>
+                      </div>)}{/* V11.0 (SECTION 20BN): no effect in this version: behind Show inactive */}
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
@@ -265127,7 +267082,7 @@ function dispatchGameSettingsChange(
                       {gameSettings.aiPersistentAskOnAbandon ? 'ON' : 'OFF'}
                     </button>
                   </div>
-                  <div className="flex items-center justify-between">
+                  {v113Keep('aiPersistentAivsAiEnabled', 'ai.persistentMemory') && (<div className="flex items-center justify-between">{/* V11.0 (SECTION 20BN): drawn only in its home in the layered view */}
                     <div>
                       <div className="font-semibold">Persist AI-vs-AI Matches<V99NoEffectChip settingKey="aiPersistentAivsAiEnabled" /></div>
                       <div className="text-sm opacity-75">Allow simulation matches to read and write persistent profiles.</div>
@@ -265139,7 +267094,7 @@ function dispatchGameSettingsChange(
                     >
                       {gameSettings.aiPersistentAivsAiEnabled ? 'ON' : 'OFF'}
                     </button>
-                  </div>
+                  </div>)}{/* V11.0 (SECTION 20BN): no effect in this version: behind Show inactive */}
                   {(() => {
                     const persistStore = loadPersistentStore();
                     const profiles = Object.values(persistStore.profiles);
@@ -265420,7 +267375,7 @@ function dispatchGameSettingsChange(
                           {gameSettings.rivalDossierPanelEnabled ? 'ON' : 'OFF'}
                         </button>
                       </div>
-                      <div className="flex items-center justify-between mt-2">
+                      {v113Place('ai.adaptive:overseerCounter', () => (<>{/* V11.0 (SECTION 20BN): drawn in Team AI Overseer in the layered view */}<div className="flex items-center justify-between mt-2">
                         <div>
                           <div className="font-semibold">Overseer Win Condition Counter-Strategies</div>
                           <div className="text-sm opacity-75">Enable Overseer automatic counter-strategy selection based on rival metric leads</div>
@@ -265431,7 +267386,7 @@ function dispatchGameSettingsChange(
                         >
                           {gameSettings.overseerWinConditionCounterStrategyEnabled ? 'ON' : 'OFF'}
                         </button>
-                      </div>
+                      </div></>))}{/* V11.0 (SECTION 20BN) */}
                       {uiState.settingsViewMode !== 'advanced' && (
                         <div className="text-xs opacity-75">Switch to Advanced view (top of Settings) to tune comeback thresholds and bias sliders.</div>
                       )}
@@ -265546,7 +267501,7 @@ function dispatchGameSettingsChange(
 
                     {/* Phase 7 Task 7.5: Projected Outcome Settings Controls */}
                     <div className="border-t border-white/10 pt-4 mt-4 space-y-3">
-                      <div className="flex items-center justify-between">
+                      {v113Keep('projectedOutcomeEnabled', 'ai.adaptive') && (<div className="flex items-center justify-between">{/* V11.0 (SECTION 20BN): drawn only in its home in the layered view */}
                         <div>
                           <div className="font-semibold flex items-center gap-2">
                             <span>🔮 Enable Projected Outcome</span>
@@ -265563,9 +267518,9 @@ function dispatchGameSettingsChange(
                         >
                           {gameSettings.projectedOutcomeEnabled ? 'ON' : 'OFF'}
                         </button>
-                      </div>
+                      </div>)}{/* V11.0 (SECTION 20BN): no effect in this version: behind Show inactive */}
 
-                      {gameSettings.projectedOutcomeEnabled && (
+                      {(gameSettings.projectedOutcomeEnabled || !v113Keep('projectedOutcomeEnabled', 'ai.adaptive')) && ( /* V11.0 (SECTION 20BN): while the switch is hidden its options show */
                         <div className="space-y-3 pl-4 border-l-2 border-indigo-500/40">
                           <div className="flex items-center justify-between">
                             <div>
@@ -265662,7 +267617,7 @@ function dispatchGameSettingsChange(
                         {gameSettings.deprioritizeLowImpactSettings ? 'ON' : 'OFF'}
                       </button>
                     </div>
-                    <div className="flex items-center justify-between">
+                    {v113Keep('priorityTransparencyEnabled', 'advancedSystems.priority') && (<div className="flex items-center justify-between">{/* V11.0 (SECTION 20BN): drawn only in its home in the layered view */}
                       <div>
                         <div className="font-semibold">Priority Transparency<V99NoEffectChip settingKey="priorityTransparencyEnabled" /></div>
                         <div className="text-sm opacity-75">Show which domains were promoted or reduced</div>
@@ -265673,7 +267628,7 @@ function dispatchGameSettingsChange(
                       >
                         {gameSettings.priorityTransparencyEnabled ? 'ON' : 'OFF'}
                       </button>
-                    </div>
+                    </div>)}{/* V11.0 (SECTION 20BN): no effect in this version: behind Show inactive */}
                   </div>
                   {gameSettings.settingPriorityMode === 'manual' && uiState.settingsViewMode !== 'advanced' && (
                     <div className="text-xs opacity-75">Switch to Advanced view (top of Settings) to edit manual priority weights.</div>
@@ -265773,9 +267728,9 @@ function dispatchGameSettingsChange(
                     <div>
                       <SettingsSlider label={(v) => <>Detail Level: {v}</>} id="setting-slider-106-detail-level-decisiontransparencydetaill" min="1" max="100" value={gameSettings.decisionTransparencyDetailLevel} onChange={(val) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyDetailLevel: val }))} className="w-full" />
                     </div>
-                    <div>
+                    {v113Keep('decisionTransparencyExplanationDepth', 'advancedSystems.decisionTransparency') && (<div>{/* V11.0 (SECTION 20BN): drawn only in its home in the layered view */}
                       <SettingsSlider label={(v) => <>Explanation Depth: {v}<V99NoEffectChip settingKey="decisionTransparencyExplanationDepth" /></>} id="setting-slider-107-explanation-depth-decisiontransparencyex" min="1" max="100" value={gameSettings.decisionTransparencyExplanationDepth} onChange={(val) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyExplanationDepth: val }))} className="w-full" />
-                    </div>
+                    </div>)}{/* V11.0 (SECTION 20BN): no effect in this version: behind Show inactive */}
                     <div>
                       <SettingsSlider label={(v) => <>Timeline Length: {v}</>} id="setting-slider-108-timeline-length-decisiontransparencytime" min="5" max="120" value={gameSettings.decisionTransparencyTimelineLength} onChange={(val) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyTimelineLength: val }))} className="w-full" />
                     </div>
@@ -267196,7 +269151,7 @@ function dispatchGameSettingsChange(
                       Australia contains {TOTAL_REGION_COUNT} regions ({Object.keys(REGIONS).join(', ')}). Controlling a majority ({REGION_CONTROL_MAJORITY}+ regions) triggers immediate victory when the victory goal is set to Controlled Regions.
                     </div>
                   </div>
-                  <div>
+                  {v113Keep('winCondition', 'competition.regionControl') && (<div>{/* V11.0 (SECTION 20BN): drawn only in its home in the layered view */}
                     <label className="block font-semibold mb-2">Victory Goal</label>
                     <select
                       value={gameSettings.winCondition}
@@ -267209,8 +269164,8 @@ function dispatchGameSettingsChange(
                       ))}
                     </select>
                     <V101RuleLockNote ruleKey="winCondition" settings={gameSettings} />
-                  </div>
-                  <div className="flex items-center justify-between">
+                  </div>)}{/* V11.0 (SECTION 20BN): in the layered view How to win is in ⭐ Essentials */}
+                  {v113Keep('allowCashOut', 'competition.regionControl') && (<div className="flex items-center justify-between">
                     <div>
                       <div className="font-semibold">Allow Cashing Out Region Positions</div>
                       <div className="text-sm opacity-75">Return 50% of your deposit and release region control</div>
@@ -267222,7 +269177,7 @@ function dispatchGameSettingsChange(
                     >
                       {gameSettings.allowCashOut ? 'ON' : 'OFF'}
                     </button>
-                  </div>
+                  </div>)}{/* V11.0 (SECTION 20BN): its home is Win Condition & Cash-Out */}
                 </div>
               </SettingsSection>
 
@@ -267545,6 +269500,7 @@ function dispatchGameSettingsChange(
                   <MechanicsDirectoryEntries theme={themeStyles} focusId={mechanicsFocusId} onConfigure={tab => navigateToSettings(tab)} />
                 </div>
               </SettingsSection>
+              {v113Hub ? v113Layers.tail(v113Hub) : null /* V11.0 (SECTION 20BN): the group's closing blocks and its "Set by presets" list */}
             </div>
             </SettingsSectionCtx.Provider>
           </div>
@@ -272133,12 +274089,7 @@ function dispatchGameSettingsChange(
               theme={themeStyles}
               learning={glLearning}
               mode={resolveLearningMode(gameSettings, glLearning)}
-              onMode={m => trackedSetGameSettings('direct_player_change', 'Guided Learning', prev => {
-                if (m === 'off') return { ...prev, playerIntentOnboardingEnabled: false };
-                const cur = sanitizeLearningState(prev.guidedLearning);
-                const learning = cur.skipGuidance || cur.welcome === 'pending' ? applyLearningEvent(cur, { kind: 'welcome', welcome: 'started', turn: glTurn }) : cur;
-                return { ...prev, playerIntentOnboardingEnabled: true, smartSettingsProfile: { ...(prev.smartSettingsProfile || {}), guidance: m } as any, guidedLearning: learning };
-              })}
+              onMode={m => trackedSetGameSettings('direct_player_change', 'Guided Learning', prev => v113LearningModeSettings(prev, m, glTurn))} // V11.0 (SECTION 20BN): the same write, shared with Essentials › How much help
               onShowAgain={id => { glDispatch([{ kind: 'force', conceptId: id, turn: glTurn }]); setExperienceLayer('play'); }}
               onLearnMore={openMechanicsEntry}
               onAsk={q => void submitIntelligenceQuery(q)}
@@ -276334,7 +278285,7 @@ function dispatchGameSettingsChange(
           onClose={wp7Kit.fn('helpClose', () => updateUiState({ showHelp: false }))}
           themeStyles={themeStyles}
           surfaceState={surfaceState}
-          keyboardShortcuts={KEYBOARD_SHORTCUTS}
+          keyboardShortcuts={v113HelpShortcuts(gameSettings)} // V11.0 (SECTION 20BO): + Ctrl/⌘+K while Find Anything is on
           gameSettings={gameSettings}
           onOpenRules={wp7Kit.fn('helpOpenRules', () => { updateUiState({ showHelp: false }); openMechanicsEntry('win'); })} /* V10.1 (SECTION 20BE): the "How to play" section's link to the full rules */
         />
@@ -283677,7 +285628,7 @@ function dispatchGameSettingsChange(
           onClose={wp7Kit.fn('v99HelpCloseOutsideMatch', () => updateUiState({ showHelp: false }))}
           themeStyles={themeStyles}
           surfaceState={surfaceState}
-          keyboardShortcuts={KEYBOARD_SHORTCUTS}
+          keyboardShortcuts={v113HelpShortcuts(gameSettings)} // V11.0 (SECTION 20BO): + Ctrl/⌘+K while Find Anything is on
           gameSettings={gameSettings}
           onOpenRules={wp7Kit.fn('v101HelpOpenRulesOutsideMatch', () => { updateUiState({ showHelp: false }); openMechanicsEntry('win'); })} /* V10.1 (SECTION 20BE) */
         />
