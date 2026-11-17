@@ -11,7 +11,7 @@ import { pathToFileURL } from 'node:url';
 const args = process.argv.slice(2);
 const fi = args.indexOf('--file');
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
-const gameFile = path.resolve(fi >= 0 ? args[fi + 1] : path.join(root, '(V9.9) australia-game-with-ai.tsx'));
+const gameFile = path.resolve(fi >= 0 ? args[fi + 1] : path.join(root, '(V10.1) australia-game-with-ai.tsx'));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aussie-registry-'));
 const bundle = path.join(tmp, 'game.mjs');
 await build({

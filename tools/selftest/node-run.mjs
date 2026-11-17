@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 const args = process.argv.slice(2);
 const opt = (name, dflt) => { const i = args.indexOf(`--${name}`); return i >= 0 && args[i + 1] ? args[i + 1] : dflt; };
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
-const gameFile = path.resolve(opt('file', path.join(root, '(V9.9) australia-game-with-ai.tsx')));
+const gameFile = path.resolve(opt('file', path.join(root, '(V10.1) australia-game-with-ai.tsx')));
 const wanted = opt('suites', 'all');
 const outFile = opt('out', '');
 const withExtras = args.includes('--extras');
