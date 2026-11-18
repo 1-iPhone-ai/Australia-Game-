@@ -18,6 +18,20 @@ export default async (G) => {
   const rows4 = section('## 4. Surfaces', '## 5.').split('\n').filter(l => /^\| \d+ \| `/.test(l));
   const unfilled = rows4.filter(l => { const c = l.split(/(?<!\\)\|/).map(x => x.trim()); return [c[10], c[11], c[12]].some(v => !v || v === '?'); });
   ok('§4 gives every surface a plan, a V11.0 home and a package', unfilled.length === 0 && rows4.length === reg.length, unfilled.slice(0, 5).map(l => l.slice(0, 40)).join(' / '));
+  // UX-5: the side panel's row, the six windows' homes and the plan column against the lists suite v115dp walks (a file before UX-5: skipped).
+  if (G.V115_TABS) {
+    const colsOf = l => l.split(/(?<!\\)\|/).map(x => x.trim());
+    const rowOf = id => rows4.find(l => l.includes('| `' + id + '` |'));
+    const r91 = rowOf(G.V115_SURFACE_ID); const c91 = r91 ? colsOf(r91) : [];
+    ok('§4 lists the side panel (docked_panel) as a panel, new in UX-5', Boolean(r91) && c91[10] === 'panel' && /UX-5 \(new\)/.test(c91[12] || ''), r91 ? r91.slice(0, 60) : 'missing');
+    const badHome = G.V115_WINDOWS.filter(w => { const r = rowOf(w.surfaceId); const c = r ? colsOf(r) : []; const tab = G.V115_TABS.find(t => t.id === w.tab); return !r || !c[11].startsWith('Side panel tab') || !tab || !c[11].includes(tab.label) || !/UX-5 \(done\)/.test(c[12]); }).map(w => w.surfaceId);
+    ok('§4 homes the six windows in their side panel tabs (UX-5 done)', badHome.length === 0, badHome.join(','));
+    const decisions = rows4.filter(l => colsOf(l)[10] === 'decision').map(l => colsOf(l)[2].replace(/`/g, '')).sort();
+    ok(`§4's decision rows are the ${G.V115_MAP_DECISION_IDS.length} decisions suite v115dp walks`, JSON.stringify(decisions) === JSON.stringify([...G.V115_MAP_DECISION_IDS].sort()), decisions.join(','));
+    const planOf = id => { const r = rowOf(id); return r ? colsOf(r)[10] : null; };
+    const off = [...G.V115_MAP_ACTION_WINDOW_IDS.filter(id => planOf(id) !== 'dock?'), ...G.V115_MAP_TOOL_WINDOW_IDS.filter(id => planOf(id) !== 'window')];
+    ok(`§4 plans the ${G.V115_MAP_ACTION_WINDOW_IDS.length} action windows (dock?) and the ${G.V115_MAP_TOOL_WINDOW_IDS.length} tool windows (window) as suite v115dp walks them`, off.length === 0, off.join(','));
+  } else skipped.push('§4 side panel: this module has no side panel (a file before UX-5)');
   // §6 sections
   const s6 = firstCol(section('## 6. Settings sections', '**Proposed groups'), 1);
   const secIds = G.SETTINGS_HUB_SECTION_INDEX.map(s => s.id);

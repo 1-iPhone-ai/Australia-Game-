@@ -14126,6 +14126,8 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   settingsLayersEnabled: false,
   /** V11.0 (SECTION 20BP): What's in the game — one page with a card for every optional feature and its real switch. New, off by default (profile). */
   whatsInTheGameEnabled: false,
+  /** V11.0 (SECTION 20BR): the side panel — Market, Challenges, Travel, Workshop and Investments as tabs beside the map. New, off by default (profile). */
+  dockedPanelEnabled: false,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -15270,6 +15272,7 @@ export function sanitizeGameSettings(input: unknown): GameSettingsState {
     findAnythingEnabled: typeof src.findAnythingEnabled === 'boolean' ? src.findAnythingEnabled : defaults.findAnythingEnabled, // V11.0 (SECTION 20BL): only a real boolean switches it on
     settingsLayersEnabled: typeof src.settingsLayersEnabled === 'boolean' ? src.settingsLayersEnabled : defaults.settingsLayersEnabled, // V11.0 (SECTION 20BN): only a real boolean switches it on
     whatsInTheGameEnabled: typeof src.whatsInTheGameEnabled === 'boolean' ? src.whatsInTheGameEnabled : defaults.whatsInTheGameEnabled, // V11.0 (SECTION 20BP): only a real boolean switches it on
+    dockedPanelEnabled: typeof src.dockedPanelEnabled === 'boolean' ? src.dockedPanelEnabled : defaults.dockedPanelEnabled, // V11.0 (SECTION 20BR): only a real boolean switches it on
     rememberCategoryNavigationState: typeof src.rememberCategoryNavigationState === 'boolean' ? src.rememberCategoryNavigationState : defaults.rememberCategoryNavigationState,
     rememberCategoryNavigationMode: typeof src.rememberCategoryNavigationMode === 'boolean' ? src.rememberCategoryNavigationMode : defaults.rememberCategoryNavigationMode,
     autoCollapseCategoriesOnNarrow: typeof src.autoCollapseCategoriesOnNarrow === 'boolean' ? src.autoCollapseCategoriesOnNarrow : defaults.autoCollapseCategoriesOnNarrow,
@@ -17551,7 +17554,8 @@ export const UI_SURFACE_REGISTRY: Record<string, UISurfaceDefinition> = {
 
   rescue_emergency_overlay: { id: 'rescue_emergency_overlay', name: 'Rescue Interface / Emergency Overlay', tier: 8, isBlocking: true, hasBackdrop: true, category: 'overlay', reservedZone: 'fullscreen', allowEscapeClose: false, note: 'not used in V10.1' }, // V11.0 (SECTION 20BL, Q4): nothing in V10.1 opens or draws it; the id is kept
   ...v110SurfaceRegistryAdditions(), // V11.0 (SECTION 20BL, Q4): the 27 windows V10.1 drew without an id, and Find Anything
-  ...v114SurfaceRegistryAdditions() // V11.0 (SECTION 20BP): the What's in the game window
+  ...v114SurfaceRegistryAdditions(), // V11.0 (SECTION 20BP): the What's in the game window
+  ...v115SurfaceRegistryAdditions() // V11.0 (SECTION 20BR): the side panel (docked_panel)
 };
 
 export interface SurfaceHistoryEntry {
@@ -18539,6 +18543,18 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     category: 'interface',
     label: "What's in the game",
     description: 'One page with a card for every optional feature: what it does, whether it is on, its switch and what it needs. A switch on a card is the same switch as in Settings. Nothing about how a match plays changes.',
+    valueType: 'boolean',
+    defaultValue: false,
+    validate: (v: unknown) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: false,
+  },
+  // V11.0 (SECTION 20BR): the side panel (new, off by default, profile). The label is the one its settings row shows (V115_LABEL; pinned by v115dp).
+  {
+    key: 'dockedPanelEnabled',
+    category: 'interface',
+    label: 'Side panel',
+    description: 'Market, Challenges, Travel, Workshop and Investments open as tabs in one panel beside the map instead of windows over it, on screens at least 1024 px wide. Nothing about how a match plays changes.',
     valueType: 'boolean',
     defaultValue: false,
     validate: (v: unknown) => typeof v === 'boolean',
@@ -27052,6 +27068,8 @@ export type GameSettingsState = {
   settingsLayersEnabled?: boolean;
   /** V11.0 (SECTION 20BP): What's in the game — true = a page with a card for every optional feature (main menu, More, the Settings group bar, Find Anything). Off (default) = as after UX-3. Profile-scoped. */
   whatsInTheGameEnabled?: boolean;
+  /** V11.0 (SECTION 20BR): the side panel — true = Market, Challenges, Travel, Workshop and Investments open as tabs beside the map (in a match, on a screen at least 1024 px wide). Off (default) = as after UX-4. Profile-scoped. */
+  dockedPanelEnabled?: boolean;
   /** V10.1 Daily Challenge with fixed rules (SECTION 20BJ): true = the Daily Seed match runs on pinned rules. Off (default) = the Daily Seed is as in V9.9. Match-scoped. */
   dailyFixedRulesEnabled?: boolean;
   /** V10.1 (SECTION 20BA): true = a match started now plays by the V10.0 rules (no Resource Market spread, no V10.1 rival costs, rules editable mid-match, …).
@@ -65188,6 +65206,7 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'interface.findAnything', tab: 'interfaceAcc', title: '🔎 Find Anything', tags: ['UX'], chips: ['Off by default'], fieldKeys: ['findAnythingEnabled'], keywords: 'find anything search everything command palette ctrl k cmd k go to open jump look up where is' }, // V11.0 (SECTION 20BL, Q7): filed under its goal, no version in the title
   { id: 'interface.settingsLayers', tab: 'interfaceAcc', title: '🗂️ Settings Layout', tags: ['UX'], chips: ['Off by default'], fieldKeys: ['settingsLayersEnabled'], keywords: 'settings layout essentials goal groups simple tabs classic layered organise organize declutter' }, // V11.0 (SECTION 20BN): filed under its goal, no version in the title
   { id: 'interface.whatsInTheGame', tab: 'interfaceAcc', title: "🧩 What's in the game", tags: ['UX'], chips: ['Off by default'], fieldKeys: ['whatsInTheGameEnabled'], keywords: 'what s in the game whats features feature list optional features every feature catalogue catalog overview cards switches discover' }, // V11.0 (SECTION 20BP): filed under its goal, no version in the title
+  { id: 'interface.dockedPanel', tab: 'interfaceAcc', title: '📑 Side panel', tags: ['UX'], chips: ['Off by default'], fieldKeys: ['dockedPanelEnabled'], keywords: 'side panel docked panel dock sidebar tabs beside the map market sell buy challenges travel workshop investments windows' }, // V11.0 (SECTION 20BR): filed under its goal, no version in the title
   { id: 'interface.aiAssistants', tab: 'interfaceAcc', title: '🧠 AI Assistant Surfaces', tags: ['UX', 'AI', 'Floating UI'], fieldKeys: ['aiCommandCenterUiEnabled', 'askGameAiUiEnabled', 'aiTuningLabUiEnabled'], keywords: 'ai command center ask game assistant tuning lab floating button hud widget hide show off by default alt+c ctrl+k' },
   { id: 'interface.launcherDock', tab: 'interfaceAcc', title: '🚀 Unified Launcher & Dock', tags: ['UX', 'Launcher', 'Dock'], fieldKeys: ['launcherSettings', 'dockSettings'], keywords: 'unified launcher floating widget dock positioning mode dragging collapse badge' },
   { id: 'interface.quickActionsVisibility', tab: 'interfaceAcc', title: '⚡ Quick Actions Visibility & Close Behavior', tags: ['UX', 'Quick Actions'], fieldKeys: ['keepQuickActionsReopenHandleWhenClosed', 'fullyHideQuickActionsWhenClosed'], keywords: 'quick actions visibility reopen handle button close behavior minimize hide' },
@@ -86709,6 +86728,11 @@ interface UIState {
   v114Filter?: V114Filter;
   v114Focus?: string;
   v114SurfaceIds?: boolean;
+  /** V11.0 (SECTION 20BR): the side panel — the tab (and Market's half) last open, the panel's own Find Anything result, and whether the surface manager tracks the panel. Transient — never saved. */
+  v115DockTab?: V115DockTab;
+  v115DockSide?: V115MarketSide;
+  v115DockOpen?: boolean;
+  v115SurfaceIds?: boolean;
   showLiveControlCenter: boolean;
   liveControlCenterTab: LiveControlCenterTab;
   quickActionDomainFilter: QuickActionDomainId;
@@ -88593,7 +88617,7 @@ export class GlobalUISurfaceManager {
       { flags: ['showRescueEmergencyOverlay', 'showRescueOverlay', 'showEmergencyOverlay'], surfaceId: 'rescue_emergency_overlay' }
     ];
 
-    const v110Mapping = v114SurfaceFlagTable(v110SurfaceFlagTable(modalMapping, uiState.v110SurfaceIds === true), uiState.v114SurfaceIds === true); /* V11.0 (SECTION 20BP): + What's in the game's row while it is on (off: the very same array) */ // V11.0 (SECTION 20BL, Q4): with Find Anything on, each window has its own id; off = the table above, unchanged
+    const v110Mapping = v115SurfaceFlagTable(v114SurfaceFlagTable(v110SurfaceFlagTable(modalMapping, uiState.v110SurfaceIds === true), uiState.v114SurfaceIds === true), uiState.v115SurfaceIds === true); /* V11.0 (SECTION 20BR): docked, the six windows' flags open the side panel (otherwise the very same array) */ /* V11.0 (SECTION 20BP): + What's in the game's row while it is on (off: the very same array) */ // V11.0 (SECTION 20BL, Q4): with Find Anything on, each window has its own id; off = the table above, unchanged
     v101SurfaceFlagSink.current = v110Mapping; // V10.1 (SECTION 20BF): lets Escape and the rescue find every flag that opens a surface (see v101EscapeFlagPatch)
     const activeSurfacesInUI = new Set<string>();
     for (const item of v110Mapping) { // V11.0 (SECTION 20BL): the table above (V10.1's while Find Anything is off)
@@ -134483,6 +134507,7 @@ export const V95_PROFILE_SCOPED_SETTING_KEYS: readonly string[] = [
   'findAnythingEnabled', // V11.0 (SECTION 20BL): an interface preference, remembered between visits, never in a save
   'settingsLayersEnabled', // V11.0 (SECTION 20BN): an interface preference, remembered between visits, never in a save
   'whatsInTheGameEnabled', // V11.0 (SECTION 20BP): an interface preference, remembered between visits, never in a save
+  'dockedPanelEnabled', // V11.0 (SECTION 20BR): an interface preference, remembered between visits, never in a save
   'allowSettingsCategoryCollapse',
   'startSettingsCategoryCollapsed',
   'settingsCategoryNavigationMode',
@@ -136962,13 +136987,14 @@ export function formatReleaseDiagnosticSummary(r: ReleaseReadinessReport): strin
 // rest of a suite stays MAJOR).
 export interface V95SuiteSpec { id: string; label: string; tier: 'quick' | 'full'; section: V95ReleaseSection; severity: V95Severity; run: () => unknown; knownFailures?: string[]; criticalRows?: RegExp }
 
-function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: boolean; detail: string }> {
+function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: boolean; detail: string; skipped?: boolean }> {
   const r: any = raw;
   const arr: any[] = Array.isArray(r) ? r : (r?.results || r?.tests || r?.categories?.flatMap?.((c: any) => c.results || c.tests || []) || []);
   return arr.map((t: any) => ({
     name: String(t?.id || t?.name || t?.testId || 'test'),
     passed: t?.passed === true || t?.pass === true || t?.status === 'pass' || t?.status === 'passed',
-    detail: String(t?.detail ?? t?.message ?? t?.reason ?? '')
+    detail: String(t?.detail ?? t?.message ?? t?.reason ?? ''),
+    ...(t?.skipped === true && t?.passed !== true ? { skipped: true } : {}) // V11.0 (SECTION 20BS): a row that did not run stays skipped: neither a pass nor a failure
   }));
 }
 
@@ -137012,6 +137038,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v110fa', label: 'V11.0 UX-2: Find Anything', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV110FindAnythingSelfTests()) },
   { id: 'v113sl', label: 'V11.0 UX-3: Settings Layers', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV113SettingsLayersSelfTests()) }, // V11.0 (SECTION 20BO)
   { id: 'v114wg', label: "V11.0 UX-4: What's in the Game", tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV114WhatsInTheGameSelfTests()) }, // V11.0 (SECTION 20BQ)
+  { id: 'v115dp', label: 'V11.0 UX-5: Docked Panel', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV115DockedPanelSelfTests()) }, // V11.0 (SECTION 20BS)
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
@@ -137055,7 +137082,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
 
 export function runV95ExistingSuite(spec: V95SuiteSpec): V95CheckResult[] {
   const t0 = v95Now();
-  let rows: Array<{ name: string; passed: boolean; detail: string }> = [];
+  let rows: Array<{ name: string; passed: boolean; detail: string; skipped?: boolean }> = []; // V11.0 (SECTION 20BS): + skipped
   try { rows = v95NormalizeSuiteResults(spec.run()); }
   catch (err) {
     return [{ id: `${spec.id}:threw`, name: `${spec.label} suite`, section: spec.section, severity: 'BLOCKER', passed: false, detail: `Suite threw: ${err instanceof Error ? err.message : String(err)}`, system: spec.label, reproduction: `Run ${spec.label} self-tests from LAB` }];
@@ -137064,16 +137091,17 @@ export function runV95ExistingSuite(spec: V95SuiteSpec): V95CheckResult[] {
   // V10.1 (SECTION 20BK): rows listed in spec.knownFailures are red on purpose: they do not fail the suite, but a listed row that PASSES (or is gone) does, so
   // the list cannot go stale. A failing row that matches spec.criticalRows raises this suite's check to CRITICAL (data-loss and migration rows).
   const known = new Set(spec.knownFailures || []);
-  const failedAll = rows.filter(r => !r.passed);
+  const skippedRows = rows.filter(r => r.skipped === true).length; // V11.0 (SECTION 20BS): a skipped row (it could not run here, e.g. no static renderer in the LAB) is reported as skipped
+  const failedAll = rows.filter(r => !r.passed && r.skipped !== true); // V11.0 (SECTION 20BS): … and is not a failure (nor a pass: the count below leaves it out)
   const failed = failedAll.filter(r => !known.has(r.name));
   const knownRed = failedAll.length - failed.length;
   const staleKnown = Array.from(known).filter(name => !failedAll.some(r => r.name === name));
   const severity: V95Severity = spec.criticalRows && failed.some(r => spec.criticalRows!.test(r.name)) ? 'CRITICAL' : spec.severity;
   const check: V95CheckResult = {
     id: `${spec.id}:suite`, name: `${spec.label} suite`, section: spec.section, severity,
-    passed: rows.length > 0 && failed.length === 0 && staleKnown.length === 0,
-    detail: rows.length ? `${rows.length - failedAll.length}/${rows.length} passed${knownRed ? ` (${knownRed} known)` : ''}${failed.length ? ` — failing: ${failed.slice(0, 4).map(f => `${f.name}${f.detail ? ` (${f.detail.slice(0, 80)})` : ''}`).join('; ')}` : ''}${staleKnown.length ? ` — listed as a known failure but not failing now: ${staleKnown.join(', ')}` : ''}` : 'Suite returned no results',
-    expected: `${rows.length}/${rows.length}`, actual: `${rows.length - failed.length}/${rows.length}`, system: spec.label,
+    passed: rows.length > skippedRows && failed.length === 0 && staleKnown.length === 0, // V11.0 (SECTION 20BS): a suite where nothing ran does not pass (was rows.length > 0)
+    detail: rows.length ? `${rows.length - failedAll.length - skippedRows}/${rows.length} passed${skippedRows ? ` (${skippedRows} skipped)` : ''}${knownRed ? ` (${knownRed} known)` : ''}${failed.length ? ` — failing: ${failed.slice(0, 4).map(f => `${f.name}${f.detail ? ` (${f.detail.slice(0, 80)})` : ''}`).join('; ')}` : ''}${staleKnown.length ? ` — listed as a known failure but not failing now: ${staleKnown.join(', ')}` : ''}` : 'Suite returned no results',
+    expected: `${rows.length}/${rows.length}`, actual: `${rows.length - failed.length - skippedRows}/${rows.length}`, system: spec.label, // V11.0 (SECTION 20BS): − the skipped rows
     reproduction: `LAB › Run self-tests (${spec.label})`, durationMs: ms
   };
   return [check];
@@ -217434,6 +217462,7 @@ export const V101_SUITE_MANIFEST: ReadonlyArray<readonly [string, string]> = [
   ['runV110FindAnythingSelfTests', 'v110fa'], // V11.0 (SECTION 20BM)
   ['runV113SettingsLayersSelfTests', 'v113sl'], // V11.0 (SECTION 20BO)
   ['runV114WhatsInTheGameSelfTests', 'v114wg'], // V11.0 (SECTION 20BQ)
+  ['runV115DockedPanelSelfTests', 'v115dp'], // V11.0 (SECTION 20BS)
   ['runV102StrategicInfrastructureNetworksSelfTests', 'v102'], ['runV103NationalMegaprojectSelfTests', 'v103'], ['runV104NationalDevelopmentSelfTests', 'v104'],
   ['runV105InnovationCapabilitiesSelfTests', 'v105'], ['runV106ResilienceSystemicRiskSelfTests', 'v106'], ['runV107DynamicNationalPrioritiesSelfTests', 'v107'],
   ['runV108RegionalCompetitionSelfTests', 'v108'], ['runV109StrategicCapitalSelfTests', 'v109'], ['runV1010WorkforceHumanCapitalSelfTests', 'v1010'],
@@ -219468,7 +219497,7 @@ export function v110FindSearch(index: readonly V110FindEntry[], query: string, l
   }
   const hits: V110FindHit[] = [];
   const pq = v110PrepareQuery(text);
-  const everyday = [...v113SynonymTargets(text), ...v114SynonymTargets(text, index)]; /* V11.0 (SECTION 20BP): + "features", "what's in the game" */ // V11.0 (SECTION 20BO): everyday words ("harder", "mute", "restart") lift the place they mean
+  const everyday = [...v113SynonymTargets(text), ...v114SynonymTargets(text, index), ...v115SynonymTargets(text, index) /* V11.0 (SECTION 20BR): + "side panel" */]; /* V11.0 (SECTION 20BP): + "features", "what's in the game" */ // V11.0 (SECTION 20BO): everyday words ("harder", "mute", "restart") lift the place they mean
   index.forEach(entry => { const score = v110ScorePrepared(entry, pq) + (everyday.includes(entry.id) ? V113_SYNONYM_BOOST : 0); if (score > 0) hits.push({ entry, score }); });
   hits.sort((a, b) => (b.score - a.score) || (V110_KIND_ORDER[a.entry.kind] - V110_KIND_ORDER[b.entry.kind]) || (a.entry.order - b.entry.order));
   const ranked = hits.slice(0, Math.max(0, limit - 1));
@@ -219540,7 +219569,7 @@ export function v110FindAvailability(entry: V110FindEntry, ctx: V110FindContext)
 export interface V110FindResult { entry: V110FindEntry; score: number; availability: V110FindAvailability }
 /** Search and availability together: what the dialog lists. */
 export function v110FindResults(index: readonly V110FindEntry[], query: string, ctx: V110FindContext, limit: number = V110_FIND_MAX_RESULTS): V110FindResult[] {
-  return v110FindSearch(v114IndexFor(index, ctx.settings), query, limit).map(hit => { // V11.0 (SECTION 20BP): with What's in the game on, the page and its 101 cards are results too (off: the very same index)
+  return v110FindSearch(v115IndexFor(v114IndexFor(index, ctx.settings), ctx.settings) /* V11.0 (SECTION 20BR): + the side panel's own result while it is on (off: the very same index) */, query, limit).map(hit => { // V11.0 (SECTION 20BP): with What's in the game on, the page and its 101 cards are results too (off: the very same index)
     const entry = v113LayeredEntry(hit.entry, ctx.settings); // V11.0 (SECTION 20BO): with the layered Settings on, a setting opens its new home
     return { ...hit, entry, availability: v110FindAvailability(entry, ctx) };
   });
@@ -220008,7 +220037,7 @@ export function runV110FindAnythingSelfTests(): V9SelfTestResult[] {
     const added = Object.keys(v110SurfaceRegistryAdditions());
     const clash = added.filter(id => V110_MAP_SURFACE_IDS.includes(id));
     return (V110_MAP_WINDOW_IDS.length === 28 && missing.length === 0 && added.length === 28 && added.includes('find_anything') && clash.length === 0
-      && Object.keys(UI_SURFACE_REGISTRY).length === 61 + 28 + Object.keys(v114SurfaceRegistryAdditions()).length /* V11.0 (SECTION 20BP): + What's in the game */) || json({ missing, added: added.length, clash, total: Object.keys(UI_SURFACE_REGISTRY).length });
+      && Object.keys(UI_SURFACE_REGISTRY).length === 61 + 28 + Object.keys(v114SurfaceRegistryAdditions()).length /* V11.0 (SECTION 20BP): + What's in the game */ + Object.keys(v115SurfaceRegistryAdditions()).length /* V11.0 (SECTION 20BR): + the side panel */) || json({ missing, added: added.length, clash, total: Object.keys(UI_SURFACE_REGISTRY).length });
   });
   check('v110fa_13_unused_ids_marked', 'The 8 ids nothing in V10.1 opens are kept and marked "not used in V10.1"; Find Anything never offers them', () => {
     const unmarked = V110_UNUSED_SURFACE_IDS.filter(id => !UI_SURFACE_REGISTRY[id] || UI_SURFACE_REGISTRY[id].note !== V110_UNUSED_SURFACE_NOTE);
@@ -220056,7 +220085,7 @@ export function runV110FindAnythingSelfTests(): V9SelfTestResult[] {
     const settingIds = index.filter(entry => entry.kind === 'setting').map(entry => entry.settingKey || '');
     const missing = [...V110_MAP_SETTING_KEYS, 'findAnythingEnabled'].filter(key => settingIds.filter(id => id === key).length !== 1);
     const uncovered = keys.filter(key => !settingIds.includes(key));
-    return (V110_MAP_SETTING_KEYS.length === 599 && keys.length === 600 + V113_SETTING_KEYS.length /* V11.0 (SECTION 20BN): + the Settings layers switch */ + V114_SETTING_KEYS.length /* V11.0 (SECTION 20BP): + What's in the game */ && missing.length === 0 && uncovered.length === 0 && settingIds.length === keys.length) || json({ missing: missing.slice(0, 10), uncovered });
+    return (V110_MAP_SETTING_KEYS.length === 599 && keys.length === 600 + V113_SETTING_KEYS.length /* V11.0 (SECTION 20BN): + the Settings layers switch */ + V114_SETTING_KEYS.length /* V11.0 (SECTION 20BP): + What's in the game */ + V115_SETTING_KEYS.length /* V11.0 (SECTION 20BR): + the side panel */ && missing.length === 0 && uncovered.length === 0 && settingIds.length === keys.length) || json({ missing: missing.slice(0, 10), uncovered });
   });
   check('v110fa_19_every_setting_found_by_key', 'Every one of the 600 settings is the first result when you type its key', () => {
     const wrong = keys.filter(key => { const top = v110FindSearch(index, key, 5)[0]; return !top || top.entry.id !== `setting:${key}`; });
@@ -220436,7 +220465,8 @@ export const V113_SECTION_GROUP: Readonly<Record<string, V113GroupId>> = {
   "interface.notifications": 'help',
   "interface.findAnything": 'help',
   "interface.settingsLayers": 'help',
-  "interface.whatsInTheGame": 'help' // V11.0 (SECTION 20BP): What's in the game's switch, beside Settings Layout
+  "interface.whatsInTheGame": 'help', // V11.0 (SECTION 20BP): What's in the game's switch, beside Settings Layout
+  "interface.dockedPanel": 'help' // V11.0 (SECTION 20BR): the side panel's switch, beside What's in the game
 };
 /** The single home of every setting (map §7, "V11.0 home"): a section id, or one of the layered view's own blocks (v113.*). */
 export const V113_HOME_KEYS: Readonly<Record<string, readonly string[]>> = {
@@ -220489,6 +220519,7 @@ export const V113_HOME_KEYS: Readonly<Record<string, readonly string[]>> = {
   "interface.safeAreaPreview": ['safeAreaPreviewSettings'],
   "interface.settingsLayers": ['settingsLayersEnabled'],
   "interface.whatsInTheGame": ['whatsInTheGameEnabled'], // V11.0 (SECTION 20BP)
+  "interface.dockedPanel": ['dockedPanelEnabled'], // V11.0 (SECTION 20BR)
   "interface.startScreen": ['startScreenConflictProtection', 'showFloatingControlsOnStartScreen', 'startScreenFloatingLayout', 'restoreEligibleFloatingControlsAfterMatchStarts', 'hideGameplaySidePanelsOnStartScreen'],
   "interface.uiRescue": ['uiRescueSettings', 'rescueSettings'],
   "interface.uxAssist": ['uxAssistPackEnabled', 'simplifiedActionBarEnabled', 'disabledActionFeedbackEnabled', 'interactiveMapEnabled', 'winConditionCoachEnabled', 'settingsPresetsEnabled', 'groupedInventoryCardsEnabled'],
@@ -221552,6 +221583,7 @@ export function v113FixAcronyms(text: string): string { return V113_ACRONYMS.red
 export function v113SettingLabel(key: string): string {
   if (key === 'findAnythingEnabled') return V110_FIND_LABEL;
   if (key === 'settingsLayersEnabled') return V113_LABEL;
+  if (key === 'dockedPanelEnabled') return V115_LABEL; // V11.0 (SECTION 20BR)
   const ux4 = V114_SETTING_LABELS[key]; // V11.0 (SECTION 20BP): UX-4's entries come first (the twins, the two key-titled settings, the new switch, the eight feature names)
   if (ux4) return ux4;
   const own = V113_SETTING_LABELS[key];
@@ -221806,35 +221838,35 @@ export function runV113SettingsLayersSelfTests(): V9SelfTestResult[] {
   check('v113sl_05_keys_defaults_scopes_kept', 'Every setting keeps its key, default and scope: V10.1\'s 599 defaults and its profile and match lists are unchanged, and the only new keys are the V11.0 switches', () => { // V11.0 (SECTION 20BP): three now
     const mapKeys = V110_MAP_SETTING_KEYS.slice().sort();
     const defaults = v113Fingerprint(json(mapKeys.map(k => [k, (DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>)[k]])));
-    const fresh = ['findAnythingEnabled', 'settingsLayersEnabled', 'whatsInTheGameEnabled']; // V11.0 (SECTION 20BP): + What's in the game
+    const fresh = ['dockedPanelEnabled', 'findAnythingEnabled', 'settingsLayersEnabled', 'whatsInTheGameEnabled']; // V11.0 (SECTION 20BP): + What's in the game. V11.0 (SECTION 20BR): + the side panel
     const profile = V95_PROFILE_SCOPED_SETTING_KEYS.filter(k => !fresh.includes(k)).slice().sort();
     const match = (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).filter(k => !fresh.includes(k)).slice().sort();
     const extra = keys.filter(k => !V110_MAP_SETTING_KEYS.includes(k));
     const f = V113_V101_FINGERPRINTS;
     return (defaults === f.defaults && v113Fingerprint(json(profile)) === f.profile && profile.length === f.profileCount && v113Fingerprint(json(match)) === f.match && match.length === f.matchCount
-      && json(extra.slice().sort()) === json(fresh) && keys.length === 602 /* V11.0 (SECTION 20BP): 601 + What's in the game */) || json({ defaults, profile: v113Fingerprint(json(profile)), match: v113Fingerprint(json(match)), extra });
+      && json(extra.slice().sort()) === json(fresh) && keys.length === 603 /* V11.0 (SECTION 20BP): 601 + What's in the game. V11.0 (SECTION 20BR): + the side panel */) || json({ defaults, profile: v113Fingerprint(json(profile)), match: v113Fingerprint(json(match)), extra });
   });
 
   // ---- 2. The map, walked ---------------------------------------------------------------------------------------------------------------------
-  check('v113sl_06_walk_every_setting_one_home', 'Walk: each of the 602 settings has exactly one home, every home is a real section or a layered block, and no home names an unknown key', () => { // V11.0 (SECTION 20BP): + What's in the game's switch
+  check('v113sl_06_walk_every_setting_one_home', 'Walk: each of the 603 settings has exactly one home, every home is a real section or a layered block, and no home names an unknown key', () => { // V11.0 (SECTION 20BP): + What's in the game's switch. V11.0 (SECTION 20BR): the count in the name follows the side panel
     const seen = new Map<string, string[]>();
     Object.entries(V113_HOME_KEYS).forEach(([home, ks]) => ks.forEach(k => seen.set(k, [...(seen.get(k) || []), home])));
     const twice = [...seen.entries()].filter(([, homes]) => homes.length !== 1).map(([k]) => k);
     const missing = keys.filter(k => !seen.has(k));
     const unknown = [...seen.keys()].filter(k => !keys.includes(k));
     const badHomes = Object.keys(V113_HOME_KEYS).filter(home => !isV113PseudoId(home) && !sectionIds.includes(home));
-    return (twice.length === 0 && missing.length === 0 && unknown.length === 0 && badHomes.length === 0 && seen.size === 602 /* V11.0 (SECTION 20BP): + whatsInTheGameEnabled */) || json({ twice, missing, unknown, badHomes });
+    return (twice.length === 0 && missing.length === 0 && unknown.length === 0 && badHomes.length === 0 && seen.size === 603 /* V11.0 (SECTION 20BP): + whatsInTheGameEnabled. V11.0 (SECTION 20BR): + dockedPanelEnabled */) || json({ twice, missing, unknown, badHomes });
   });
   check('v113sl_07_walk_every_section_grouped', 'Walk: all 89 sections (the map\'s 87 — 86 indexed and the Balance Lab — plus Find Anything\'s and Settings Layout\'s) belong to one of the six groups', () => {
     const missing = sectionIds.filter(id => !isV113GroupId(V113_SECTION_GROUP[id]));
     const stale = Object.keys(V113_SECTION_GROUP).filter(id => !sectionIds.includes(id));
     const mapped = [...V110_MAP_SECTION_IDS, V110_FIND_SECTION_ID, V113_SECTION_ID].every(id => isV113GroupId(V113_SECTION_GROUP[id]));
-    return (missing.length === 0 && stale.length === 0 && mapped && Object.keys(V113_SECTION_GROUP).length === 90 /* V11.0 (SECTION 20BP): + What's in the game's section */ && V110_MAP_SECTION_IDS.length === 87) || json({ missing, stale });
+    return (missing.length === 0 && stale.length === 0 && mapped && Object.keys(V113_SECTION_GROUP).length === 91 /* V11.0 (SECTION 20BP): + What's in the game's section. V11.0 (SECTION 20BR): + the side panel's */ && V110_MAP_SECTION_IDS.length === 87) || json({ missing, stale });
   });
   check('v113sl_08_group_counts', 'The five goal groups hold the map\'s counts: Match & rules 100, Your rival 104, Teams & automation 251, Help, screen & sound 62 (+ the new switch), Records & tools 61 (+ deterministicRngActive); Essentials 15', () => {
     const counts = v113GroupKeyCounts();
     const internal = (V113_HOME_KEYS['v113.internal'] || []).length;
-    return (json(counts) === json({ essentials: 15, match: 100, rival: 101, teams: 251, help: 64, tools: 65 }) /* V11.0 (SECTION 20BP, 20BQ): + What's in the game (Help); the Balance Lab's three settings moved from Your rival to Records & tools */ && internal === 6 && v113HomeOf('deterministicRngActive') === 'advancedSystems.replaySafety'
+    return (json(counts) === json({ essentials: 15, match: 100, rival: 101, teams: 251, help: 65, tools: 65 }) /* V11.0 (SECTION 20BR): + the side panel (Help) */ /* V11.0 (SECTION 20BP, 20BQ): + What's in the game (Help); the Balance Lab's three settings moved from Your rival to Records & tools */ && internal === 6 && v113HomeOf('deterministicRngActive') === 'advancedSystems.replaySafety'
       && v113HomeOf('settingsLayersEnabled') === V113_SECTION_ID) || json({ counts, internal });
   });
   check('v113sl_09_walk_single_homes_named_by_the_map', 'The misfiled 18 (§11.4) live where their control is or get a row there; the version switches are filed by goal; nothing keeps a second home', () => {
@@ -223357,7 +223389,7 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
   });
 
   // ---- 5. The page: groups, filter, gate --------------------------------------------------------------------------------------------------
-  check('v114wg_20_no_default_changes', 'Building the page and its Find Anything results changes no setting: V10.1\'s 599 defaults are the same, and the only new keys are the three V11.0 switches', () => {
+  check('v114wg_20_no_default_changes', 'Building the page and its Find Anything results changes no setting: V10.1\'s 599 defaults are the same, and the only new keys are the four V11.0 switches', () => { // V11.0 (SECTION 20BR): the count in the name follows the side panel
     const d = defaults();
     const before = json(d);
     page(d); page(pageOn()); v110FindResults(base, 'shop', ctxFor(pageOn()));
@@ -223365,7 +223397,7 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
     const values = new Map<string, unknown>(Object.entries(DEFAULT_GAME_SETTINGS));
     const fingerprint = v113Fingerprint(json(mapKeys.map(k => [k, values.get(k)])));
     const extra = keys.filter(k => !V110_MAP_SETTING_KEYS.includes(k)).sort();
-    return (json(d) === before && fingerprint === V113_V101_FINGERPRINTS.defaults && json(extra) === json(['findAnythingEnabled', 'settingsLayersEnabled', 'whatsInTheGameEnabled']) && keys.length === 602) || json({ same: json(d) === before, fingerprint, extra });
+    return (json(d) === before && fingerprint === V113_V101_FINGERPRINTS.defaults && json(extra) === json(['dockedPanelEnabled', 'findAnythingEnabled', 'settingsLayersEnabled', 'whatsInTheGameEnabled']) /* V11.0 (SECTION 20BR): + the side panel */ && keys.length === 603) || json({ same: json(d) === before, fingerprint, extra });
   });
   check('v114wg_21_five_goal_groups', 'The cards are grouped by the five goal groups, in Settings\' order, each card in exactly one group, with each group\'s own count of what is on', () => {
     const view = page(pageOn(), { teamMode: true });
@@ -223517,11 +223549,11 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
   });
 
   // ---- 9. The map, walked: nothing is lost ---------------------------------------------------------------------------------------------------
-  check('v114wg_33_map_walk_nothing_lost', 'Walk: every id of the map is still in the game and reachable — 61 + 28 surfaces and windows plus the page, 87 + 2 sections plus the new one, 599 settings plus the 3 V11.0 switches, 17 shortcuts, 48 LAB cards and the 101 cards; every one is a Find Anything result (the 8 unused ids aside)', () => {
+  check('v114wg_33_map_walk_nothing_lost', 'Walk: every id of the map is still in the game and reachable — 61 + 28 surfaces and windows plus the page and the side panel, 87 + 2 sections plus the two new ones, 599 settings plus the 4 V11.0 switches, 17 shortcuts, 48 LAB cards and the 101 cards; every one is a Find Anything result (the 8 unused ids aside)', () => { // V11.0 (SECTION 20BR): the count in the name follows the side panel
     const counts = [V110_MAP_SURFACE_IDS.length, V110_MAP_WINDOW_IDS.length, V110_MAP_SECTION_IDS.length, V110_MAP_SETTING_KEYS.length, V110_MAP_SHORTCUT_IDS.length, V110_MAP_LAB_CARD_IDS.length, V114_MAP_CARDS.length];
     const registry = Object.keys(UI_SURFACE_REGISTRY);
     const sectionIds = [...SETTINGS_HUB_SECTION_INDEX.map(s => s.id), V110_BALANCE_LAB_SECTION.id];
-    const targets = new Set(merged.map(e => e.surfaceId).filter((id): id is string => Boolean(id)));
+    const targets = new Set(v115IndexFor(merged, { dockedPanelEnabled: true }).map(e => e.surfaceId).filter((id): id is string => Boolean(id))); // V11.0 (SECTION 20BR): the side panel is a result while its switch is on
     const lost = [
       ...V110_MAP_SURFACE_IDS.filter(id => !UI_SURFACE_REGISTRY[id]),
       ...V110_MAP_WINDOW_IDS.map(id => V110_MAP_WINDOW_ID_ALIASES[id] || id).filter(id => !UI_SURFACE_REGISTRY[id]),
@@ -223534,11 +223566,11 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
       ...V110_MAP_LAB_CARD_IDS.filter(id => !merged.some(e => e.kind === 'lab' && e.labCardId === id)),
       ...V114_MAP_CARDS.filter(([name]) => { const c = V114_CARDS.find(x => x.map === name); return !c || !merged.some(e => e.id === `${V114_FEATURE_FIND_PREFIX}${c.id}`); }).map(([name]) => name),
     ];
-    return (json(counts) === json([61, 28, 87, 599, 17, 48, 101]) && registry.length === 61 + 28 + 1 && sectionIds.length === 87 + 2 + 1 && keys.length === 599 + 3 && lost.length === 0) || json({ counts, registry: registry.length, sections: sectionIds.length, lost: lost.slice(0, 10) });
+    return (json(counts) === json([61, 28, 87, 599, 17, 48, 101]) && registry.length === 61 + 28 + 1 + 1 && sectionIds.length === 87 + 2 + 1 + 1 && keys.length === 599 + 4 /* V11.0 (SECTION 20BR): + the side panel's id, section and switch */ && lost.length === 0) || json({ counts, registry: registry.length, sections: sectionIds.length, lost: lost.slice(0, 10) });
   });
 
   // ---- 10. The labels and the Balance Lab's home ---------------------------------------------------------------------------------------------
-  check('v114wg_34_twins_get_two_labels', '"Travel Discipline" and "Floating UI Conflict Control" each name two settings now, and no two of the 602 settings share a label', () => {
+  check('v114wg_34_twins_get_two_labels', '"Travel Discipline" and "Floating UI Conflict Control" each name two settings now, and no two of the 603 settings share a label', () => { // V11.0 (SECTION 20BR): the count in the name follows the side panel
     const labels = keys.map(v113SettingLabel);
     const dup = labels.filter((l, i) => labels.indexOf(l) !== i);
     const twins = V114_TWINS.map(([a, b]) => [v113SettingLabel(a), v113SettingLabel(b)]);
@@ -223550,7 +223582,7 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
     return (json(V114_KEY_TITLED.map(v113SettingLabel)) === json(['Auto Mode Master Switch', 'Directive Budget Limit']) && literal.length === 0
       && V114_KEY_TITLED.every(k => base.find(e => e.id === `setting:${k}`)?.title === v113SettingLabel(k))) || json({ literal, now: V114_KEY_TITLED.map(v113SettingLabel) });
   });
-  check('v114wg_36_balance_lab_home', "The Balance Lab's three settings live in 🔬 Records & tools › ⚖️ Balance Lab: two rows there write through the Activity Ledger window's own calls, Find Anything opens that section (classic and layered), and the group counts follow (Your rival 101, Records & tools 65, Help 64)", () => {
+  check('v114wg_36_balance_lab_home', "The Balance Lab's three settings live in 🔬 Records & tools › ⚖️ Balance Lab: two rows there write through the Activity Ledger window's own calls, Find Anything opens that section (classic and layered), and the group counts follow (Your rival 101, Records & tools 65, Help 65 with the side panel's switch)", () => { // V11.0 (SECTION 20BR): the count in the name follows the side panel
     const homes = V114_BALANCE_LAB_KEYS.map(k => v113HomeOf(k));
     const rows = V113_ROWS.filter(r => r.home === V114_BALANCE_LAB_HOME);
     const log: string[] = [];
@@ -223561,7 +223593,7 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
     const counts = v113GroupKeyCounts();
     return (homes.every(h => h === V114_BALANCE_LAB_HOME) && v113GroupOfHome(V114_BALANCE_LAB_HOME) === 'tools' && json(rows.map(r => r.key)) === json(['balanceLabEnabled', 'balanceLabSandboxMode'])
       && json(log) === json(['set:balanceLabEnabled=true|Balance Lab Enabled|Balance Lab', 'set:balanceLabSandboxMode=true|Balance Lab Sandbox Mode|Balance Lab']) && lands
-      && counts.rival === 101 && counts.tools === 65 && counts.help === 64 && !(V113_HOME_KEYS['aiStrategyLab.main'] || []).some(k => V114_BALANCE_LAB_KEYS.includes(k))) || json({ homes, rows: rows.map(r => r.key), log, lands, counts });
+      && counts.rival === 101 && counts.tools === 65 && counts.help === 65 /* V11.0 (SECTION 20BR): + the side panel */ && !(V113_HOME_KEYS['aiStrategyLab.main'] || []).some(k => V114_BALANCE_LAB_KEYS.includes(k))) || json({ homes, rows: rows.map(r => r.key), log, lands, counts });
   });
 
   // ---- 11. Determinism, old saves -------------------------------------------------------------------------------------------------------------
@@ -223604,6 +223636,1097 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
     const sectionEntry = base.find(e => e.id === `section:${V114_SECTION_ID}`);
     return (Boolean(field) && field?.props.id === 'settings-field-whatsInTheGameEnabled' && byKey[0] === 'setting:whatsInTheGameEnabled' && byLabel.includes('setting:whatsInTheGameEnabled')
       && Boolean(sectionEntry) && V113_SECTION_GROUP[V114_SECTION_ID] === 'help' && v113SettingLabel('whatsInTheGameEnabled') === V114_LABEL) || json({ field: Boolean(field), byKey, byLabel: byLabel.slice(0, 4) });
+  });
+  return results;
+}
+
+// ============================================================================
+// SECTION 20BR: V11.0 DOCKED PANEL — MARKET, CHALLENGES, TRAVEL, WORKSHOP AND INVESTMENTS AS TABS BESIDE THE MAP (UX-5)
+// ============================================================================
+// Package UX-5. Off by default: one profile setting, dockedPanelEnabled, read with === true. Off = every window exactly as V11.0
+// drew it after UX-4: the same elements, the same flags, the same surface table, the same keys. On, in a match, on a screen at
+// least 1024 px wide ('docked'):
+//   the panel    one side panel beside the map, with an id of its own (docked_panel: a side panel the surface manager tracks and
+//                never counts as blocking), and five tabs: 💰 Market (💰 Sell and 🛍️ Buy inside: the Sell Market and the Resource
+//                Market), 🎯 Challenges, ✈️ Travel, 🔨 Workshop and 🏦 Investments.
+//   one logic    a tab draws its window's own content with the window's own handlers. Each window's element is built exactly as
+//                before; v115Dock.slot hands it back untouched unless the panel is docked, and then draws its content in the panel
+//                instead of over the page (v115DialogChildren). Nothing is forked.
+//   ways in     every way in to those six windows sets the window's flag through updateUiState (buttons, the C T R M W keys, Find
+//                Anything, What's in the game, Intelligence and Co-Pilot "Open …" buttons, the guided first match's buttons), so
+//                each opens its tab: v115DockNormalize (one line in updateUiState) keeps the window just opened and closes the
+//                others. R and M open the two halves of Market.
+//   not a dialog a labelled region with a tab list: ← → Home End move between tabs, focus moves in on open and back to the opener on
+//                close, no focus trap. The map, the header and End Turn stay usable; C T R M W and Space work while it is open; Escape
+//                and the rescue close it. Every window and decision still opens over it (the panel is drawn under z-50, the layer
+//                every overlay starts at), and the End Turn chip and the toasts move to its left while it is open.
+//   fallback    narrower than 1024 px, or outside a match ('windows'), the six windows open as windows, as before.
+//   memory      the open tab and Market's half are remembered in the interface state for this session; a save never carries
+//                interface state (uiPreferences holds the theme only).
+// How a match plays never changes (rules stamp 1010). Nothing here reads the clock or draws a random number.
+// Suite v115dp (runV115DockedPanelSelfTests, SECTION 20BS).
+// ============================================================================
+
+// ---- The switch -----------------------------------------------------------------------------------------------------------------
+//   dockedPanelEnabled  boolean, false  NEW (UX-5), profile setting. Off = every window as V11.0 delivered it after UX-4.
+export type V115BooleanSettingKey = 'dockedPanelEnabled';
+export const V115_SETTING_KEYS: readonly V115BooleanSettingKey[] = ['dockedPanelEnabled'];
+export const V115_SECTION_ID = 'interface.dockedPanel';
+export const V115_SECTION_TITLE = '📑 Side panel';
+export const V115_LABEL = 'Side panel';
+export const V115_DESCRIPTION = 'Market (sell and buy), Challenges, Travel, Workshop and Investments open as tabs in one panel beside the map instead of windows over it. The map, the header and End Turn stay usable while it is open, and decisions still pop up on top. On screens narrower than 1024 px they open as windows, as before.';
+export const V115_SURFACE_ID = 'docked_panel';
+/** The V11.0 suites added by UX-5. */
+export const V115_SUITE_IDS: readonly string[] = ['v115dp'];
+/** Narrower than this (CSS px), the six windows open as windows. */
+export const V115_DOCK_MIN_WIDTH = 1024;
+export const V115_WIDE_QUERY = `(min-width: ${V115_DOCK_MIN_WIDTH}px)`;
+/** The panel's width: 22rem at 1024 px, about a third of the screen above that, never wider than 30rem. */
+export const V115_DOCK_WIDTH_CSS = 'clamp(22rem, 32vw, 30rem)';
+/** The panel is drawn under every window and decision (their overlays start at z-50) and over the page and the End Turn chip (z-40). */
+export const V115_DOCK_Z = 45;
+export const V115_TABPANEL_ID = 'v115-tabpanel';
+/** True only when the side panel is switched on (a real true; anything else, including a missing value, is off). */
+export function v115DockOn(settings: { readonly dockedPanelEnabled?: unknown } | null | undefined): boolean {
+  return settings?.dockedPanelEnabled === true;
+}
+export function isV115SettingKeyName(key: unknown): boolean {
+  return typeof key === 'string' && (V115_SETTING_KEYS as readonly string[]).includes(key);
+}
+/** The switch's section keys, for its SettingsSection (the hub index's own list). */
+export function v115SectionFieldKeys(): (keyof GameSettingsState)[] {
+  return SETTINGS_HUB_SECTION_INDEX.find(s => s.id === V115_SECTION_ID)?.fieldKeys || ['dockedPanelEnabled'];
+}
+
+// ---- The six windows and the five tabs -----------------------------------------------------------------------------------------
+export type V115DockTab = 'market' | 'challenges' | 'travel' | 'workshop' | 'investments';
+export type V115MarketSide = 'sell' | 'buy';
+export type V115WindowKey = 'sell' | 'buy' | 'challenges' | 'travel' | 'workshop' | 'investments';
+/** The interface flag each window's own button sets (the six flags of the V10.1 surface table). */
+export type V115WindowFlag = 'showMarket' | 'showResourceMarket' | 'showChallenges' | 'showTravelModal' | 'showWorkshop' | 'showInvestments';
+export interface V115Window {
+  key: V115WindowKey;
+  tab: V115DockTab;
+  side: V115MarketSide | null;
+  flag: V115WindowFlag;
+  /** The window's id in UI_SURFACE_REGISTRY: kept, and still the window's id whenever it opens as a window. */
+  surfaceId: string;
+  /** The action-bar button the window's own button is (the guided first match shows only what it has unlocked). */
+  buttonId: string;
+  /** The keyboard shortcut action that opens it (KEYBOARD_SHORTCUTS); Investments has none. */
+  shortcut: string | null;
+  label: string;
+  icon: string;
+  hotkey: string;
+  /** The window's dialog padded its content itself (p-6); in the panel that content gets p-4. */
+  padded: boolean;
+}
+export const V115_WINDOWS: readonly V115Window[] = [
+  { key: 'sell', tab: 'market', side: 'sell', flag: 'showMarket', surfaceId: 'market_modal', buttonId: 'market', shortcut: 'openResources', label: 'Sell', icon: '💰', hotkey: 'R', padded: false },
+  { key: 'buy', tab: 'market', side: 'buy', flag: 'showResourceMarket', surfaceId: 'resource_market_modal', buttonId: 'resourceMarket', shortcut: 'openResourceMarket', label: 'Buy', icon: '🛍️', hotkey: 'M', padded: false },
+  { key: 'challenges', tab: 'challenges', side: null, flag: 'showChallenges', surfaceId: 'challenges_modal', buttonId: 'challenges', shortcut: 'openChallenges', label: 'Challenges', icon: '🎯', hotkey: 'C', padded: true },
+  { key: 'travel', tab: 'travel', side: null, flag: 'showTravelModal', surfaceId: 'travel_modal', buttonId: 'travel', shortcut: 'openTravel', label: 'Travel', icon: '✈️', hotkey: 'T', padded: true },
+  { key: 'workshop', tab: 'workshop', side: null, flag: 'showWorkshop', surfaceId: 'workshop_modal', buttonId: 'workshop', shortcut: 'openWorkshop', label: 'Workshop', icon: '🔨', hotkey: 'W', padded: false },
+  { key: 'investments', tab: 'investments', side: null, flag: 'showInvestments', surfaceId: 'investments_modal', buttonId: 'investments', shortcut: null, label: 'Investments', icon: '🏦', hotkey: '', padded: false },
+];
+export interface V115Tab { id: V115DockTab; label: string; icon: string; windows: readonly V115WindowKey[]; hotkeys: string }
+/** The five tabs, in the brief's order. Market holds the two market windows (Sell first). */
+export const V115_TABS: readonly V115Tab[] = [
+  { id: 'market', label: 'Market', icon: '💰', windows: ['sell', 'buy'], hotkeys: 'R M' },
+  { id: 'challenges', label: 'Challenges', icon: '🎯', windows: ['challenges'], hotkeys: 'C' },
+  { id: 'travel', label: 'Travel', icon: '✈️', windows: ['travel'], hotkeys: 'T' },
+  { id: 'workshop', label: 'Workshop', icon: '🔨', windows: ['workshop'], hotkeys: 'W' },
+  { id: 'investments', label: 'Investments', icon: '🏦', windows: ['investments'], hotkeys: '' },
+];
+export function v115WindowOf(key: V115WindowKey): V115Window {
+  return V115_WINDOWS.find(w => w.key === key) || V115_WINDOWS[0];
+}
+export function v115IsDockTab(value: unknown): value is V115DockTab {
+  return typeof value === 'string' && V115_TABS.some(t => t.id === value);
+}
+export function v115TabDomId(tab: V115DockTab): string { return `v115-tab-${tab}`; }
+export function v115SideDomId(side: V115MarketSide): string { return `v115-side-${side}`; }
+
+// ---- Where the panel is in use ------------------------------------------------------------------------------------------------
+/** 'off' = the switch is off (everything as before); 'windows' = on, but the six open as windows (a narrow screen, or no match on
+ *  screen); 'docked' = on, in a match, on a wide screen: the six open as tabs of the panel. */
+export type V115DockMode = 'off' | 'windows' | 'docked';
+export function v115WideEnough(width: unknown): boolean {
+  return typeof width === 'number' && Number.isFinite(width) && width >= V115_DOCK_MIN_WIDTH;
+}
+export function v115DockMode(settings: { readonly dockedPanelEnabled?: unknown } | null | undefined, inMatch: boolean, wide: boolean): V115DockMode {
+  if (!v115DockOn(settings)) return 'off';
+  return inMatch && wide ? 'docked' : 'windows';
+}
+/** Whether the screen is wide enough for the panel (live; false where matchMedia is missing). It listens only while the switch is on. */
+export function useV115WideScreen(enabled: boolean): boolean {
+  const read = (): boolean => (typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(V115_WIDE_QUERY).matches : false);
+  const [wide, setWide] = useState<boolean>(() => (enabled ? read() : false));
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mq = window.matchMedia(V115_WIDE_QUERY);
+    const onChange = () => setWide(mq.matches);
+    onChange();
+    if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onChange);
+    return () => { if (typeof mq.removeEventListener === 'function') mq.removeEventListener('change', onChange); };
+  }, [enabled]);
+  return enabled && wide;
+}
+
+// ---- The interface state the panel reads and writes --------------------------------------------------------------------------------
+/** The part of the interface state the panel uses: the six windows' own flags, and the tab (and Market's half) last open. */
+export interface V115DockUiState {
+  showMarket?: boolean;
+  showResourceMarket?: boolean;
+  showChallenges?: boolean;
+  showTravelModal?: boolean;
+  showWorkshop?: boolean;
+  showInvestments?: boolean;
+  /** The tab last open in this session (interface state: never saved). */
+  v115DockTab?: V115DockTab;
+  /** Market's half last open (interface state: never saved). */
+  v115DockSide?: V115MarketSide;
+  /** Set by the panel's own Find Anything result: open the remembered tab. Read and cleared by useV115DockedPanel. */
+  v115DockOpen?: boolean;
+}
+/** The windows whose flag is on, in V115_WINDOWS order. */
+export function v115OpenWindows(ui: V115DockUiState | null | undefined): V115Window[] {
+  return ui ? V115_WINDOWS.filter(w => ui[w.flag] === true) : [];
+}
+/** The patch that opens one window: its own flag, as its button sets it. */
+export function v115OpenPatch(win: V115Window): V115DockUiState {
+  const patch: V115DockUiState = {};
+  patch[win.flag] = true;
+  return patch;
+}
+/** The patch that closes the panel (every one of the six flags down). */
+export function v115ClosePatch(): V115DockUiState {
+  const patch: V115DockUiState = {};
+  V115_WINDOWS.forEach(w => { patch[w.flag] = false; });
+  return patch;
+}
+/** The window the panel shows when more than one flag is up (only for a moment: the panel lowers the others): the remembered tab's, else the first. */
+export function v115ActiveWindow(ui: V115DockUiState | null | undefined): V115Window | null {
+  const open = v115OpenWindows(ui);
+  if (open.length === 0) return null;
+  return open.find(w => w.tab === ui?.v115DockTab && (w.side === null || w.side === ui?.v115DockSide)) || open.find(w => w.tab === ui?.v115DockTab) || open[0];
+}
+/** The window the remembered tab stands for (Market: the half last open, Sell the first time). */
+export function v115RememberedWindow(ui: V115DockUiState | null | undefined): V115Window {
+  const tab: V115DockTab = ui && v115IsDockTab(ui.v115DockTab) ? ui.v115DockTab : 'market';
+  if (tab === 'market') return v115WindowOf(ui?.v115DockSide === 'buy' ? 'buy' : 'sell');
+  return V115_WINDOWS.find(w => w.tab === tab) || V115_WINDOWS[0];
+}
+/**
+ * What updateUiState hands React (its one V11.0 (SECTION 20BR) line). Off: `next`, the very same object. On: the tab of a window this
+ * update opened is remembered (Market also remembers its half), and while the panel is docked only that window stays open (the
+ * panel has one tab at a time; a window does not stack on another). An update that opens none of the six is passed through.
+ */
+export function v115DockNormalize<T extends V115DockUiState>(prev: T, next: T, mode: V115DockMode): T {
+  if (mode === 'off' || !next || next === prev) return next;
+  const opened = V115_WINDOWS.filter(w => next[w.flag] === true && prev?.[w.flag] !== true);
+  if (opened.length === 0) return next;
+  const keep = opened[0];
+  const patch: V115DockUiState = { v115DockTab: keep.tab };
+  if (keep.side) patch.v115DockSide = keep.side;
+  if (mode === 'docked') V115_WINDOWS.forEach(w => { if (w !== keep && next[w.flag] === true) patch[w.flag] = false; });
+  return { ...next, ...patch };
+}
+
+// ---- Can a tab open now: the rules its window's button follows --------------------------------------------------------------------
+export interface V115AvailabilityInput {
+  /** The player can act (their turn in a match): the six buttons are disabled otherwise. */
+  humanTurn: boolean;
+  /** The guided first match (null: no first match; everything is shown). */
+  firstRun: FirstRunState | null;
+  /** Regional investments are switched on (the Investments button is shown only then). */
+  investmentsOn: boolean;
+  /** Where Investments' switch lives, in the words of the screen. */
+  investmentsWhere: string;
+}
+export interface V115Availability { available: boolean; reason: string }
+export const V115_NOT_YOUR_TURN = 'That is only available on your turn.';
+/** Whether a window can open now, and why not: exactly what its button and its key check (the first match's unlocks, Investments'
+ *  switch, the player's turn), in the words the key's refusal uses. */
+export function v115WindowAvailability(win: V115Window, input: V115AvailabilityInput): V115Availability {
+  if (!isFirstRunActionVisible(input.firstRun, win.buttonId)) {
+    const gate = win.shortcut ? v101ShortcutGate(win.shortcut, { firstRun: input.firstRun, alreadyOpen: false }) : null;
+    return { available: false, reason: gate && !gate.allowed ? gate.message : `${win.label} are not unlocked yet in your first match. They open up as you play.` };
+  }
+  if (win.key === 'investments' && !input.investmentsOn) return { available: false, reason: `Regional investments are off. Turn them on in ${input.investmentsWhere || 'Settings'}.` };
+  if (!input.humanTurn) return { available: false, reason: V115_NOT_YOUR_TURN };
+  return { available: true, reason: '' };
+}
+/** The window a tab opens: Market opens the half last open, whatever tab was open since (or the other half when that one cannot open now). */
+export function v115TabTarget(tab: V115DockTab, ui: V115DockUiState | null | undefined, input: V115AvailabilityInput): { win: V115Window | null; reason: string } {
+  const spec = V115_TABS.find(t => t.id === tab) || V115_TABS[0];
+  const preferred: V115WindowKey = ui?.v115DockSide === 'buy' ? 'buy' : 'sell';
+  const order = spec.windows.map(v115WindowOf).sort((a, b) => (a.key === preferred ? -1 : b.key === preferred ? 1 : 0));
+  const ok = order.find(w => v115WindowAvailability(w, input).available);
+  return ok ? { win: ok, reason: '' } : { win: null, reason: v115WindowAvailability(order[0], input).reason };
+}
+
+// ---- What the panel shows --------------------------------------------------------------------------------------------------------
+export interface V115TabView { id: V115DockTab; label: string; icon: string; hotkeys: string; selected: boolean; available: boolean; reason: string }
+export interface V115SideView { side: V115MarketSide; label: string; icon: string; hotkey: string; selected: boolean; available: boolean; reason: string }
+export interface V115PanelView { tab: V115DockTab; side: V115MarketSide | null; padded: boolean; tabs: V115TabView[]; sides: V115SideView[] | null }
+/** The panel with `active` open: the five tabs (the open one selected; the others available when their window could open now), and
+ *  Market's two halves while Market is open. */
+export function v115BuildPanelView(active: V115Window, input: V115AvailabilityInput, ui: V115DockUiState | null | undefined): V115PanelView {
+  const tabs = V115_TABS.map(spec => {
+    const selected = spec.id === active.tab;
+    const target = v115TabTarget(spec.id, ui, input);
+    return { id: spec.id, label: spec.label, icon: spec.icon, hotkeys: spec.hotkeys, selected, available: selected || Boolean(target.win), reason: selected || target.win ? '' : target.reason };
+  });
+  const sides = active.tab === 'market'
+    ? V115_WINDOWS.filter(w => w.tab === 'market' && w.side !== null).map(w => {
+      const side: V115MarketSide = w.side === 'buy' ? 'buy' : 'sell';
+      const selected = w.key === active.key;
+      const availability = v115WindowAvailability(w, input);
+      return { side, label: w.label, icon: w.icon, hotkey: w.hotkey, selected, available: selected || availability.available, reason: selected ? '' : availability.reason };
+    })
+    : null;
+  return { tab: active.tab, side: active.side, padded: active.padded, tabs, sides };
+}
+/** Arrow keys on a (horizontal) tab list: the index to move to (skipping tabs that cannot open), or null for a key the list does not use
+ *  (↑ and ↓ stay the page's, so they still scroll it). */
+export function v115NextIndex(available: readonly boolean[], current: number, key: string): number | null {
+  const n = available.length;
+  if (n === 0) return null;
+  const from = current >= 0 && current < n ? current : 0;
+  const step = (dir: 1 | -1): number => { for (let k = 1; k <= n; k++) { const i = (((from + dir * k) % n) + n) % n; if (available[i]) return i; } return from; };
+  if (key === 'ArrowRight') return step(1);
+  if (key === 'ArrowLeft') return step(-1);
+  if (key === 'Home') { const i = available.indexOf(true); return i >= 0 ? i : from; }
+  if (key === 'End') { const i = available.lastIndexOf(true); return i >= 0 ? i : from; }
+  return null;
+}
+/** Where focus goes when the panel opens or its tab changes: to the selected tab, unless the player is already working inside the
+ *  panel's content (focus on a tab follows the selection; focus on the page or nowhere moves in). */
+export function v115ShouldFocusTab(focus: { inPanel: boolean; onTab: boolean }): boolean {
+  return !focus.inPanel || focus.onTab;
+}
+/** When the panel closes, focus goes back to the control that opened it, if the panel had it (or nothing had it) and that control is still there. */
+export function v115ShouldRestoreFocus(focus: { openerConnected: boolean; lostWithPanel: boolean }): boolean {
+  return focus.openerConnected && focus.lostWithPanel;
+}
+/** The content a window's element draws inside its dialog box: the backdrop and the box (role="dialog", aria-modal, the focus trap) stay
+ *  out of the panel, and the header, body and footer — the very same elements, with the very same handlers — go in. */
+export function v115DialogChildren(element: React.ReactNode): React.ReactNode {
+  if (!React.isValidElement<{ children?: React.ReactNode }>(element)) return element;
+  const box = element.props.children;
+  return React.isValidElement<{ children?: React.ReactNode }>(box) ? box.props.children : box;
+}
+/** While the panel is open: the End Turn chip and the toast lane on the right move to the panel's left (the page itself is padded). */
+export function v115DockedCss(): string {
+  const w = V115_DOCK_WIDTH_CSS;
+  return `[data-testid="v99-end-turn-chip"]{right:calc(${w} + 0.75rem) !important;max-width:calc(100vw - ${w} - 1.5rem) !important}`
+    + `[data-testid="notification-toast-container"][class*="right-"]:not([class*="right-auto"]){right:calc(${w} + 1rem) !important}`;
+}
+/** The play screen's padding while the panel is open (it sits beside the map, not over it); undefined (no style at all) otherwise. */
+export function v115RootStyle(open: boolean): React.CSSProperties | undefined {
+  return open ? { paddingRight: `calc(${V115_DOCK_WIDTH_CSS} + 1rem)` } : undefined;
+}
+
+export interface V115Theme { card: string; border: string; text: string; button: string; buttonSecondary: string; shadow: string; scrollbar?: string }
+export interface V115PanelViewProps {
+  view: V115PanelView;
+  theme: V115Theme;
+  children?: React.ReactNode;
+  onTab: (tab: V115DockTab) => void;
+  onSide: (side: V115MarketSide) => void;
+  onClose: () => void;
+  onTabsKey?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  onSidesKey?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  regionRef?: React.Ref<HTMLElement>;
+}
+/** The panel itself, hook-free: a labelled region (not a dialog), a tab list of five, Market's two halves, and the tab panel. */
+export function V115DockedPanelView(p: V115PanelViewProps): React.ReactElement {
+  const { view, theme } = p;
+  const selected = view.tabs.find(t => t.selected) || view.tabs[0];
+  const side = view.sides ? view.sides.find(s => s.selected) || null : null;
+  return (
+    <section ref={p.regionRef} role="region" aria-label="Side panel" data-testid="v115-docked-panel" data-tab={view.tab}
+      className={`fixed top-0 right-0 bottom-0 flex flex-col border-l ${theme.card} ${theme.border} ${theme.text} ${theme.shadow}`}
+      style={{ width: V115_DOCK_WIDTH_CSS, zIndex: V115_DOCK_Z }}>
+      <div className="flex items-center justify-between gap-2 pl-2.5 pr-1.5 pt-1.5 shrink-0">
+        <span aria-hidden="true" className="text-[11px] font-semibold uppercase tracking-wide opacity-70">Side panel</span>
+        <button type="button" aria-label="Close side panel" title="Close the side panel (Esc)" data-testid="v115-close" onClick={p.onClose}
+          className={`${theme.buttonSecondary} rounded-md w-7 h-7 shrink-0 text-xs font-bold leading-none`}>✕</button>
+      </div>
+      <div className="flex items-stretch px-1.5 pt-1 pb-1 shrink-0">
+        <div role="tablist" aria-label="Side panel tabs" aria-orientation="horizontal" className="flex flex-1 min-w-0 gap-0.5" onKeyDown={p.onTabsKey} data-testid="v115-tablist">
+          {view.tabs.map(t => (
+            <button key={t.id} type="button" role="tab" id={v115TabDomId(t.id)} aria-selected={t.selected} aria-controls={V115_TABPANEL_ID}
+              aria-disabled={t.available ? undefined : true} aria-describedby={t.available ? undefined : `${v115TabDomId(t.id)}-why`}
+              aria-keyshortcuts={t.hotkeys || undefined} tabIndex={t.selected ? 0 : -1}
+              title={t.available ? `${t.label}${t.hotkeys ? ` (${t.hotkeys.split(' ').join(' / ')})` : ''}` : t.reason}
+              data-testid={`v115-tab-${t.id}`} onClick={() => p.onTab(t.id)}
+              className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 rounded-lg px-0.5 py-1.5 text-[10.5px] font-semibold leading-tight tracking-tight ${t.selected ? `${theme.button} text-white` : theme.buttonSecondary}${t.available ? '' : ' opacity-50'}`}>
+              <span aria-hidden="true" className="text-base leading-none">{t.icon}</span>
+              <span className="truncate max-w-full">{t.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="sr-only">{view.tabs.filter(t => !t.available).map(t => <span key={t.id} id={`${v115TabDomId(t.id)}-why`}>{t.reason}</span>)}</div>
+      </div>
+      {view.sides ? (
+        <div role="tablist" aria-label="Market: sell or buy" aria-orientation="horizontal" className="flex gap-1 px-2 pb-1 shrink-0" onKeyDown={p.onSidesKey} data-testid="v115-sides">
+          {view.sides.map(s => (
+            <button key={s.side} type="button" role="tab" id={v115SideDomId(s.side)} aria-selected={s.selected} aria-controls={V115_TABPANEL_ID}
+              aria-disabled={s.available ? undefined : true} aria-describedby={s.available ? undefined : `${v115SideDomId(s.side)}-why`}
+              aria-keyshortcuts={s.hotkey || undefined} tabIndex={s.selected ? 0 : -1} title={s.available ? `${s.label} (${s.hotkey})` : s.reason}
+              data-testid={`v115-side-${s.side}`} onClick={() => p.onSide(s.side)}
+              className={`flex-1 rounded-lg px-2 py-1 text-xs font-semibold ${s.selected ? `${theme.button} text-white` : theme.buttonSecondary}${s.available ? '' : ' opacity-50'}`}>
+              <span aria-hidden="true">{s.icon}</span> {s.label} <span className="opacity-70">({s.hotkey})</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {view.sides ? <div className="sr-only">{view.sides.filter(s => !s.available).map(s => <span key={s.side} id={`${v115SideDomId(s.side)}-why`}>{s.reason}</span>)}</div> : null}
+      <div role="tabpanel" id={V115_TABPANEL_ID} aria-labelledby={side ? `${v115TabDomId(selected.id)} ${v115SideDomId(side.side)}` : v115TabDomId(selected.id)}
+        data-testid="v115-tabpanel" data-window={view.side || view.tab}
+        className={`flex-1 min-h-0 flex flex-col overflow-hidden border-t ${theme.border}${view.padded ? ' p-4' : ''}`}>
+        {p.children}
+      </div>
+    </section>
+  );
+}
+export interface V115DockedPanelProps {
+  view: V115PanelView;
+  theme: V115Theme;
+  children?: React.ReactNode;
+  onTab: (tab: V115DockTab) => void;
+  onSide: (side: V115MarketSide) => void;
+  onClose: () => void;
+}
+/** The panel with its focus rules: focus moves in when it opens (to the selected tab) and back to the opener when it closes; arrow keys
+ *  move between tabs; Tab moves on through the page (no trap). */
+export function V115DockedPanel(p: V115DockedPanelProps): React.ReactElement {
+  const regionRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const before = document.activeElement;
+    const opener = before instanceof HTMLElement && before !== document.body ? before : null;
+    const region = regionRef.current;
+    return () => {
+      try {
+        const now = document.activeElement;
+        const lostWithPanel = !now || now === document.body || Boolean(region && region.contains(now));
+        if (opener && v115ShouldRestoreFocus({ openerConnected: opener.isConnected && !(region && region.contains(opener)), lostWithPanel })) opener.focus();
+      } catch { /* focus is a nicety: a panel that cannot give it back still closes */ }
+    };
+  }, []);
+  useEffect(() => {
+    if (typeof document === 'undefined' || typeof setTimeout !== 'function') return undefined;
+    const timer = setTimeout(() => {
+      try {
+        const region = regionRef.current;
+        if (!region || !region.isConnected) return;
+        const now = document.activeElement;
+        const inPanel = Boolean(now && now !== document.body && region.contains(now));
+        const onTab = inPanel && now instanceof HTMLElement && now.getAttribute('role') === 'tab';
+        if (globalUISurfaceManager.hasBlockingModal() || !v115ShouldFocusTab({ inPanel, onTab })) return; // a window or decision over the panel keeps its focus
+        const onSide = onTab && now instanceof HTMLElement && now.id.startsWith('v115-side-'); // focus stays in the tab list it was in (Market's halves have their own)
+        const target = (onSide && p.view.side ? document.getElementById(v115SideDomId(p.view.side)) : null) || document.getElementById(v115TabDomId(p.view.tab));
+        if (target && target !== now) target.focus();
+      } catch { /* never let focus handling break the panel */ }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [p.view.tab, p.view.side]);
+  const focusAndRun = (id: string, run: () => void) => {
+    run();
+    try { const el = typeof document !== 'undefined' ? document.getElementById(id) : null; if (el) el.focus(); } catch { /* … */ }
+  };
+  const onTabsKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const current = typeof document !== 'undefined' ? p.view.tabs.findIndex(t => document.activeElement instanceof HTMLElement && document.activeElement.id === v115TabDomId(t.id)) : -1;
+    const next = v115NextIndex(p.view.tabs.map(t => t.available), current >= 0 ? current : p.view.tabs.findIndex(t => t.selected), e.key);
+    if (next === null) return;
+    e.preventDefault();
+    const tab = p.view.tabs[next];
+    if (tab) focusAndRun(v115TabDomId(tab.id), () => { if (!tab.selected) p.onTab(tab.id); });
+  };
+  const onSidesKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const sides = p.view.sides || [];
+    const current = typeof document !== 'undefined' ? sides.findIndex(s => document.activeElement instanceof HTMLElement && document.activeElement.id === v115SideDomId(s.side)) : -1;
+    const next = v115NextIndex(sides.map(s => s.available), current >= 0 ? current : sides.findIndex(s => s.selected), e.key);
+    if (next === null) return;
+    e.preventDefault();
+    const side = sides[next];
+    if (side) focusAndRun(v115SideDomId(side.side), () => { if (!side.selected) p.onSide(side.side); });
+  };
+  return (
+    <>
+      <style>{v115DockedCss()}</style>
+      <V115DockedPanelView view={p.view} theme={p.theme} onTab={p.onTab} onSide={p.onSide} onClose={p.onClose} onTabsKey={onTabsKey} onSidesKey={onSidesKey} regionRef={regionRef}>
+        {p.children}
+      </V115DockedPanelView>
+    </>
+  );
+}
+
+// ---- An id for the panel (map §4) and its place in the surface manager's table ----------------------------------------------------
+/** The panel's id, spread into UI_SURFACE_REGISTRY: a function declaration (hoisted), reading nothing but literals, because the registry
+ *  is built long before this section. A side panel (tier 5, the side-drawer zone), never blocking, no backdrop; Escape closes it. */
+export function v115SurfaceRegistryAdditions(): Record<string, UISurfaceDefinition> {
+  return { docked_panel: { id: 'docked_panel', name: 'Side Panel (Market, Challenges, Travel, Workshop, Investments)', tier: 5, isBlocking: false, hasBackdrop: false, category: 'panel', reservedZone: 'side-drawer', allowEscapeClose: true } };
+}
+/** The surface manager's table. Not docked: the very same array. Docked: the six windows' own flags open docked_panel instead of their
+ *  modal ids (their alias flags, which nothing sets, stay where they were), so the panel is tracked as a side panel and never blocks. */
+export function v115SurfaceFlagTable(base: ReadonlyArray<V101SurfaceFlagEntry>, docked: boolean): ReadonlyArray<V101SurfaceFlagEntry> {
+  if (!docked) return base;
+  const mine = new Set<string>(V115_WINDOWS.map(w => w.flag));
+  const out: V101SurfaceFlagEntry[] = base.map(row => (row.flags.some(flag => mine.has(flag)) ? { flags: row.flags.filter(flag => !mine.has(flag)), surfaceId: row.surfaceId } : row));
+  if (!out.some(row => row.surfaceId === V115_SURFACE_ID)) out.push({ flags: V115_WINDOWS.map(w => w.flag), surfaceId: V115_SURFACE_ID });
+  return out;
+}
+/** The interface state the play screen hands the surface manager: the very same object unless the panel is docked. */
+export function v115SyncState<T extends object>(uiState: T, mode: V115DockMode): T | (T & { v115SurfaceIds: true }) {
+  return mode === 'docked' ? { ...uiState, v115SurfaceIds: true as const } : uiState;
+}
+/** What Escape clears for the panel (spread into the Escape handler's map): one of its flags, and v101EscapeFlagPatch adds every other
+ *  one that is up. Inert unless docked: nothing else ever makes docked_panel the open surface. */
+export const V115_ESCAPE_FLAGS: Readonly<Record<string, string>> = { docked_panel: 'showMarket' };
+/** What the rescue also lowers while the panel is docked (V10.1's rescue leaves showInvestments up); nothing otherwise. */
+export function v115RescuePatch(mode: V115DockMode): V115DockUiState {
+  return mode === 'docked' ? v115ClosePatch() : {};
+}
+/** The flags the shortcut keys see. Not docked: the very same object. Docked: the panel's windows are not modals, so they do not hold the
+ *  keys back (C T R M W switch tabs, Space ends the turn); a window's own key still closes it (the handlers toggle). */
+export function v115ShortcutOpenFlags(flags: Record<string, boolean>, mode: V115DockMode): Record<string, boolean> {
+  if (mode !== 'docked') return flags;
+  const out: Record<string, boolean> = { ...flags };
+  V115_WINDOWS.forEach(w => { if (w.flag in out) out[w.flag] = false; });
+  return out;
+}
+
+// ---- Find Anything: the panel itself is a result while the switch is on -----------------------------------------------------------
+export const V115_FIND_ID = 'screen:docked_panel';
+export const V115_FIND_TITLE = 'Side panel (Market, Challenges, Travel, Workshop, Investments)';
+/** The panel's own result: it opens the tab last open (a window on a narrow screen), on the player's turn. */
+export function v115FindEntry(order: number): V110FindEntry {
+  return {
+    id: V115_FIND_ID, kind: 'screen', title: V115_FIND_TITLE, where: 'Play screen › beside the map', route: { kind: 'ui', patch: { v115DockOpen: true } },
+    keywords: v110Normalize('side panel docked panel dock tabs sidebar market sell buy challenges travel workshop investments'), needs: { match: true, humanTurn: true }, surfaceId: V115_SURFACE_ID, order,
+  };
+}
+/** "side panel" and its everyday forms: they lift the panel (while its switch is on) or, while it is off, the switch, as "features" does for What's in the game. */
+export const V115_FIND_PHRASES: readonly string[] = ['side panel', 'docked panel', 'docked side panel', 'dock panel', 'sidebar', 'side bar', 'panel tabs'];
+export function v115SynonymTargets(query: string, index: readonly V110FindEntry[] = []): string[] {
+  const q = v110Normalize(query).replace(/\?/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!q) return [];
+  const padded = ` ${q} `;
+  if (!V115_FIND_PHRASES.some(phrase => padded.includes(` ${phrase} `))) return [];
+  return [index.some(entry => entry.id === V115_FIND_ID) ? V115_FIND_ID : 'setting:dockedPanelEnabled'];
+}
+/** Find Anything's index: the very same array while the switch is off; with it on, the panel's own result is added once. */
+export function v115IndexFor(index: readonly V110FindEntry[], settings: { readonly dockedPanelEnabled?: unknown } | null | undefined): readonly V110FindEntry[] {
+  if (!v115DockOn(settings) || index.some(entry => entry.id === V115_FIND_ID)) return index;
+  return [...index, v115FindEntry(index.length)];
+}
+
+// ---- The switch's own row ----------------------------------------------------------------------------------------------------------
+/** The body of Settings › Interface & Accessibility › 📑 Side panel: the switch's own row. */
+export function V115SettingsBody({ on, onToggle, onClassName, offClassName }: { on: boolean; onToggle: () => void; onClassName: string; offClassName: string }): React.ReactElement {
+  return (
+    <div className="space-y-3 text-xs" data-testid="v115-settings">
+      <div id="settings-field-dockedPanelEnabled" data-setting-key="dockedPanelEnabled" className="flex items-center justify-between gap-3">
+        <div>
+          <div className="font-semibold text-sm">{V115_LABEL}</div>
+          <div className="opacity-75">{V115_DESCRIPTION} (Off by default)</div>
+        </div>
+        <button type="button" id="v115-setting-dockedPanelEnabled" data-testid="v115-setting-dockedPanelEnabled" aria-pressed={on} aria-label={`${V115_LABEL}: ${on ? 'on' : 'off'}`}
+          onClick={onToggle} className={`px-4 py-2 rounded font-semibold shrink-0 ${on ? onClassName : offClassName}`}>{on ? 'ON' : 'OFF'}</button>
+      </div>
+    </div>
+  );
+}
+
+// ---- Wiring it into the game ---------------------------------------------------------------------------------------------------------
+export interface V115DockProps {
+  settings: { readonly dockedPanelEnabled?: unknown; readonly investmentsEnabled?: unknown; readonly settingsLayersEnabled?: unknown };
+  /** The mode the main component computed (and handed updateUiState, the keys, Escape and the rescue). */
+  mode: V115DockMode;
+  uiState: V115DockUiState;
+  humanTurn: boolean;
+  firstRun: FirstRunState | null;
+  theme: V115Theme;
+  updateUiState: (patch: V115DockUiState) => void;
+  notify: (message: string) => void;
+}
+export interface V115DockHandle {
+  mode: V115DockMode;
+  /** Wraps one of the six windows' elements: the very same element unless docked; docked, its content goes into the panel and null is drawn there. */
+  slot: (key: V115WindowKey, element: React.ReactElement) => React.ReactNode;
+  /** The panel (drawn once, after renderGame has handed in the open window's content), or null. */
+  node: () => React.ReactNode;
+  /** The play screen's style: its padding while the panel is open, else undefined. */
+  rootStyle: React.CSSProperties | undefined;
+}
+/** Where Investments' switch is, for a disabled tab's reason (its home in the layered Settings while that is on). */
+export function v115InvestmentsWhere(settings: { readonly settingsLayersEnabled?: unknown } | null | undefined): string {
+  const entry = v110FindIndex().find(e => e.id === 'setting:investmentsEnabled');
+  return entry ? v113LayeredEntry(entry, settings).where : 'Settings';
+}
+/** What a window's slot draws, and what it hands the panel: as a window (off, or narrow) the very same element and nothing for the panel;
+ *  docked, nothing in the window's place and its content (header, body, footer: the same elements) for the panel. */
+export interface V115Held { win: V115Window; content: React.ReactNode }
+export function v115SlotFor(mode: V115DockMode, held: V115Held[], key: V115WindowKey, element: React.ReactElement): React.ReactNode {
+  if (mode !== 'docked') return element;
+  held.push({ win: v115WindowOf(key), content: v115DialogChildren(element) });
+  return null;
+}
+export function useV115DockedPanel(p: V115DockProps): V115DockHandle {
+  const mode = p.mode;
+  const input: V115AvailabilityInput = { humanTurn: p.humanTurn, firstRun: p.firstRun, investmentsOn: p.settings.investmentsEnabled === true, investmentsWhere: mode === 'off' ? '' : v115InvestmentsWhere(p.settings) };
+  const flags = V115_WINDOWS.map(w => p.uiState[w.flag] === true);
+  const flagKey = flags.map(f => (f ? '1' : '0')).join('');
+  // Docked, one window at a time: a flag left up (a screen widened while two windows were open) is lowered.
+  useEffect(() => {
+    if (mode !== 'docked') return;
+    const open = v115OpenWindows(p.uiState);
+    if (open.length < 2) return;
+    const keep = v115ActiveWindow(p.uiState);
+    const patch: V115DockUiState = {};
+    open.forEach(w => { if (w !== keep) patch[w.flag] = false; });
+    p.updateUiState(patch);
+  }, [mode, flagKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The panel's own Find Anything result: open the tab last open (or the first that can open now).
+  useEffect(() => {
+    if (mode === 'off' || p.uiState.v115DockOpen !== true) return;
+    const remembered = v115RememberedWindow(p.uiState);
+    const target = v115TabTarget(remembered.tab, p.uiState, input);
+    const fallback = target.win ? null : V115_TABS.map(t => v115TabTarget(t.id, p.uiState, input).win).find((w): w is V115Window => Boolean(w)) || null;
+    const win = target.win || fallback;
+    const patch: V115DockUiState = win ? { ...v115OpenPatch(win), v115DockOpen: false } : { v115DockOpen: false };
+    if (!win) p.notify(target.reason || V115_NOT_YOUR_TURN);
+    p.updateUiState(patch);
+  }, [mode, p.uiState.v115DockOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  const holder: V115Held[] = []; // filled while renderGame draws the six windows' slots, read when the panel is drawn after it (same render)
+  const slot = (key: V115WindowKey, element: React.ReactElement): React.ReactNode => v115SlotFor(mode, holder, key, element);
+  const open = (win: V115Window | null, reason: string) => {
+    if (!win) { if (reason) p.notify(reason); return; }
+    if (p.uiState[win.flag] === true) return;
+    p.updateUiState(v115OpenPatch(win));
+  };
+  const node = (): React.ReactNode => {
+    if (mode !== 'docked' || holder.length === 0) return null;
+    const active = v115ActiveWindow(p.uiState);
+    const entry = (active && holder.find(h => h.win.key === active.key)) || holder[0];
+    const view = v115BuildPanelView(entry.win, input, p.uiState);
+    return (
+      <V115DockedPanel key="v115-docked-panel" view={view} theme={p.theme}
+        onTab={tab => { const t = v115TabTarget(tab, p.uiState, input); if (tab !== entry.win.tab) open(t.win, t.reason); }}
+        onSide={side => { const w = v115WindowOf(side); const a = v115WindowAvailability(w, input); open(a.available ? w : null, a.reason); }}
+        onClose={() => p.updateUiState(v115ClosePatch())}>
+        {entry.content}
+      </V115DockedPanel>
+    );
+  };
+  return { mode, slot, node, rootStyle: v115RootStyle(mode === 'docked' && flags.some(Boolean)) };
+}
+
+// ============================================================================
+// SECTION 20BS: V11.0 DOCKED PANEL — THE MAP WALK AND SUITE v115dp (UX-5)
+// ============================================================================
+// Suite v115dp (runV115DockedPanelSelfTests): the switch; off and narrow change nothing; the five tabs over the six windows, which
+// keep their ids; the panel's own id and its row in the surface manager's table; one tab at a time; every way in (buttons, keys,
+// Find Anything, What's in the game, Intelligence and Co-Pilot "Open …" buttons, the guided first match); the region, its tab list,
+// arrow keys and focus (no trap); Escape and the rescue; decisions and windows on top; nothing blocked; the session memory and no
+// save; the map walk (every id of §4–§10 still there and reachable); no clock and no random draw; rules stamp 1010 and old saves.
+// ============================================================================
+
+/** The map after UX-5 (V11.0_UX_MAP.md §4): the plan column's decisions (12 V10.1 ids and the 5 UX-2 added), the six action windows and
+ *  Loans that wait for a later round, and the 24 tool windows that stay as they are. */
+export const V115_MAP_DECISION_IDS: readonly string[] = [
+  'major_transition_confirmation_modal', 'save_load_modal', 'campaign_select_modal', 'narrative_decision_modal', 'approval_dialog', 'treasury_requests_dialog',
+  'governor_exception_dialog', 'guardian_warning_modal', 'dependency_auto_fix_modal', 'day_transition_overlay', 'double_or_nothing_modal', 'rescue_emergency_overlay',
+  'copilot_proposal', 'leave_match_dialog', 'confirmation_dialog', 'load_preview_modal', 'diplomatic_breach_prompt',
+];
+export const V115_MAP_ACTION_WINDOW_IDS: readonly string[] = ['negotiation_center', 'regional_contracts_modal', 'infrastructure_projects_modal', 'expeditions_relics_modal', 'shop_modal', 'sabotage_modal', 'advanced_loans_modal'];
+export const V115_MAP_TOOL_WINDOW_IDS: readonly string[] = [
+  'settings_hub', 'quick_actions_customizer', 'guardian_ai_center', 'ai_command_center_modal', 'ask_game_ai', 'strategy_planner', 'replay_viewer', 'activity_ledger',
+  'developer_diagnostics', 'overseer_dashboard', 'auditor_dashboard', 'human_automation_dashboard', 'what_if_timelines_modal', 'crisis_management_modal',
+  'campaign_progression_modal', 'fog_of_war_intel_modal', 'scenario_builder_modal', 'career_progression_modal', 'ai_rivalry_modal', 'stats_modal', 'end_game_modes',
+  'ai_stats', 'determinism_audit_modal', 'save_migration_modal',
+];
+/** The map's counts after UX-5: what the walk visits. */
+export const V115_MAP_COUNTS = { surfaces: 61, windows: 28, ux2Ids: 28, ux4Ids: 1, ux5Ids: 1, sections: 87, settings: 599, shortcuts: 17, labCards: 48, cards: 101, decisions: 17, actionWindows: 7, toolWindows: 24 } as const;
+
+export function runV115DockedPanelSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  // A check that could not run returns a text starting with SKIPPED: it is reported as skipped (passed: false, skipped: true), never as a pass.
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try {
+      const r = fn();
+      if (r !== true && /^SKIPPED\b/.test(r)) results.push({ id, name, passed: false, skipped: true, detail: r });
+      else results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) });
+    } catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  const inList = (list: readonly string[], key: string): boolean => list.includes(key);
+  const keys = Object.keys(DEFAULT_GAME_SETTINGS);
+  const base = buildV110FindIndex();
+  const defaults = (): GameSettingsState => createDefaultGameSettings();
+  const dockOn = (over: Partial<GameSettingsState> = {}): GameSettingsState => ({ ...createDefaultGameSettings(), dockedPanelEnabled: true, ...over });
+  const theme: V115Theme = { card: 'card', border: 'border', text: 'text', button: 'button', buttonSecondary: 'secondary', shadow: 'shadow' };
+  const free: V115AvailabilityInput = { humanTurn: true, firstRun: null, investmentsOn: true, investmentsWhere: 'Settings › Gameplay & Rules › Gameplay Expansions' };
+  const win = (key: V115WindowKey): V115Window => v115WindowOf(key);
+  const openOnly = (key: V115WindowKey | null): V115DockUiState => { const ui = v115ClosePatch(); if (key) ui[win(key).flag] = true; return ui; };
+  const openKeys = (ui: V115DockUiState): string[] => v115OpenWindows(ui).map(w => w.key);
+  // Apply an opener's patch the way updateUiState does (functional or plain), through the normaliser.
+  const apply = (prev: V115DockUiState, patch: V115DockUiState | ((p: V115DockUiState) => V115DockUiState), mode: V115DockMode = 'docked'): V115DockUiState =>
+    v115DockNormalize(prev, typeof patch === 'function' ? patch(prev) : { ...prev, ...patch }, mode);
+  // A router that records nothing but the interface patches (typed: every one of Find Anything's calls is a no-op here).
+  const noop = (): void => undefined;
+  const calls: Record<V110FindCall, () => void> = { endTurn: noop, saveGame: noop, clearNotifications: noop, uiRescue: noop, toggleMap: noop, openNegotiations: noop, openTuningLab: noop,
+    openPipelineInspector: noop, openReplayStudio: noop, openLeaveMatch: noop, openPresetManager: noop, openImportExport: noop, openAskDrawer: noop, openDiagnosticsDrawer: noop };
+  const routerFor = (onPatch: (patch: Readonly<Record<string, unknown>>) => void): V110FindRouter => ({ updateUiState: onPatch, navigateToSettings: noop, setExperienceLayer: noop, calls, labEntries: () => [], ask: noop, notify: noop, afterPaint: noop, scrollTo: () => false, press: () => false });
+  // The panel's part of an interface patch (the six flags and its own keys), read with type checks.
+  const patchFrom = (r: Readonly<Record<string, unknown>>): V115DockUiState => {
+    const out: V115DockUiState = {};
+    V115_WINDOWS.forEach(w => { const v = r[w.flag]; if (typeof v === 'boolean') out[w.flag] = v; });
+    if (typeof r.v115DockOpen === 'boolean') out.v115DockOpen = r.v115DockOpen;
+    return out;
+  };
+  const withSink = <R,>(fn: () => R): R => { const sink = v101SurfaceFlagSink.current; try { return fn(); } finally { v101SurfaceFlagSink.current = sink; } };
+  const v101Table = (): ReadonlyArray<V101SurfaceFlagEntry> => withSink(() => { new GlobalUISurfaceManager().syncWithUIState({}); return v101SurfaceFlagSink.current || []; });
+  const view = (key: V115WindowKey, input: V115AvailabilityInput = free, ui: V115DockUiState = openOnly(key)): V115PanelView => v115BuildPanelView(win(key), input, ui);
+  const tree = (v: V115PanelView, children: React.ReactNode = null): V113TreeNode[] => v113Tree(V115DockedPanelView({ view: v, theme, onTab: () => undefined, onSide: () => undefined, onClose: () => undefined, children }));
+  const firstRun = (unlocked: FirstRunConcept[]): FirstRunState | null => sanitizeFirstRunState({ version: 1, active: true, unlocked, unlockLog: [], lastUnlockDay: null, startChallenges: 0, outcome: null, finishedDay: null });
+  // A window element built the way the six are: a backdrop, a dialog box with the dialog props, and the header, body and footer inside.
+  const fakeWindow = (onClose: () => void): { element: React.ReactElement; header: React.ReactElement; body: React.ReactElement; footer: React.ReactElement } => {
+    const header = <div key="h" data-part="header"><h3 id={v101DialogTitleId('travel')}>✈️ Travel</h3><button type="button" aria-label="Close" onClick={onClose}>✕</button></div>;
+    const body = <div key="b" data-part="body" className="flex-1 min-h-0 overflow-y-auto">regions</div>;
+    const footer = <div key="f" data-part="footer"><button type="button" onClick={onClose}>Close</button></div>;
+    const element = <div className="fixed inset-0" onClick={onClose}><div onClick={e => e.stopPropagation()} {...v101DialogProps('travel', true)}>{header}{body}{footer}</div></div>;
+    return { element, header, body, footer };
+  };
+
+  // ---- 1. The switch ------------------------------------------------------------------------------------------------------------------------
+  check('v115dp_01_switch_defaults_off', 'The side panel is off by default, only a real true turns it on, and it is read with === true', () => {
+    const d = defaults();
+    const junk = sanitizeGameSettings({ ...d, dockedPanelEnabled: 'yes' });
+    const one = sanitizeGameSettings({ ...d, dockedPanelEnabled: 1 });
+    const yes = sanitizeGameSettings({ ...d, dockedPanelEnabled: true });
+    return (DEFAULT_GAME_SETTINGS.dockedPanelEnabled === false && d.dockedPanelEnabled === false && junk.dockedPanelEnabled === false && one.dockedPanelEnabled === false
+      && yes.dockedPanelEnabled === true && !v115DockOn(d) && !v115DockOn({ dockedPanelEnabled: 'true' }) && !v115DockOn(null) && v115DockOn({ dockedPanelEnabled: true })) || json({ junk: junk.dockedPanelEnabled, one: one.dockedPanelEnabled });
+  });
+  check('v115dp_02_switch_is_a_profile_setting', 'It is a profile setting (remembered between visits, never written into or read back from a save), filed under Interface & Accessibility with no version in its title, in the Help, screen & sound group, and the catalog describes it', () => {
+    const save: SaveGameData = JSON.parse(json(createV95SaveFixture()));
+    save.gameSettings = { ...save.gameSettings, dockedPanelEnabled: true };
+    const restored = validateSaveDataCore(save).gameSettings;
+    const sections = SETTINGS_HUB_SECTION_INDEX.filter(s => inList(s.fieldKeys, 'dockedPanelEnabled'));
+    const catalog = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(row => row.key === 'dockedPanelEnabled');
+    return (V95_PROFILE_SCOPED_SETTING_KEYS.includes('dockedPanelEnabled') && !inList(V95_MATCH_SCOPED_SETTING_KEYS, 'dockedPanelEnabled')
+      && V99_PERSISTED_PROFILE_SETTING_KEYS.includes('dockedPanelEnabled') && !('dockedPanelEnabled' in restored) && sections.length === 1 && sections[0].id === V115_SECTION_ID
+      && sections[0].tab === 'interfaceAcc' && sections[0].title === V115_SECTION_TITLE && !/v\d|new in/i.test(sections[0].title) && Boolean(catalog) && catalog?.label === V115_LABEL && catalog?.defaultValue === false
+      && isV115SettingKeyName('dockedPanelEnabled') && v113HomeOf('dockedPanelEnabled') === V115_SECTION_ID && v113GroupOfKey('dockedPanelEnabled') === 'help' && v113SettingLabel('dockedPanelEnabled') === V115_LABEL)
+      || json({ restored: 'dockedPanelEnabled' in restored, sections: sections.map(s => s.id), catalog: Boolean(catalog), home: v113HomeOf('dockedPanelEnabled') });
+  });
+  check('v115dp_03_suite_registered', 'v115dp is registered once, quick tier, right after v114wg, and the suite manifest is whole', () => {
+    const spec = V95_EXISTING_SUITES.filter(s => s.id === 'v115dp');
+    const ids = V95_EXISTING_SUITES.map(s => s.id);
+    const problems = v101CheckSuiteManifest(V95_EXISTING_SUITES);
+    return (spec.length === 1 && spec[0].tier === 'quick' && spec[0].label.startsWith('V11.0 ') && ids.indexOf('v115dp') === ids.indexOf('v114wg') + 1 && json(V115_SUITE_IDS) === json(['v115dp'])
+      && V101_SUITE_MANIFEST.some(([fn, where]) => fn === 'runV115DockedPanelSelfTests' && where === 'v115dp') && problems.length === 0) || json({ spec: spec.length, problems });
+  });
+  check('v115dp_04_off_changes_nothing', 'Off, nothing changes: every update, table, state, key flag set and index is handed back as the very same object, a window is drawn from its very own element, the rescue adds nothing, and no panel is drawn', () => {
+    const prev = openOnly('travel');
+    const next = { ...prev, showChallenges: true };
+    const rows: ReadonlyArray<V101SurfaceFlagEntry> = [{ flags: ['showTravelModal'], surfaceId: 'travel_modal' }];
+    const flags = v99ShortcutOpenFlags(next);
+    const { element } = fakeWindow(() => undefined);
+    const held: V115Held[] = [];
+    const drawn = v115SlotFor(v115DockMode(defaults(), true, true), held, 'travel', element);
+    return (v115DockNormalize(prev, next, 'off') === next && v115SurfaceFlagTable(rows, false) === rows && v115SyncState(next, 'off') === next && v115ShortcutOpenFlags(flags, 'off') === flags
+      && json(v115RescuePatch('off')) === '{}' && v115IndexFor(base, defaults()) === base && drawn === element && held.length === 0 && v115RootStyle(false) === undefined)
+      || json({ normalize: v115DockNormalize(prev, next, 'off') === next, rescue: v115RescuePatch('off') });
+  });
+  check('v115dp_05_where_the_panel_is_used', 'The panel is used only with the switch on, in a match, on a screen at least 1024 px wide; narrower (or outside a match) the six open as windows, and off the game is as before', () => {
+    const on = dockOn();
+    const modes = [v115DockMode(defaults(), true, true), v115DockMode(on, true, true), v115DockMode(on, true, false), v115DockMode(on, false, true), v115DockMode(null, true, true)];
+    const widths = [1023, 1024, 1280, 390, Number.NaN].map(v115WideEnough);
+    return (json(modes) === json(['off', 'docked', 'windows', 'windows', 'off']) && json(widths) === json([false, true, true, false, false]) && V115_DOCK_MIN_WIDTH === 1024 && V115_WIDE_QUERY === '(min-width: 1024px)') || json({ modes, widths });
+  });
+
+  // ---- 2. Five tabs over the six windows, which keep their ids ----------------------------------------------------------------------------
+  check('v115dp_06_five_tabs_in_order', 'Five tabs, in the brief\'s order: Market (Sell and Buy inside), Challenges, Travel, Workshop, Investments; together they hold the six windows, each once', () => {
+    const held = V115_TABS.flatMap(t => t.windows);
+    const market = V115_TABS.find(t => t.id === 'market');
+    return (json(V115_TABS.map(t => t.id)) === json(['market', 'challenges', 'travel', 'workshop', 'investments']) && json(market?.windows) === json(['sell', 'buy'])
+      && held.length === 6 && new Set(held).size === 6 && json(held.slice().sort()) === json(V115_WINDOWS.map(w => w.key).sort()) && V115_WINDOWS.every(w => V115_TABS.find(t => t.id === w.tab)?.windows.includes(w.key))) || json(V115_TABS.map(t => [t.id, t.windows]));
+  });
+  check('v115dp_07_six_windows_keep_their_ids', 'The six windows keep their ids, unchanged: each is still a blocking window of its own (tier 6, a backdrop, Escape closes it), opened by its own flag in V10.1\'s table, with its dialog title id', () => {
+    const table = v101Table();
+    const want: Array<[V115WindowFlag, string]> = [['showMarket', 'market_modal'], ['showResourceMarket', 'resource_market_modal'], ['showChallenges', 'challenges_modal'], ['showTravelModal', 'travel_modal'], ['showWorkshop', 'workshop_modal'], ['showInvestments', 'investments_modal']];
+    const bad = want.filter(([flag, id]) => {
+      const def = UI_SURFACE_REGISTRY[id];
+      const row = table.find(r => r.flags.includes(flag));
+      const w = V115_WINDOWS.find(x => x.flag === flag);
+      return !def || def.id !== id || !def.isBlocking || !def.hasBackdrop || def.tier !== 6 || def.category !== 'modal' || def.allowEscapeClose !== true || !row || row.surfaceId !== id || !w || w.surfaceId !== id;
+    }).map(([flag]) => flag);
+    return (bad.length === 0 && table.length >= 50) || json({ bad, rows: table.length });
+  });
+  check('v115dp_08_panel_has_its_own_id', 'The panel has its own window id (docked_panel): a side panel in the side-drawer zone, never blocking, no backdrop, Escape closes it; the registry has 61 + 28 + 1 + 1 ids', () => {
+    const def = UI_SURFACE_REGISTRY[V115_SURFACE_ID];
+    const added = v115SurfaceRegistryAdditions();
+    return (Boolean(def) && def.id === 'docked_panel' && def.isBlocking === false && def.hasBackdrop === false && def.category === 'panel' && def.reservedZone === 'side-drawer' && def.allowEscapeClose === true && def.tier === 5
+      && Object.keys(added).length === 1 && Object.keys(UI_SURFACE_REGISTRY).length === 61 + 28 + 1 + 1) || json({ def, total: Object.keys(UI_SURFACE_REGISTRY).length });
+  });
+  check('v115dp_09_docked_table', 'Docked, the surface manager\'s table maps the six windows\' own flags to docked_panel; their ids keep their rows (with the alias flags nothing sets), every other row is the very same object, and one row is added', () => {
+    const v101 = v101Table();
+    const docked = v115SurfaceFlagTable(v101, true);
+    const mine = new Set<string>(V115_WINDOWS.map(w => w.flag));
+    const panel = docked.filter(r => r.surfaceId === V115_SURFACE_ID);
+    const others = v101.filter(r => !r.flags.some(f => mine.has(f)));
+    const untouched = others.every(r => docked.includes(r));
+    const kept = V115_WINDOWS.every(w => docked.some(r => r.surfaceId === w.surfaceId && !r.flags.some(f => mine.has(f))));
+    const twice = v115SurfaceFlagTable(docked, true);
+    return (panel.length === 1 && json(panel[0].flags) === json(V115_WINDOWS.map(w => w.flag)) && docked.length === v101.length + 1 && untouched && kept && twice.filter(r => r.surfaceId === V115_SURFACE_ID).length === 1)
+      || json({ panel, rows: [v101.length, docked.length], untouched, kept });
+  });
+  check('v115dp_10_manager_tracks_a_side_panel', 'With the panel docked the surface manager tracks docked_panel as the open side panel and nothing blocks; without it the same flag opens the blocking Travel window, as in V10.1', () => withSink(() => {
+    const a = new GlobalUISurfaceManager();
+    const b = new GlobalUISurfaceManager();
+    try {
+      a.syncWithUIState(v115SyncState({ showTravelModal: true }, 'docked'));
+      b.syncWithUIState(v115SyncState({ showTravelModal: true }, 'windows'));
+      const sa = a.getState(); const sb = b.getState();
+      return (sa.activeSidePanel === V115_SURFACE_ID && sa.activeBlockingModal === null && !a.hasBlockingModal() && sa.isBackgroundBlocked === false && sa.hasBackdrop === false && !a.isWidgetSuppressed('quick_actions')
+        && sb.activeBlockingModal === 'travel_modal' && b.hasBlockingModal()) || json({ docked: [sa.activeSidePanel, sa.activeBlockingModal], windows: sb.activeBlockingModal });
+    } finally { a.closeAllSurfaces(); b.closeAllSurfaces(); }
+  }));
+
+  // ---- 3. One tab at a time, and every way in opens its tab -------------------------------------------------------------------------------
+  check('v115dp_11_one_tab_at_a_time', 'Docked, opening a window opens its tab and closes the one that was open; the tab (and Market\'s half) is remembered; a close, or opening the one already open, changes nothing else; as windows, nothing is closed', () => {
+    const a = apply(openOnly('travel'), { showChallenges: true });
+    const b = apply(a, { showChallenges: false });
+    const c = apply(openOnly('sell'), { showWorkshop: true, showMarket: false }); // the Sell Market's own "🔨 Workshop" button
+    const same = openOnly('travel');
+    const d = apply(same, { showTravelModal: true });
+    const asWindows = apply(openOnly('travel'), { showChallenges: true }, 'windows');
+    return (json(openKeys(a)) === json(['challenges']) && a.v115DockTab === 'challenges' && openKeys(b).length === 0 && b.v115DockTab === 'challenges' && json(openKeys(c)) === json(['workshop']) && c.v115DockTab === 'workshop'
+      && json(openKeys(d)) === json(['travel']) && json(openKeys(asWindows)) === json(['challenges', 'travel']) && asWindows.v115DockTab === 'challenges') || json({ a: openKeys(a), c: openKeys(c), asWindows: openKeys(asWindows) });
+  });
+  check('v115dp_12_every_opener_opens_its_tab', 'Every way in opens its tab, whatever tab was open: the action bar and quick bar buttons, the C T R M W keys, Intelligence and Co-Pilot "Open …" buttons (openIntentNav), the Ask deep links, the character abilities and the Sell Market\'s Workshop button', () => {
+    const toggle = (flag: V115WindowFlag) => (p: V115DockUiState): V115DockUiState => { const out: V115DockUiState = { ...p }; out[flag] = p[flag] !== true; return out; };
+    const openers: Array<[string, V115DockUiState | ((p: V115DockUiState) => V115DockUiState), V115WindowKey]> = [
+      ['bar challenges', { showChallenges: true }, 'challenges'], ['bar travel', { showTravelModal: true }, 'travel'], ['bar market', { showMarket: true }, 'sell'],
+      ['bar resource market', { showResourceMarket: true }, 'buy'], ['bar workshop', { showWorkshop: true }, 'workshop'], ['bar investments', { showInvestments: true }, 'investments'],
+      ['key C', toggle('showChallenges'), 'challenges'], ['key T', toggle('showTravelModal'), 'travel'], ['key R', toggle('showMarket'), 'sell'], ['key M', toggle('showResourceMarket'), 'buy'], ['key W', toggle('showWorkshop'), 'workshop'],
+      ['nav workshop', resolveIntentNavToUiPatch('workshop'), 'workshop'], ['nav market', resolveIntentNavToUiPatch('market'), 'sell'], ['nav resource market', resolveIntentNavToUiPatch('resource_market'), 'buy'],
+      ['nav travel', resolveIntentNavToUiPatch('travel'), 'travel'], ['nav investments', resolveIntentNavToUiPatch('investments'), 'investments'], ['nav challenges', resolveIntentNavToUiPatch('challenges'), 'challenges'],
+      ['ask economy', { showResourceMarket: true }, 'buy'], ['ask workshop', { showWorkshop: true }, 'workshop'], ['ask travel (and the map)', patchFrom({ showTravelModal: true, showMap: true }), 'travel'],
+      ['Market Insight', { showMarket: true }, 'sell'], ['Scout Ahead', { showTravelModal: true }, 'travel'], ['Sell Market › Workshop', { showWorkshop: true, showMarket: false }, 'workshop'],
+    ];
+    const wrong: string[] = [];
+    openers.forEach(([name, patch, want]) => {
+      [null, ...V115_WINDOWS.map(w => w.key)].filter(k => k !== want).forEach(from => {
+        const after = apply(openOnly(from), patch);
+        if (json(openKeys(after)) !== json([want]) || after.v115DockTab !== win(want).tab || (win(want).side && after.v115DockSide !== win(want).side)) wrong.push(`${name} from ${from}: ${json(openKeys(after))}`);
+      });
+    });
+    return (wrong.length === 0 && openers.length === 23) || wrong.slice(0, 6).join(' | ');
+  });
+  check('v115dp_13_one_way_through_updateUiState', 'Every way in goes through updateUiState, which hands each update to v115DockNormalize; no other write raises one of the six flags; the six windows are drawn through v115Dock.slot, and the panel once', () => {
+    const src = String(AustraliaGame);
+    if (!/\bupdateUiState\b/.test(src) || !/showTravelModal/.test(src)) return 'SKIPPED: the component source is not readable in this build (minified), so the writes could not be read';
+    // The text of one call: from "setUiState(" to its closing parenthesis.
+    const callAt = (at: number): string => { let depth = 0; for (let i = at; i < src.length; i++) { const ch = src[i]; if (ch === '(') depth++; else if (ch === ')') { depth--; if (depth === 0) return src.slice(at, i + 1); } } return src.slice(at); };
+    const def = src.match(/const updateUiState = (?:\(0, [\w$]+\.)?useCallback\)?\(\(updates[^)]*\) => \{\s*setUiState\(\(?prev\)? => v115DockNormalize\(prev,/); // the bundled form reads (0, import_react.useCallback)
+    const raw = [...src.matchAll(/setUiState\(/g)].map(m => callAt(m.index || 0)).filter(s => !/^setUiState\(\(?prev\)? => v115DockNormalize/.test(s));
+    const raises = raw.filter(s => V115_WINDOWS.some(w => new RegExp(`${w.flag}\\s*:\\s*true`).test(s)));
+    const slots = new Set([...src.matchAll(/v115Dock\.slot\(\s*["'](sell|buy|challenges|travel|workshop|investments)["']/g)].map(m => m[1]));
+    const nodes = (src.match(/v115Dock\.node\(\)/g) || []).length;
+    return (Boolean(def) && raw.length >= 20 && raises.length === 0 && slots.size === 6 && nodes === 1) || json({ def: Boolean(def), raw: raw.length, raises: raises.map(s => s.slice(0, 80)), slots: [...slots], nodes });
+  });
+  check('v115dp_14_find_anything_results_open_tabs', 'Find Anything: each of the six windows\' results opens its tab through its own route (closing Find Anything), whatever was open; the results are the same ones as before', () => {
+    const ids: Array<[string, V115WindowKey]> = [['screen:market_modal', 'sell'], ['screen:resource_market_modal', 'buy'], ['screen:challenges_modal', 'challenges'], ['screen:travel_modal', 'travel'], ['screen:workshop_modal', 'workshop'], ['screen:investments_modal', 'investments']];
+    const wrong: string[] = [];
+    ids.forEach(([id, want]) => {
+      const entry = base.find(e => e.id === id);
+      if (!entry) { wrong.push(`${id}: missing`); return; }
+      let state: V115DockUiState = openOnly(want === 'travel' ? 'sell' : 'travel');
+      v110RunRoute(entry.route, routerFor(patch => { state = apply(state, patchFrom(patch)); }));
+      if (json(openKeys(state)) !== json([want]) || entry.surfaceId !== win(want).surfaceId) wrong.push(`${id}: ${json(openKeys(state))}`);
+    });
+    return wrong.length === 0 || wrong.join(' | ');
+  });
+  check('v115dp_15_feature_cards_open_tabs', 'What\'s in the game: every card whose window is one of the six (the four challenge cards and Regional investments) opens its tab through the card\'s own route', () => {
+    const cards = V114_CARDS.filter(c => { const e = v114WindowEntry(c, base); return Boolean(e && e.route.kind === 'ui' && V115_WINDOWS.some(w => e.route.kind === 'ui' && e.route.patch[w.flag] === true)); });
+    const wrong: string[] = [];
+    cards.forEach(c => {
+      const e = v114WindowEntry(c, base);
+      if (!e || e.route.kind !== 'ui') return;
+      const want = V115_WINDOWS.find(w => e.route.kind === 'ui' && e.route.patch[w.flag] === true);
+      const after = apply(openOnly('workshop'), patchFrom(e.route.patch));
+      if (!want || json(openKeys(after)) !== json([want.key])) wrong.push(`${c.id}: ${json(openKeys(after))}`);
+    });
+    return (cards.length === 5 && wrong.length === 0 && json(cards.map(c => c.id).sort()) === json(['challenge_approaches', 'dynamic_wagers', 'more_challenges', 'procedural_challenges', 'regional_investments'])) || json({ cards: cards.map(c => c.id), wrong });
+  });
+  check('v115dp_16_keys_work_while_it_is_open', 'Docked, the open panel holds no key back: C T R M W open their tabs, G the map and Space ends the turn; behind a real window or decision only Escape acts, as before; as windows (and off) an open window holds the keys back, as in V10.1', () => {
+    const decide = (key: string, ui: V115DockUiState, mode: V115DockMode, modalOpen = false) => resolveShortcutAction({ key, ctrl: false, meta: false, alt: false, repeat: false, focusKind: 'none', focusInOverlay: false, modalOpen, confirmOpen: false, openFlags: v115ShortcutOpenFlags(v99ShortcutOpenFlags(ui), mode) }).action;
+    const open = openOnly('travel');
+    const docked = ['c', 't', 'r', 'm', 'w', 'g', ' '].map(k => decide(k, open, 'docked'));
+    const behind = ['c', ' ', 'escape'].map(k => decide(k, open, 'docked', true));
+    const windows = ['c', ' ', 't'].map(k => decide(k, open, 'windows'));
+    return (json(docked) === json(['openChallenges', 'openTravel', 'openResources', 'openResourceMarket', 'openWorkshop', 'openMap', 'endTurn']) && json(behind) === json([null, null, 'closeModal'])
+      && json(windows) === json([null, null, 'openTravel'])) || json({ docked, behind, windows });
+  });
+  check('v115dp_17_r_and_m_open_the_two_halves', 'R and M open the Sell and Buy halves of Market; the Market tab opens the half last open (Sell the first time), and the other half when that one cannot open now', () => {
+    const r = apply(openOnly('travel'), { showMarket: true });
+    const m = apply(r, { showResourceMarket: true });
+    const fresh = v115TabTarget('market', {}, free).win?.key;
+    const remembered = v115TabTarget('market', { v115DockTab: 'travel', v115DockSide: 'buy' }, free).win?.key; // Buy was last open in Market, Travel since
+    const locked = v115TabTarget('market', { v115DockTab: 'market', v115DockSide: 'buy' }, { ...free, firstRun: firstRun(['travel', 'challenge', 'sell']) }).win?.key;
+    return (json(openKeys(r)) === json(['sell']) && r.v115DockSide === 'sell' && json(openKeys(m)) === json(['buy']) && m.v115DockTab === 'market' && m.v115DockSide === 'buy' && fresh === 'sell' && remembered === 'buy' && locked === 'sell')
+      || json({ r: openKeys(r), m: openKeys(m), fresh, remembered, locked });
+  });
+  check('v115dp_18_guided_first_match', 'The guided first match: a tab opens only what its button would show — Travel, Challenges and Sell from the start; Buy, Workshop and Investments wait, with the very words the keys use', () => {
+    const fr = firstRun(['travel', 'challenge', 'sell']);
+    const input = { ...free, firstRun: fr };
+    const avail = V115_WINDOWS.map(w => [w.key, v115WindowAvailability(w, input).available]);
+    const workshop = v115WindowAvailability(win('workshop'), input).reason;
+    const keyGate = v101ShortcutGate('openWorkshop', { firstRun: fr, alreadyOpen: false }).message;
+    const unlocked = v115WindowAvailability(win('workshop'), { ...free, firstRun: firstRun(['travel', 'challenge', 'sell', 'trade', 'crafting']) }).available;
+    const v = view('travel', input);
+    return (json(avail) === json([['sell', true], ['buy', false], ['challenges', true], ['travel', true], ['workshop', false], ['investments', false]]) && workshop === keyGate && /not unlocked yet/.test(workshop) && unlocked
+      && json(v.tabs.map(t => [t.id, t.available])) === json([['market', true], ['challenges', true], ['travel', true], ['workshop', false], ['investments', false]])) || json({ avail, workshop, keyGate });
+  });
+  check('v115dp_19_investments_and_the_turn', 'Investments is a tab of its own, dimmed with its reason (and where its switch is) while regional investments are off; on the rival\'s turn the other tabs wait, as the buttons do', () => {
+    const off = view('travel', { ...free, investmentsOn: false });
+    const inv = off.tabs.find(t => t.id === 'investments');
+    const rival = view('travel', { ...free, humanTurn: false });
+    const where = v115InvestmentsWhere(defaults());
+    return (Boolean(inv) && inv?.available === false && /Regional investments are off/.test(inv?.reason || '') && /Gameplay/.test(inv?.reason || '') && /Settings/.test(where)
+      && rival.tabs.every(t => t.selected ? t.available : !t.available && t.reason === V115_NOT_YOUR_TURN) && v115TabTarget('investments', {}, { ...free, investmentsOn: false }).win === null) || json({ inv, where, rival: rival.tabs.map(t => [t.id, t.available]) });
+  });
+
+  // ---- 4. A labelled region with a tab list, not a dialog ---------------------------------------------------------------------------------
+  check('v115dp_20_region_and_tab_list', 'The panel is a labelled region with a tab list of five tabs (one selected, roving tabindex, each controlling the tab panel, with its keys), a labelled close button and a tab panel labelled by its tab; it is not a dialog', () => {
+    const t = tree(view('travel'));
+    const region = t.find(n => n.props['data-testid'] === 'v115-docked-panel');
+    const tabs = t.filter(n => n.props.role === 'tab');
+    const panel = t.find(n => n.props.role === 'tabpanel');
+    const close = t.find(n => n.props['data-testid'] === 'v115-close');
+    return (Boolean(region) && region?.type === 'section' && region?.props.role === 'region' && region?.props['aria-label'] === 'Side panel' && !t.some(n => n.props.role === 'dialog' || n.props['aria-modal'] !== undefined)
+      && t.filter(n => n.props.role === 'tablist').length === 1 && tabs.length === 5 && tabs.filter(n => n.props['aria-selected'] === true).length === 1 && tabs.filter(n => n.props.tabIndex === 0).length === 1
+      && tabs.every(n => n.props['aria-controls'] === V115_TABPANEL_ID) && tabs.find(n => n.props.id === 'v115-tab-travel')?.props['aria-keyshortcuts'] === 'T' && panel?.props.id === V115_TABPANEL_ID
+      && panel?.props['aria-labelledby'] === 'v115-tab-travel' && close?.props['aria-label'] === 'Close side panel') || json({ region: region?.props.role, tabs: tabs.length, panel: panel?.props['aria-labelledby'] });
+  });
+  check('v115dp_21_market_has_sell_and_buy', 'Market shows its two halves as a second tab list (Sell (R), Buy (M)), one selected, and the tab panel is labelled by both tabs; the other tabs show none', () => {
+    const t = tree(view('buy'));
+    const lists = t.filter(n => n.props.role === 'tablist');
+    const sides = t.filter(n => typeof n.props.id === 'string' && String(n.props.id).startsWith('v115-side-') && n.props.role === 'tab');
+    const panel = t.find(n => n.props.role === 'tabpanel');
+    const travel = tree(view('travel')).filter(n => n.props.role === 'tablist').length;
+    return (lists.length === 2 && lists[1].props['aria-label'] === 'Market: sell or buy' && sides.length === 2 && sides.find(n => n.props.id === 'v115-side-buy')?.props['aria-selected'] === true
+      && sides.find(n => n.props.id === 'v115-side-sell')?.props['aria-keyshortcuts'] === 'R' && panel?.props['aria-labelledby'] === 'v115-tab-market v115-side-buy' && travel === 1) || json({ lists: lists.length, sides: sides.length, panel: panel?.props['aria-labelledby'] });
+  });
+  check('v115dp_22_arrow_keys_change_tabs', 'Arrow keys change tabs: → and ← move to the next and previous tab that can open (wrapping), Home and End to the first and last; any other key is the page\'s', () => {
+    const all = [true, true, true, true, true];
+    const some = [true, false, true, false, false];
+    const got = [v115NextIndex(all, 2, 'ArrowRight'), v115NextIndex(all, 4, 'ArrowRight'), v115NextIndex(all, 0, 'ArrowLeft'), v115NextIndex(all, 3, 'Home'), v115NextIndex(all, 1, 'End'),
+      v115NextIndex(some, 0, 'ArrowRight'), v115NextIndex(some, 2, 'ArrowRight'), v115NextIndex(some, 0, 'ArrowLeft'), v115NextIndex(some, 2, 'End'), v115NextIndex(all, 2, 'ArrowDown'), v115NextIndex(all, 2, 'c'), v115NextIndex([], 0, 'ArrowRight')];
+    return json(got) === json([3, 0, 4, 0, 4, 2, 0, 2, 2, null, null, null]) || json(got);
+  });
+  check('v115dp_23_focus_in_and_back_no_trap', 'Focus moves in when the panel opens (to the selected tab), follows the selection from a tab, stays where the player is working in the content, and goes back to the opener on close; nothing traps Tab', () => {
+    const t = tree(view('travel'));
+    const trapped = t.some(n => n.props.role === 'dialog' || n.props['aria-modal'] === true || (n.props['data-testid'] === 'v115-docked-panel' && typeof n.props.onKeyDown === 'function'));
+    const decisions = [v115ShouldFocusTab({ inPanel: false, onTab: false }), v115ShouldFocusTab({ inPanel: true, onTab: true }), v115ShouldFocusTab({ inPanel: true, onTab: false }),
+      v115ShouldRestoreFocus({ openerConnected: true, lostWithPanel: true }), v115ShouldRestoreFocus({ openerConnected: true, lostWithPanel: false }), v115ShouldRestoreFocus({ openerConnected: false, lostWithPanel: true })];
+    const src = String(V115DockedPanel);
+    const readable = /activeElement/.test(src);
+    return (!trapped && json(decisions) === json([true, true, false, true, false, false]) && (!readable || (/opener\.focus\(\)/.test(src) && /target\.focus\(\)/.test(src) && !/["']Tab["']/.test(src)))) || json({ trapped, decisions, readable });
+  });
+  check('v115dp_24_same_content_same_handlers', 'A tab draws its window\'s own content: as a window (off, or narrow) the slot hands back the very same element; docked, the panel holds the very same header, body and footer elements (so the very same handlers), without the backdrop or the dialog box', () => {
+    let closed = 0;
+    const { element, header, body, footer } = fakeWindow(() => { closed += 1; });
+    const content = v115DialogChildren(element);
+    const parts: React.ReactNode[] = Array.isArray(content) ? content : [];
+    const footerButton = React.isValidElement<{ children?: React.ReactNode }>(parts[2]) ? parts[2].props.children : null;
+    if (React.isValidElement<{ onClick?: () => void }>(footerButton) && typeof footerButton.props.onClick === 'function') footerButton.props.onClick();
+    const t = tree(view('travel'), content);
+    return (parts.length === 3 && parts[0] === header && parts[1] === body && parts[2] === footer && closed === 1 && t.some(n => n.props['data-part'] === 'body') && !t.some(n => n.props.role === 'dialog') && !t.some(n => n.props.className === 'fixed inset-0')
+      && v115DialogChildren('text') === 'text') || json({ parts: parts.length, closed });
+  });
+
+  // ---- 5. Escape, the rescue, and what stays on top ---------------------------------------------------------------------------------------
+  check('v115dp_25_escape_closes_the_panel', 'Escape closes the panel: the surface manager closes it as the open side panel and the Escape patch lowers every flag that is up; a decision opened over it closes first', () => withSink(() => {
+    const m = new GlobalUISurfaceManager();
+    try {
+      m.syncWithUIState(v115SyncState({ showTravelModal: true, showSaveLoadModal: true }, 'docked'));
+      const first = m.getState().activeBlockingModal;
+      const one = m.handleEscapeKey();
+      const panelAfterOne = m.getState().activeSidePanel;
+      const two = m.handleEscapeKey();
+      const after = m.getState();
+      const patch = v101EscapeFlagPatch(V115_SURFACE_ID, V115_ESCAPE_FLAGS[V115_SURFACE_ID], { showTravelModal: true, showChallenges: false });
+      return (first === 'save_load_modal' && one && panelAfterOne === V115_SURFACE_ID && two && after.activeSidePanel === null && after.activeBlockingModal === null
+        && json(patch) === json({ showMarket: false, showTravelModal: false }) && UI_SURFACE_REGISTRY[V115_SURFACE_ID].allowEscapeClose === true) || json({ first, panelAfterOne, patch });
+    } finally { m.closeAllSurfaces(); }
+  }));
+  check('v115dp_26_rescue_closes_the_panel', 'Rescue the screen closes the panel: docked, the rescue also lowers Investments\' flag (V10.1\'s rescue leaves it up), and the manager\'s full rescue leaves no side panel; as windows and off the rescue is V10.1\'s', () => withSink(() => {
+    const m = new GlobalUISurfaceManager();
+    try {
+      m.syncWithUIState(v115SyncState({ showInvestments: true }, 'docked'));
+      const before = m.getState().activeSidePanel;
+      m.executeFullUiRescue({ preserveApproval: false });
+      const after = m.getState().activeSidePanel;
+      const patch = v115RescuePatch('docked');
+      return (before === V115_SURFACE_ID && after === null && json(openKeys({ ...openOnly('investments'), ...patch })) === '[]' && patch.showInvestments === false && json(v115RescuePatch('windows')) === '{}')
+        || json({ before, after, patch });
+    } finally { m.closeAllSurfaces(); }
+  }));
+  check('v115dp_27_decisions_and_windows_on_top', 'Every decision (the 12 of V10.1 and the 5 added in UX-2), the six action windows, Loans and the 24 tool windows stay as they were and open over the panel: the panel is drawn at z 45, under every window (z ≥ 50) and over the End Turn chip (z 40)', () => {
+    const groups = [V115_MAP_DECISION_IDS, V115_MAP_ACTION_WINDOW_IDS, V115_MAP_TOOL_WINDOW_IDS];
+    const missing = groups.flat().filter(id => !UI_SURFACE_REGISTRY[id]);
+    const under = groups.flat().filter(id => UI_SURFACE_REGISTRY[id] && globalUISurfaceManager.getZIndex(id) <= V115_DOCK_Z);
+    const v101 = v101Table();
+    const docked = v115SurfaceFlagTable(v101, true);
+    const moved = [...V115_MAP_ACTION_WINDOW_IDS, ...V115_MAP_TOOL_WINDOW_IDS, ...V115_MAP_DECISION_IDS].filter(id => json(v101.filter(r => r.surfaceId === id)) !== json(docked.filter(r => r.surfaceId === id)));
+    const blocking = [...V115_MAP_ACTION_WINDOW_IDS, ...V115_MAP_TOOL_WINDOW_IDS.filter(id => id !== 'ask_game_ai')].filter(id => !UI_SURFACE_REGISTRY[id]?.isBlocking);
+    return (groups.map(g => g.length).join(',') === '17,7,24' && missing.length === 0 && under.length === 0 && moved.length === 0 && blocking.length === 0 && V115_DOCK_Z < 50 && V115_DOCK_Z > 40) || json({ missing, under, moved, blocking });
+  });
+  check('v115dp_28_nothing_is_blocked', 'The panel blocks nothing: no backdrop, the page is padded so the panel sits beside the map and the header, the End Turn chip and the toasts on the right move to its left, and none of that exists while it is closed', () => {
+    const css = v115DockedCss();
+    const style = v115RootStyle(true);
+    return (UI_SURFACE_REGISTRY[V115_SURFACE_ID].isBlocking === false && UI_SURFACE_REGISTRY[V115_SURFACE_ID].hasBackdrop === false && Boolean(style) && String(style?.paddingRight).includes(V115_DOCK_WIDTH_CSS)
+      && css.includes('[data-testid="v99-end-turn-chip"]') && css.includes('[data-testid="notification-toast-container"]') && css.includes(V115_DOCK_WIDTH_CSS) && v115RootStyle(false) === undefined
+      && V99_END_TURN_CHIP_CLASS.includes('right-3')) || json({ style, css: css.slice(0, 80) });
+  });
+  check('v115dp_29_narrow_screens_use_windows', 'On a narrow screen the six open as windows, as before: the same element, V10.1\'s table, the keys held back by an open window, windows that may stack, and no panel', () => {
+    const rows = v101Table();
+    const ui = openOnly('travel');
+    const flags = v99ShortcutOpenFlags(ui);
+    const stacked = apply(ui, { showResourceMarket: true }, 'windows');
+    return (v115DockMode(dockOn(), true, v115WideEnough(390)) === 'windows' && v115SurfaceFlagTable(rows, false) === rows && v115SyncState(ui, 'windows') === ui && v115ShortcutOpenFlags(flags, 'windows') === flags
+      && json(openKeys(stacked)) === json(['buy', 'travel'])) || json({ stacked: openKeys(stacked) });
+  });
+
+  // ---- 6. Memory, Find Anything and the switch's row -----------------------------------------------------------------------------------
+  check('v115dp_30_remembered_for_the_session_not_saved', 'The open tab and Market\'s half are remembered in the interface state for the session (a new match keeps them); a save carries only the theme from the interface state, never the panel', () => {
+    const ui = apply(apply(openOnly(null), { showResourceMarket: true }), { showResourceMarket: false });
+    const kept = withoutMatchScopedUi({ v115DockTab: ui.v115DockTab, v115DockSide: ui.v115DockSide, showMap: true });
+    const save: SaveGameData = JSON.parse(json(createV95SaveFixture()));
+    const fixturePrefs = Object.keys(save.uiPreferences || {});
+    const src = String(AustraliaGame);
+    const builders = /uiPreferences/.test(src) ? [...src.matchAll(/uiPreferences: \{([^}]*)\}/g)].map(m => m[1].trim()) : null;
+    return (ui.v115DockTab === 'market' && ui.v115DockSide === 'buy' && kept.v115DockTab === 'market' && kept.v115DockSide === 'buy' && v115RememberedWindow(ui).key === 'buy' && json(fixturePrefs) === json(['theme'])
+      && (builders === null || (builders.length > 0 && builders.every(b => /^theme\b/.test(b) && !/v115|Dock/.test(b)))) && !V99_MATCH_DIALOG_FLAGS.includes('v115DockTab')) || json({ ui: [ui.v115DockTab, ui.v115DockSide], kept: kept.v115DockTab, builders });
+  });
+  check('v115dp_31_find_anything_has_the_panel', 'Find Anything: with the switch on, the panel is a result of its own and "side panel" or "docked panel" puts it first (off, its switch), on the player\'s turn, opening the tab last open; off, the very same index', () => {
+    const on = dockOn();
+    const index = v115IndexFor(base, on);
+    const entry = index.find(e => e.id === V115_FIND_ID);
+    const ctx: V110FindContext = { gameMode: 'game', humanTurn: true, settings: { dockedPanelEnabled: true }, facts: { shopRegion: true, competitiveMode: true, loansForPlayer: true, allChallengesCompleted: false, teamMode: false } };
+    const hits = ['side panel', 'docked panel', 'sidebar'].map(q => v110FindResults(base, q, ctx, 5).map(r => r.entry.id));
+    const offHits = v110FindResults(base, 'side panel', { ...ctx, settings: {} }, 40).map(r => r.entry.id);
+    let patch: Record<string, unknown> = {};
+    if (entry) v110RunRoute(entry.route, routerFor(p => { patch = { ...patch, ...p }; }));
+    const rival = entry ? v110FindAvailability(entry, { ...ctx, humanTurn: false }).available : true;
+    return (Boolean(entry) && index.length === base.length + 1 && v115IndexFor(index, on) === index && entry?.surfaceId === V115_SURFACE_ID && hits.every(h => h[0] === V115_FIND_ID) && !offHits.includes(V115_FIND_ID) && offHits[0] === 'setting:dockedPanelEnabled'
+      && json(patch) === json({ v115DockOpen: true, showFindAnything: false }) && !rival && v115IndexFor(base, defaults()) === base) || json({ entry: Boolean(entry), hits, patch, rival });
+  });
+  check('v115dp_32_switch_row_and_settings_section', 'The switch has its own row in Settings › Interface & Accessibility › 📑 Side panel (off by default), found by its key and its label, and its section is in the Help, screen & sound group', () => {
+    const row = v113Tree(V115SettingsBody({ on: false, onToggle: () => undefined, onClassName: 'on', offClassName: 'off' }));
+    const field = row.find(n => n.props['data-setting-key'] === 'dockedPanelEnabled');
+    const toggle = row.find(n => n.props['data-testid'] === 'v115-setting-dockedPanelEnabled');
+    const byKey = v110FindSearch(base, 'dockedPanelEnabled', 3).map(h => h.entry.id);
+    const byLabel = v110FindSearch(base, V115_LABEL, 10).map(h => h.entry.id);
+    return (Boolean(field) && field?.props.id === 'settings-field-dockedPanelEnabled' && toggle?.props['aria-pressed'] === false && byKey[0] === 'setting:dockedPanelEnabled' && byLabel.includes('setting:dockedPanelEnabled')
+      && Boolean(base.find(e => e.id === `section:${V115_SECTION_ID}`)) && V113_SECTION_GROUP[V115_SECTION_ID] === 'help' && json(v115SectionFieldKeys()) === json(['dockedPanelEnabled'])) || json({ field: Boolean(field), byKey, byLabel: byLabel.slice(0, 4) });
+  });
+
+  // ---- 7. The map walk, labels, determinism and old saves ------------------------------------------------------------------------------
+  check('v115dp_33_map_walk_nothing_lost', 'Walk: every id of the map is still in the game and reachable — 61 + 28 surfaces and windows, the UX-4 page and the panel; 87 + 2 sections and the 2 new ones; 599 settings and the 4 V11.0 switches; 17 shortcuts (C T R M W among them); 48 LAB cards; 101 cards — every one a Find Anything result (the 8 unused ids aside)', () => {
+    const merged = v115IndexFor(v114IndexWithFeatures(base), dockOn());
+    const counts = [V110_MAP_SURFACE_IDS.length, V110_MAP_WINDOW_IDS.length, V110_MAP_SECTION_IDS.length, V110_MAP_SETTING_KEYS.length, V110_MAP_SHORTCUT_IDS.length, V110_MAP_LAB_CARD_IDS.length, V114_MAP_CARDS.length];
+    const registry = Object.keys(UI_SURFACE_REGISTRY);
+    const sectionIds = [...SETTINGS_HUB_SECTION_INDEX.map(s => s.id), V110_BALANCE_LAB_SECTION.id];
+    const targets = new Set(merged.map(e => e.surfaceId).filter((id): id is string => Boolean(id)));
+    const lost = [
+      ...V110_MAP_SURFACE_IDS.filter(id => !UI_SURFACE_REGISTRY[id]),
+      ...V110_MAP_WINDOW_IDS.map(id => V110_MAP_WINDOW_ID_ALIASES[id] || id).filter(id => !UI_SURFACE_REGISTRY[id]),
+      ...registry.filter(id => !V110_UNUSED_SURFACE_IDS.includes(id) && !targets.has(id) && !(id === 'find_anything' && merged.some(e => e.shortcutId === 'ctrl-k'))),
+      ...V110_MAP_SECTION_IDS.filter(id => !sectionIds.includes(id)),
+      ...sectionIds.filter(id => !merged.some(e => e.kind === 'section' && e.sectionId === id)),
+      ...keys.filter(k => !merged.some(e => e.id === `setting:${k}`)),
+      ...V110_MAP_SETTING_KEYS.filter(k => !keys.includes(k)),
+      ...V110_MAP_SHORTCUT_IDS.filter(id => !merged.some(e => e.kind === 'shortcut' && e.shortcutId === id)),
+      ...V110_MAP_LAB_CARD_IDS.filter(id => !merged.some(e => e.kind === 'lab' && e.labCardId === id)),
+      ...V114_MAP_CARDS.filter(([name]) => { const c = V114_CARDS.find(x => x.map === name); return !c || !merged.some(e => e.id === `${V114_FEATURE_FIND_PREFIX}${c.id}`); }).map(([name]) => name),
+      ...V115_WINDOWS.filter(w => !UI_SURFACE_REGISTRY[w.surfaceId] || !targets.has(w.surfaceId)).map(w => w.surfaceId),
+      ...['c', 't', 'r', 'm', 'w'].filter(k => !Object.keys(KEYBOARD_SHORTCUTS).includes(k)),
+    ];
+    return (json(counts) === json([61, 28, 87, 599, 17, 48, 101]) && registry.length === 61 + 28 + 1 + 1 && sectionIds.length === 87 + 2 + 1 + 1 && keys.length === 599 + 4 && targets.has(V115_SURFACE_ID) && lost.length === 0)
+      || json({ counts, registry: registry.length, sections: sectionIds.length, keys: keys.length, lost: lost.slice(0, 10) });
+  });
+  check('v115dp_34_labels_unique', 'The switch has its own label, and no two of the 603 settings share one', () => {
+    const labels = keys.map(v113SettingLabel);
+    const dup = labels.filter((l, i) => labels.indexOf(l) !== i);
+    return (dup.length === 0 && v113SettingLabel('dockedPanelEnabled') === V115_LABEL && labels.length === 603) || json({ dup: dup.slice(0, 6) });
+  });
+  check('v115dp_35_no_clock_no_random', 'The panel reads no clock and draws no random number: its functions name none, and building views, normalising and searching leave every random stream where it was', () => {
+    const fns: Array<(...args: never[]) => unknown> = [v115DockNormalize, v115DockMode, v115WindowAvailability, v115TabTarget, v115BuildPanelView, v115NextIndex, v115DialogChildren, v115SurfaceFlagTable, v115SyncState, v115RescuePatch, v115ShortcutOpenFlags, v115IndexFor, v115FindEntry, V115DockedPanelView, V115DockedPanel, useV115DockedPanel, useV115WideScreen, v115InvestmentsWhere];
+    const text = fns.map(fn => String(fn)).join('\n');
+    if (!/v115|V115/.test(text)) return 'SKIPPED: the function text is not readable in this build';
+    const banned = ['Math.random', 'Date.now', 'performance.now', 'new Date(', 'drawGameplayRandom', 'createSeededRng'].filter(word => text.includes(word));
+    const before = json(captureRngState());
+    V115_WINDOWS.forEach(w => view(w.key)); apply(openOnly('travel'), { showChallenges: true }); v115IndexFor(base, dockOn());
+    const again = json(view('buy')) === json(view('buy'));
+    return (banned.length === 0 && json(captureRngState()) === before && again) || json({ banned, rng: json(captureRngState()) === before, again });
+  });
+  check('v115dp_36_rules_stamp_and_old_saves', 'The rules stamp stays 1010 with the panel on or off, and real V9.7, V9.8 and V10.0 saves play the same days move for move with all four V11.0 switches on', () => {
+    const stamps = [v101RulesVersionForNewMatch(dockOn()), v101RulesVersionForNewMatch(defaults())];
+    const wrong: string[] = [];
+    Object.keys(V101FX_OLD_SAVES).forEach(name => {
+      const off: SaveGameData = JSON.parse(V101FX_OLD_SAVES[name]);
+      const onSave: SaveGameData = JSON.parse(V101FX_OLD_SAVES[name]);
+      onSave.gameSettings = { ...onSave.gameSettings, dockedPanelEnabled: true, whatsInTheGameEnabled: true, settingsLayersEnabled: true, findAnythingEnabled: true };
+      const a = v101fxPlayDays(off, 2); const b = v101fxPlayDays(onSave, 2);
+      if (a.error || b.error || json(a) !== json(b) || a.humanActions + a.rivalActions === 0) wrong.push(`${name}: ${json({ a, b })}`.slice(0, 300));
+    });
+    return (json(stamps) === json([1010, 1010]) && V101_RULES_VERSION === 1010 && Object.keys(V101FX_OLD_SAVES).length >= 3 && wrong.length === 0) || json({ stamps, wrong });
+  });
+  check('v115dp_37_rendered_markup', 'Drawn for real: the panel is a region with five tabs (one selected) and its window\'s content inside, with no dialog, no aria-modal and no backdrop; it moves the End Turn chip aside while it is drawn', () => {
+    if (!v101StaticRendererReady()) return 'SKIPPED: no static renderer in this page (the LAB has none; the test runners provide one)';
+    const { element } = fakeWindow(() => undefined);
+    const html = v101RenderStatic(<V115DockedPanel view={view('travel')} theme={theme} onTab={() => undefined} onSide={() => undefined} onClose={() => undefined}>{v115DialogChildren(element)}</V115DockedPanel>);
+    const tabs = (html.match(/role="tab"/g) || []).length;
+    return (/role="region"/.test(html) && /aria-label="Side panel"/.test(html) && tabs === 5 && (html.match(/aria-selected="true"/g) || []).length === 1 && /regions/.test(html) && !/role="dialog"/.test(html)
+      && !/aria-modal/.test(html) && !/fixed inset-0/.test(html) && /v99-end-turn-chip/.test(html)) || html.slice(0, 300);
+  });
+  check('v115dp_38_team_mode_follows_the_same_rules', 'In a Team Mode match the panel follows the same rules as solo: it depends only on the switch, the match and the screen; its tabs wait while a teammate or rival plays and open on the player\'s turn; the Team Mode windows keep their rows', () => {
+    const team = view('travel', { ...free, humanTurn: false });
+    const mine = view('travel', { ...free, humanTurn: true });
+    const v101 = v101Table();
+    const docked = v115SurfaceFlagTable(v101, true);
+    const teamRows = ['overseer_dashboard', 'auditor_dashboard', 'human_automation_dashboard'].every(id => json(v101.filter(r => r.surfaceId === id)) === json(docked.filter(r => r.surfaceId === id)));
+    return (v115DockMode(dockOn(), true, true) === 'docked' && team.tabs.filter(t => t.available).length === 1 && mine.tabs.filter(t => t.available).length === 5 && teamRows) || json({ team: team.tabs.map(t => t.available), teamRows });
+  });
+  check('v115dp_39_escape_closes_the_picker_first', 'Docked, the challenge approach picker opens over the panel and Escape closes it first (unless a window is open over it); as windows the V10.1 order is kept', () => {
+    const src = String(AustraliaGame);
+    if (!/closeModal/.test(src) || !/setWp2PickerChallengeId/.test(src)) return 'SKIPPED: the component source is not readable in this build (minified)';
+    const at = src.indexOf('"closeModal"') >= 0 ? src.indexOf('"closeModal"') : src.indexOf("'closeModal'");
+    const handler = src.slice(at, at + 4000);
+    const rule = handler.search(/v115DockRef\.current === ["']docked["'] && wp2PickerChallengeId && !globalUISurfaceManager\.hasBlockingModal\(\)\) \{\s*setWp2PickerChallengeId\(null\);/);
+    const manager = handler.indexOf('handleEscapeKey()');
+    const confirm = handler.indexOf('confirmationDialog.isOpen');
+    return (rule > confirm && confirm >= 0 && manager > rule && globalUISurfaceManager.getZIndex(V115_SURFACE_ID) > 0 && V115_DOCK_Z < 50) || json({ rule, confirm, manager });
+  });
+  check('v115dp_40_release_check_reports_skips_as_skipped', 'The release check reports a row that could not run (v115dp_37 in the LAB, which has no static renderer) as skipped: the suite says "(1 skipped)", it is neither a pass nor a failure, and a suite where nothing ran does not pass', () => {
+    const spec = (rows: V9SelfTestResult[]): V95SuiteSpec => ({ id: 'v115probe', label: 'V11.0 probe', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => rows });
+    const ok: V9SelfTestResult = { id: 'a', name: 'a', passed: true, detail: '' };
+    const skip: V9SelfTestResult = { id: 'b', name: 'b', passed: false, skipped: true, detail: 'SKIPPED: no static renderer' };
+    const bad: V9SelfTestResult = { id: 'c', name: 'c', passed: false, detail: 'wrong' };
+    const [withSkip] = runV95ExistingSuite(spec([ok, skip]));
+    const [withFail] = runV95ExistingSuite(spec([ok, skip, bad]));
+    const [onlySkips] = runV95ExistingSuite(spec([skip]));
+    const [plain] = runV95ExistingSuite(spec([ok, ok]));
+    return (withSkip.passed && /^1\/2 passed \(1 skipped\)/.test(withSkip.detail) && withSkip.actual === '1/2' && !withFail.passed && /failing: c/.test(withFail.detail) && !/failing: b/.test(withFail.detail)
+      && !onlySkips.passed && plain.passed && plain.detail === '2/2 passed') || json({ withSkip: withSkip.detail, withFail: withFail.detail, onlySkips: onlySkips.passed, plain: plain.detail });
   });
   return results;
 }
@@ -232960,6 +234083,12 @@ function dispatchGameSettingsChange(
 
 
 
+  // V11.0 (SECTION 20BR): the side panel's mode ('off' = every window as before; 'windows' = on, but a narrow screen or no match; 'docked' = the six
+  // open as tabs beside the map). updateUiState, the keys, Escape, the rescue and the surface sync read it; useV115DockedPanel draws it.
+  const v115Wide = useV115WideScreen(v115DockOn(gameSettings));
+  const v115Mode = v115DockMode(gameSettings, gameState.gameMode === 'game', v115Wide);
+  const v115DockRef = useRef<V115DockMode>('off');
+  v115DockRef.current = v115Mode;
 	  // V9.9 (SECTION 20AU): the handler is built once per render through the stable kit, so the listener always runs the
 	  // latest closures (it used to stay fresh only because an unrelated save callback changed identity every render,
 	  // which also re-bound the window listener on almost every render). It is registered once per game mode below.
@@ -233033,7 +234162,7 @@ function dispatchGameSettingsChange(
 	        focusInOverlay: v99FocusInsideOverlay(e.target),
 	        modalOpen: globalUISurfaceManager.hasBlockingModal() || Boolean(surfaceNow?.activeBlockingModal) || ((surfaceNow?.modalStack?.length ?? 0) > 0) || Boolean(uiState.showQuickActionsCustomizer),
 	        confirmOpen: confirmationDialog.isOpen,
-	        openFlags: v99ShortcutOpenFlags(uiState)
+	        openFlags: v115ShortcutOpenFlags(v99ShortcutOpenFlags(uiState), v115DockRef.current) // V11.0 (SECTION 20BR): docked, the panel's windows hold no key back (off: the very same flags)
 	      });
 	      if (shortcutDecision.preventDefault) e.preventDefault?.();
 	      if (!shortcutDecision.action) return;
@@ -233109,6 +234238,7 @@ function dispatchGameSettingsChange(
 	            break;
 	          }
 
+	          if (v115DockRef.current === 'docked' && wp2PickerChallengeId && !globalUISurfaceManager.hasBlockingModal()) { setWp2PickerChallengeId(null); break; } // V11.0 (SECTION 20BR): docked, the approach picker sits over the side panel, so Escape closes it first (as windows, V10.1's order is kept)
 	          // Authoritative Escape key handling driven by GlobalUISurfaceManager
 	          const activeSurfaceIdBefore = globalUISurfaceManager.getState().activeBlockingModal ||
 	                                        globalUISurfaceManager.getState().activeSidePanel ||
@@ -233167,6 +234297,7 @@ function dispatchGameSettingsChange(
 	              narrative_decision_modal: 'showNarrativeDecision', // V10.1 (SECTION 20BJ): derived flag; the popup itself is closed below
 	              treasury_requests_dialog: 'showTreasuryRequestsDialog',
 	              governor_exception_dialog: 'showGovernorExceptionDialog',
+	              ...V115_ESCAPE_FLAGS, // V11.0 (SECTION 20BR): the side panel (only ever the open surface while it is docked)
 	              ...V114_ESCAPE_FLAGS, // V11.0 (SECTION 20BP): What's in the game (only ever open while it is on)
 	              ...V110_ESCAPE_FLAGS // V11.0 (SECTION 20BL, Q4): the ids the V11.0 table adds (only ever active while Find Anything is on)
 	            };
@@ -233225,7 +234356,7 @@ function dispatchGameSettingsChange(
   // updater ran twice so surfaces were opened/closed twice. The effect below
   // performs the same sync at the correct time.
   const updateUiState = useCallback((updates: any) => {
-    setUiState(prev => (typeof updates === 'function' ? updates(prev) : { ...prev, ...updates }));
+    setUiState(prev => v115DockNormalize(prev, (typeof updates === 'function' ? updates(prev) : { ...prev, ...updates }), v115DockRef.current)); // V11.0 (SECTION 20BR): off, the very same state; docked, one of the six windows at a time (the one just opened), its tab remembered
   }, []);
 
   const executeIntentRecommendation = useCallback((candidate: any) => {
@@ -233265,8 +234396,8 @@ function dispatchGameSettingsChange(
   useEffect(() => {
     // V10.1 (SECTION 20BJ): the story-decision popup lives in the match state, not in uiState: tell the surface manager it is open (V10.1 matches), so shortcuts stand down and Escape / the rescue can close it.
     const v101NarrativeOpen = isV101Match(gameState) && gameState.narrativePopup?.isOpen === true && Boolean(gameState.narrativePopup?.currentDecision);
-    globalUISurfaceManager.syncWithUIState(v114SyncState(v110SyncState(v101NarrativeOpen ? { ...uiState, showNarrativeDecision: true } : uiState, gameSettings), gameSettings)); /* V11.0 (SECTION 20BP): + What's in the game's tracking while it is on */ // V11.0 (SECTION 20BL): asks for the V11.0 table only while Find Anything is on
-  }, [uiState, gameState.rulesVersion, gameState.narrativePopup?.isOpen, gameState.narrativePopup?.currentDecision, gameSettings.findAnythingEnabled, gameSettings.whatsInTheGameEnabled]); // V11.0 (SECTION 20BP): + its switch
+    globalUISurfaceManager.syncWithUIState(v115SyncState(v114SyncState(v110SyncState(v101NarrativeOpen ? { ...uiState, showNarrativeDecision: true } : uiState, gameSettings), gameSettings), v115Mode)); /* V11.0 (SECTION 20BR): + the side panel's row while it is docked */ /* V11.0 (SECTION 20BP): + What's in the game's tracking while it is on */ // V11.0 (SECTION 20BL): asks for the V11.0 table only while Find Anything is on
+  }, [uiState, gameState.rulesVersion, gameState.narrativePopup?.isOpen, gameState.narrativePopup?.currentDecision, gameSettings.findAnythingEnabled, gameSettings.whatsInTheGameEnabled, v115Mode]); // V11.0 (SECTION 20BP): + its switch. V11.0 (SECTION 20BR): + the side panel's mode
 
   useEffect(() => {
     if (uiState.pendingMode && ['ai', 'grand_tour', 'team_human_ai_vs_ai_ai', 'team_ai_vs_ai'].includes(uiState.pendingMode)) {
@@ -235784,6 +236915,7 @@ function dispatchGameSettingsChange(
     }
 
     updateUiState({
+      ...v115RescuePatch(v115DockRef.current), // V11.0 (SECTION 20BR): docked, the rescue also closes the side panel (all six flags, Investments' too); otherwise nothing
       showSettings: false,
       showHelp: false,
       showStats: false,
@@ -262222,6 +263354,22 @@ function dispatchGameSettingsChange(
                 />
               </SettingsSection>
 
+              {/* V11.0 (SECTION 20BR): the side panel's switch, filed under its goal (no version in the title). Off by default. */}
+              <SettingsSection
+                id={V115_SECTION_ID}
+                tab="interfaceAcc"
+                title={V115_SECTION_TITLE}
+                chips={['Off by default']}
+                fieldKeys={v115SectionFieldKeys()}
+              >
+                <V115SettingsBody
+                  on={gameSettings.dockedPanelEnabled === true}
+                  onToggle={() => updateGameSetting('dockedPanelEnabled', gameSettings.dockedPanelEnabled !== true, { settingLabel: V115_LABEL, section: 'Interface → Side panel', source: 'direct_player_change' })}
+                  onClassName={`${themeStyles.success} text-white`}
+                  offClassName={themeStyles.buttonSecondary}
+                />
+              </SettingsSection>
+
               <SettingsSection
                 id="interface.launcherDock"
                 tab="interfaceAcc"
@@ -276005,7 +277153,7 @@ function dispatchGameSettingsChange(
     };
 
     return (
-      <div className={`min-h-screen ${themeStyles.background} ${themeStyles.text} p-4`}>
+      <div className={`min-h-screen ${themeStyles.background} ${themeStyles.text} p-4`} style={v115Dock.rootStyle /* V11.0 (SECTION 20BR): beside the open side panel (undefined: no style, as before) */}>
         {/* Notification Bar */}
         {renderNotificationBar()}
         {/* V9.6 (SECTION 20AJ): money pop-ups, turn wipe, roll card and sound triggers. */}
@@ -278321,7 +279469,7 @@ function dispatchGameSettingsChange(
         {renderWhatIfTimelinesModal()}
         
         {/* Travel Modal */}
-        {uiState.showTravelModal && (
+        {uiState.showTravelModal && v115Dock.slot('travel', ( // V11.0 (SECTION 20BR): docked, drawn in the side panel's ✈️ Travel tab (otherwise this very element)
           <div className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "travel_modal") ? "bg-black bg-opacity-50" : "bg-transparent"} flex items-center justify-center p-4`} style={{ zIndex: globalUISurfaceManager.getZIndex("travel_modal") }} onClick={() => updateUiState({ showTravelModal: false })}>
             <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden ${themeStyles.scrollbar}`} onClick={(e) => e.stopPropagation()} {...v101DialogProps('travel', gameSettings.accessibilitySettings?.trapFocusInModals !== false)}>
               <div className="flex justify-between items-center mb-4 shrink-0">
@@ -278528,7 +279676,7 @@ function dispatchGameSettingsChange(
               </div>
             </div>
           </div>
-        )}
+        ))}{/* V11.0 (SECTION 20BR): the end of v115Dock.slot */}
         
         {/* V9.6 (SECTION 20AH): approach picker */}
         {gameSettings.challengeApproachesEnabled === true && wp2PickerChallengeId && (() => {
@@ -278562,7 +279710,7 @@ function dispatchGameSettingsChange(
         })()}
 
         {/* Challenges Modal */}
-        {uiState.showChallenges && (
+        {uiState.showChallenges && v115Dock.slot('challenges', ( // V11.0 (SECTION 20BR): docked, drawn in the side panel's 🎯 Challenges tab (otherwise this very element)
           <div className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "challenges_modal") ? "bg-black bg-opacity-50" : "bg-transparent"} flex items-center justify-center p-4`} style={{ zIndex: globalUISurfaceManager.getZIndex("challenges_modal") }} onClick={() => updateUiState({ showChallenges: false })}>
             <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden`} onClick={(e) => e.stopPropagation()} {...v101DialogProps('challenges', gameSettings.accessibilitySettings?.trapFocusInModals !== false)}>
               <div className="flex justify-between items-center mb-4 shrink-0">
@@ -278722,10 +279870,10 @@ function dispatchGameSettingsChange(
               <V101ChallengeVarietyHint settings={gameSettings} onEnable={() => trackedSetGameSettings('direct_player_change', 'More challenge variety', prev => ({ ...prev, ...v101ChallengeVarietyPatch() }))} />
             </div>
           </div>
-        )}
+        ))}{/* V11.0 (SECTION 20BR): the end of v115Dock.slot */}
         
         {/* Market Modal */}
-        {uiState.showMarket && (
+        {uiState.showMarket && v115Dock.slot('sell', ( // V11.0 (SECTION 20BR): docked, drawn in the side panel's 💰 Market tab, Sell (otherwise this very element)
           <div
             className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "market_modal") ? "bg-black bg-opacity-50" : "bg-transparent"} flex items-center justify-center p-4 overflow-hidden`} style={{ zIndex: globalUISurfaceManager.getZIndex("market_modal") }}
             onClick={() => updateUiState({ showMarket: false })}
@@ -279022,10 +280170,10 @@ function dispatchGameSettingsChange(
 	              </div>
 	            </div>
           </div>
-	        )}
+	        ))}{/* V11.0 (SECTION 20BR): the end of v115Dock.slot */}
 
 	        {/* Resource Purchase Market Modal (V5.0) */}
-	        {uiState.showResourceMarket && (
+	        {uiState.showResourceMarket && v115Dock.slot('buy', ( // V11.0 (SECTION 20BR): docked, drawn in the side panel's 💰 Market tab, Buy (otherwise this very element)
 	          <div
 	            className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "resource_market_modal") ? "bg-black bg-opacity-50" : "bg-transparent"} flex items-center justify-center p-4 overflow-hidden`} style={{ zIndex: globalUISurfaceManager.getZIndex("resource_market_modal") }}
 	            onClick={() => updateUiState({ showResourceMarket: false })}
@@ -279157,7 +280305,7 @@ function dispatchGameSettingsChange(
 	              </div>
 	            </div>
 	          </div>
-	        )}
+	        ))}{/* V11.0 (SECTION 20BR): the end of v115Dock.slot */}
 
 	        {/* Equipment Shop Modal */}
 	        {uiState.showShop && (
@@ -279251,7 +280399,7 @@ function dispatchGameSettingsChange(
         )}
 
         {/* Workshop Modal (Crafting System) */}
-        {uiState.showWorkshop && (
+        {uiState.showWorkshop && v115Dock.slot('workshop', ( // V11.0 (SECTION 20BR): docked, drawn in the side panel's 🔨 Workshop tab (otherwise this very element)
           <div
             className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "workshop_modal") ? "bg-black bg-opacity-50" : "bg-transparent"} flex items-center justify-center p-4 overflow-hidden`} style={{ zIndex: globalUISurfaceManager.getZIndex("workshop_modal") }}
             onClick={() => updateUiState({ showWorkshop: false })}
@@ -279398,10 +280546,10 @@ function dispatchGameSettingsChange(
               </div>
             </div>
           </div>
-        )}
+        ))}{/* V11.0 (SECTION 20BR): the end of v115Dock.slot */}
 
         {/* Investments Modal */}
-        {uiState.showInvestments && (
+        {uiState.showInvestments && v115Dock.slot('investments', ( // V11.0 (SECTION 20BR): docked, drawn in the side panel's 🏦 Investments tab (otherwise this very element)
           <div
             className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "investments_modal") ? "bg-black bg-opacity-50" : "bg-transparent"} flex items-center justify-center p-4 overflow-hidden`} style={{ zIndex: globalUISurfaceManager.getZIndex("investments_modal") }}
             onClick={() => updateUiState({ showInvestments: false })}
@@ -279503,7 +280651,7 @@ function dispatchGameSettingsChange(
               </div>
             </div>
           </div>
-        )}
+        ))}{/* V11.0 (SECTION 20BR): the end of v115Dock.slot */}
 
         {/* Sabotage Modal */}
         {uiState.showSabotage && (
@@ -287102,6 +288250,17 @@ function dispatchGameSettingsChange(
     trapFocus: gameSettings.accessibilitySettings?.trapFocusInModals !== false,
     updateUiState: patch => updateUiState(patch),
   });
+  // V11.0 (SECTION 20BR): the side panel (off by default). It draws the six windows' own content with their own handlers; v115Mode is worked out beside the keys.
+  const v115Dock = useV115DockedPanel({
+    settings: gameSettings,
+    mode: v115Mode,
+    uiState,
+    humanTurn: gameState.gameMode === 'game' && isHumanPlayerTurn(gameState, player),
+    firstRun: wp8State,
+    theme: themeStyles,
+    updateUiState: patch => updateUiState(patch),
+    notify: message => addNotification(message, 'info'),
+  });
 
   // Resume-hang diagnostics: last passive effect declared in this component, so it runs after every
   // other effect keyed on the resumed turn. Clears the pending flag set in finishTeamAiTurn.
@@ -287180,6 +288339,7 @@ function dispatchGameSettingsChange(
       )}
       {v110Find.node /* V11.0 (SECTION 20BM): Find Anything's dialog (null while it is off or closed) */}
       {v114Whats.node /* V11.0 (SECTION 20BP): What's in the game (null while it is off or closed) */}
+      {v115Dock.node() /* V11.0 (SECTION 20BR): the side panel, drawn once after renderGame handed it the open window's content (null unless docked with a tab open) */}
       {v99LeaveMatchOpen && gameState.gameMode === "game" && (
         <V99LeaveMatchDialog
           prompt={describeLeaveMatchWithRecovery(describeLeaveMatch({ day: Number(gameState.day) || 1, totalDays: Number(gameSettings.totalDays) || 1, unsavedProgress: v99UnsavedProgress, rivalTurn: saveTimingForTurn(gameState) === 'after_rival_turn', firstRunActive: Boolean(wp8State?.active), campaignChapter: wp98ChapterBindingRef.current ? wp98ChapterBindingRef.current.chapterIndex + 1 : null }), v99mr.coverage, v99mr.status.day) /* V9.9 (SECTION 20AV): with autosave on, say what Resume match brings back */}
