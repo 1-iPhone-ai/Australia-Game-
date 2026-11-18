@@ -59,7 +59,8 @@ exports.build = (D) => {
     if (['winCondition', 'totalDays', 'aiDifficulty'].includes(k)) notes.push('locked while a match runs (V101_LOCKED_RULE_KEYS); changes wait for the next match');
     if (P.INTERNAL_NOTES && P.INTERNAL_NOTES[k]) notes.push(P.INTERNAL_NOTES[k]);
     if (!idx.length) notes.push('not in hub index');
-    if (D.searchAll && Object.keys(D.searchAll).length && !D.searchAll[k]) notes.push('settings search cannot find it');
+    // UX-4: only a key the search run covered can be "not found" (search-all-ux2.json predates settingsLayersEnabled and whatsInTheGameEnabled; the hub's search finds both as fields).
+    if (D.searchAll && Object.prototype.hasOwnProperty.call(D.searchAll, k) && !D.searchAll[k]) notes.push('settings search cannot find it');
     if (idx.length > 1) notes.push(`also indexed in ${idx.slice(1).join(', ')}`);
     if (mis) notes.push(mis.verdict + (mis.where && !/no control|reset only|internal/.test(mis.verdict) ? `: ${mis.where}` : ''));
     if (D.gatedKeys && D.gatedKeys.has(k) && !(g && g.needs.length)) notes.push('control appears once its parent switch is on (probe)');

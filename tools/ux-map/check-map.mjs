@@ -14,6 +14,10 @@ export default async (G) => {
   ok('§4 lists every registry surface', reg.every(id => s4.includes(id)), `${reg.filter(id => !s4.includes(id)).join(',')}`);
   ok('§4 lists no unknown surface', s4.every(id => reg.includes(id)), s4.filter(id => !reg.includes(id)).join(','));
   ok('§4 lists each surface once', new Set(s4).size === s4.length && s4.length === reg.length, `${s4.length} rows / ${reg.length} ids`);
+  // UX-4: a new id must not print placeholders: every row has a plan, a V11.0 home and a package.
+  const rows4 = section('## 4. Surfaces', '## 5.').split('\n').filter(l => /^\| \d+ \| `/.test(l));
+  const unfilled = rows4.filter(l => { const c = l.split(/(?<!\\)\|/).map(x => x.trim()); return [c[10], c[11], c[12]].some(v => !v || v === '?'); });
+  ok('§4 gives every surface a plan, a V11.0 home and a package', unfilled.length === 0 && rows4.length === reg.length, unfilled.slice(0, 5).map(l => l.slice(0, 40)).join(' / '));
   // §6 sections
   const s6 = firstCol(section('## 6. Settings sections', '**Proposed groups'), 1);
   const secIds = G.SETTINGS_HUB_SECTION_INDEX.map(s => s.id);
@@ -38,6 +42,22 @@ export default async (G) => {
   const inert = new Set([...G.V99_INERT_SETTINGS, ...G.V101_INERT_SETTINGS].map(x => x.key));
   const inertRows = rows7.filter(l => /inactive \(V(9\.9|10\.1)\)/.test(l)).map(l => l.split('|')[1].trim().replace(/`/g, ''));
   ok('§7 marks exactly the 20 inactive settings', inertRows.length === inert.size && inertRows.every(k => inert.has(k)), `${inertRows.length} marked`);
+  // UX-4: §7's "card:" notes against What's in the game's cards: every card switch, and nothing else, names its card as the page does
+  // (a note reads "card: <page name>", followed by " (UX-1: <working name>)" where the two differ).
+  const skipped = [];
+  if (G.V114_CARDS) {
+    const want = new Map(); G.V114_CARDS.forEach(c => G.v114CardKeys(c).forEach(k => want.set(k, G.v114CardName(c))));
+    const got = new Map();
+    rows7.forEach(l => {
+      const c = l.split(/(?<!\\)\|/).map(x => x.trim()); const item = c[11].split('; ').find(n => n.startsWith('card: '));
+      if (!item) return;
+      const ux1 = item.lastIndexOf(' (UX-1: ');
+      got.set(c[1].replace(/`/g, ''), ux1 > 0 && item.endsWith(')') ? item.slice(6, ux1) : item.slice(6));
+    });
+    const wrong = [...want].filter(([k, n]) => got.get(k) !== n).map(([k, n]) => `${k}: map "${got.get(k)}" / game "${n}"`);
+    const extra = [...got.keys()].filter(k => !want.has(k)).map(k => `${k}: not a card switch`);
+    ok(`§7 marks exactly the ${want.size} switches of the ${G.V114_CARDS.length} cards, each with its card's name`, wrong.length === 0 && extra.length === 0, [...wrong, ...extra].slice(0, 5).join(' / '));
+  } else skipped.push("§7 card notes: this module has no What's in the game cards (a file before UX-4)");
   // §8 nested
   const s8 = section('## 8. Nested settings', '## 9.');
   const objs = keys.filter(k => G.DEFAULT_GAME_SETTINGS[k] && typeof G.DEFAULT_GAME_SETTINGS[k] === 'object' && !Array.isArray(G.DEFAULT_GAME_SETTINGS[k]));
@@ -49,5 +69,6 @@ export default async (G) => {
   // shortcuts: every KEYBOARD_SHORTCUTS key appears in §10 (the constant is not exported; check the labels instead)
   const s10 = section('## 10. Keyboard shortcuts', '## 11.');
   ['Space', 'C / T / R / M / W', 'G', 'N / H / P', '?', 'Escape', 'Ctrl+Shift+C', 'Ctrl/⌘+S', 'Ctrl/⌘+K', 'Alt+C', 'Ctrl+Alt+D', 'Shift+Escape'].forEach(k => ok(`§10 lists ${k}`, s10.includes(k)));
-  return [...out, '', `${out.length - fail.length} of ${out.length} checks pass`].join('\n');
+  // A check that cannot run is reported as skipped, never counted as a pass.
+  return [...out, ...skipped.map(s => `SKIP ${s}`), '', `${out.length - fail.length} of ${out.length} checks pass${skipped.length ? `, ${skipped.length} skipped` : ''}`].join('\n');
 };
