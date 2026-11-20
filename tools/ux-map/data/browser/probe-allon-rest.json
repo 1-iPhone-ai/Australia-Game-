@@ -1,0 +1,6167 @@
+{
+ "passes": {
+  "advanced:allOn": [
+   {
+    "pass": "advanced:allOn",
+    "tab": "home",
+    "section": "home.dashboard",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "🧠 Live Control Center →",
+       "label": "🧠 Live Control Center → ⚡ Auto-Fix All (2)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [
+       "showSettings=false",
+       "showLiveControlCenter=true"
+      ],
+      "modal": "human_automation_dashboard",
+      "native": 0
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "quickSetup",
+    "section": "quickSetup.core",
+    "controls": [
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Easy Medium Hard Expert",
+       "label": "settings-field-aiDifficulty",
+       "disabled": true,
+       "header": false,
+       "fieldId": "aiDifficulty",
+       "visible": true
+      },
+      "skipped": "disabled"
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "30",
+       "label": "setting-slider-1-game-length-days-totaldays",
+       "disabled": true,
+       "header": false,
+       "fieldId": "totalDays",
+       "visible": true
+      },
+      "skipped": "disabled"
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Most Money Highest Net Worth Most Controlled Regio",
+       "label": "settings-field-winCondition",
+       "disabled": true,
+       "header": false,
+       "fieldId": "winCondition",
+       "visible": true
+      },
+      "skipped": "disabled"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "settings-field-actionLimitsEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "actionLimitsEnabled",
+       "visible": true
+      },
+      "changed": [
+       "actionLimitsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "settings-field-uxAssistPackEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "uxAssistPackEnabled",
+       "visible": true
+      },
+      "changed": [
+       "uxAssistPackEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Classic Cooperative Competitive Role Based Support",
+       "label": "settings-field-teamModeAiSystemProfile",
+       "disabled": false,
+       "header": false,
+       "fieldId": "teamModeAiSystemProfile",
+       "visible": true
+      },
+      "changed": [
+       "teamModeAiSystemProfile"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Classic V6.2 Team AI Classic + Light Team Improvem",
+       "label": "settings-field-teamBrainModeV63",
+       "disabled": false,
+       "header": false,
+       "fieldId": "teamBrainModeV63",
+       "visible": true
+      },
+      "changed": [
+       "teamModeAiSystemProfile",
+       "teamBrainModeV63",
+       "teamBrainStrategyModesEnabled",
+       "teamBrainRecoveryLogicEnabled",
+       "teamBrainTravelDisciplineEnabled",
+       "teamBrainTravelDiscipline"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "quickSetup",
+    "section": "quickSetup.presets",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset to Classic",
+       "label": "Reset to Classic ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Show presets",
+       "label": "Presets are ready-made bundles of settings (Classic, Fast and more). They are switched off",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "settingsPresetsEnabled",
+       "teamModeAiSystemProfile",
+       "teamBrainModeV63",
+       "teamBrainStrategyModesEnabled",
+       "teamBrainRecoveryLogicEnabled",
+       "teamBrainTravelDisciplineEnabled",
+       "teamBrainTravelDiscipline"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "mechanicsDir",
+    "section": "teamModeAi.overview",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "mechanicsDir",
+    "section": "mechanicsDirectory.directory",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Configure Win Condition →",
+       "label": "🏁 Win Conditions The match ends after the configured number of days. The winner has the m",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [
+       "settingsActiveTab=\"economy\""
+      ],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Configure Action Limits →",
+       "label": "⏱️ Turns, Actions & Overrides Each turn you get a set number of Actions; most major moves ",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [
+       "settingsActiveTab=\"gameplay\""
+      ],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "economy",
+    "section": "economy.winCondition",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Economy Settings",
+       "label": "Reset Economy Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Most Money Highest Net Worth Most Controlled Regio",
+       "label": "Victory Goal Most Money Highest Net Worth Most Controlled Regions Most Challenge Points 🔒",
+       "disabled": true,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "disabled"
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Most Money Highest Net Worth Most Controlled Regio",
+       "label": "Fallback 1 Most Money Highest Net Worth Most Controlled Regions Most Challenge Points",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "winConditionTieBreakers"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Most Money Highest Net Worth Most Controlled Regio",
+       "label": "Fallback 2 Most Money Highest Net Worth Most Controlled Regions Most Challenge Points",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "winConditionTieBreakers"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Most Money Highest Net Worth Most Controlled Regio",
+       "label": "Fallback 3 Most Money Highest Net Worth Most Controlled Regions Most Challenge Points",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "winConditionTieBreakers"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Most Money Highest Net Worth Most Controlled Regio",
+       "label": "Fallback 4 Most Money Highest Net Worth Most Controlled Regions Most Challenge Points",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "winConditionTieBreakers"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Allow Cashing Out Region Positions Return 50% of your deposit and release control OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "allowCashOut"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Enable Negotiation Mode OFF by default. Disables new deposit bidding and uses proposal-bas",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "negotiationMode"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "0",
+       "label": "setting-slider-5-auto-accept-cash-proposals-under-autoacc",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "negotiationMode"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "err": "control gone"
+     },
+     {
+      "err": "control gone"
+     },
+     {
+      "err": "control gone"
+     },
+     {
+      "err": "control gone"
+     },
+     {
+      "err": "control gone"
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "economy",
+    "section": "economy.matchShape",
+    "controls": [
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Match shape (V9.6) Rival matches only. Each actor draws 2 secret objectives worth points a",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "matchShapeEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "Objective weight 1× (+$1,500 each)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "matchObjectiveWeight"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "Comeback strength 1×",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "comebackStrength"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "0.5",
+       "label": "Full boost at a gap of 50%",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "comebackFullGap"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "20",
+       "label": "Final Stretch length last 20% (from day 25)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "finalStretchPct"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "economy",
+    "section": "economy.loans",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Economy Settings",
+       "label": "Reset Economy Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Enable Advanced Loans Four-tiered loan system with credit scores ON",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "advancedLoansEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Player Only AI Only Both",
+       "label": "Who Can Use Advanced Loans? Player Only AI Only Both Advanced Loans apply only to human-co",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "advancedLoansAccessMode"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Credit Score System Track creditworthiness and adjust rates OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "creditScoreEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Loan Events Random special loan opportunities OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "loanEventsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Early Repayment Pay off loans early for 50% interest discount OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "earlyRepaymentEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "3",
+       "label": "setting-slider-85-max-simultaneous-loans-maxsimultaneouslo",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "setting-slider-86-interest-rate-0",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "setting-slider-87-ai-loan-risk-weight-x-1",
+       "disabled": true,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "disabled"
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "setting-slider-88-ai-repayment-priority-x-1",
+       "disabled": true,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "disabled"
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "setting-slider-89-ai-refinancing-weight-x-1",
+       "disabled": true,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "disabled"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "AI Emergency Loans Only Restrict AI borrowing to survival or comeback pressure OFF",
+       "disabled": true,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "disabled"
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "competition",
+    "section": "competition.regionControl",
+    "controls": [
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Most Money Highest Net Worth Most Controlled Regio",
+       "label": "Victory Goal Most Money Highest Net Worth Most Controlled Regions Most Challenge Points 🔒",
+       "disabled": true,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "disabled"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Allow Cashing Out Region Positions Return 50% of your deposit and release region control O",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "allowCashOut"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "competition",
+    "section": "competition.regionalStanding",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "ON",
+       "label": "Enable Regional Standing System Tracks reputation per actor in each region with tier benef",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "regionalStandingEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Enable Regional Contracts System Regional contracts, supply orders, and reputation rewards",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "regionalContractsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Enable State Infrastructure Projects Fund state infrastructure megaprojects and elevate re",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "stateInfrastructureEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "setting-slider-regional-standing-decay-rate",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "setting-slider-ai-standing-weight",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "setting-slider-ai-standing-priority",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "competition",
+    "section": "competition.externalTerritories",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "ON",
+       "label": "Enable External Territories System Unlocks 7 offshore Australian territories (Norfolk, Chr",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "externalTerritoriesEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Enable Expeditions & Ancient Relics HQ Launch offshore expeditions, discover relics, and e",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "expeditionsRelicsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Territory Equipment Gate Requires specialized gear (expedition permits, vessel passes, sur",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "territoryEquipmentGateEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Multi-Turn Journeys Imposes 1-to-3 turn travel transit delays for remote island and polar ",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "multiTurnJourneyEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Transit",
+       "label": "Transit Committed",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Committed",
+       "label": "Transit Committed",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "competition",
+    "section": "competition.negotiations",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Enable Negotiation Mode Disables new deposit bidding and uses proposal-based region contro",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "negotiationMode"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "competition",
+    "section": "competition.competitiveActions",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "ON",
+       "label": "AI Region Majority RushTeam modes only AI aggressively prioritizes securing region majorit",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiRegionsMajorityRushEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Sabotage Actions Allow players to spend cash to debuff opposing players OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "sabotageEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "ai.settings",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset AI Settings",
+       "label": "Reset AI Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "AI Uses Market Modifiers Apply weather, season, events, and pricing modifiers OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiUsesMarketModifiers"
+      ],
+      "uiChanged": [
+       "settingsActiveTab=\"aiTeams\""
+      ],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "aiStrategyLab.main",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "aiTeams.strategySliders",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "aiTeams.coPilot",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.teamBrain",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.competitiveAi",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.actionOverrides",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.sharedActionBank",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.actionLending",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.teamPlans",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.reservations",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.threatTargeting",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.endgameAcceleration",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.emergencyActions",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.teamInitiative",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.comboBonuses",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.cashVault",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.performanceSync2",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.parallelPlanning",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.actionSequences",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.aiThinkingAlgorithm",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "teamModeAi.algorithmBuilder",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "ai.memory",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "ai.persistentMemory",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "ai.opponentMind",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "ai.communication",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "aiTeams",
+    "section": "ai.adaptive",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "automation",
+    "section": "teamModeAi.actionApproval",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Team Mode Settings",
+       "label": "Reset Team Mode Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "📋 Open Live Control Center (Approvals) →",
+       "label": "📋 Open Live Control Center (Approvals) →",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [
+       "showSettings=false",
+       "showLiveControlCenter=true"
+      ],
+      "modal": "human_automation_dashboard",
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Enable AI Action Approval Requires an AI teammate to propose an action — target, cost, wag",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiActionApprovalEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Approve Every Action Approve Selected Action Types",
+       "label": "Approval Mode Approve Every Action Approve Selected Action Types Approve High-Risk Actions",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiActionApprovalMode"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Propose Again Use Fallback Action Skip Allow Norma",
+       "label": "On Rejection Propose Again Use Fallback Action Skip Allow Normal AI Wait Next Action Wait ",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiActionApprovalRejectionOutcome"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Show in Transparency (auto-resolution notes)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Automatic Approval Rules Off by default — a separate opt-in from Approval itself. Auto-res",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiActionApprovalAutoRulesEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Auto-approve wager below $",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiActionApprovalAutoRules.autoApproveWagerBelow"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "number",
+       "text": "0",
+       "label": "Auto-approve wager below $",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiActionApprovalAutoRules.autoApproveWagerBelow"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Auto-approve actions that leave the Economy Governor's minimum reserve intact",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Auto-approve challenges with success probability ≥",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiActionApprovalAutoRules.autoApproveSuccessProbabilityAbove"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "number",
+       "text": "0.9",
+       "label": "Auto-approve challenges with success probability ≥",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Auto-approve travel below $",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiActionApprovalAutoRules.autoApproveTravelCostBelow"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "number",
+       "text": "0",
+       "label": "Auto-approve travel below $",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiActionApprovalAutoRules.autoApproveTravelCostBelow"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Auto-approve teammate support below $",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiActionApprovalAutoRules.autoApproveSupportBelow"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "number",
+       "text": "0",
+       "label": "Auto-approve teammate support below $",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiActionApprovalAutoRules.autoApproveSupportBelow"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Auto-reject loans",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Auto-reject sabotage",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiActionApprovalAutoRules.autoRejectSabotage"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Auto-reject recovery-phase spending (investments/equipment while in economic recovery)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiActionApprovalAutoRules.autoRejectRecoverySpending"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "automation",
+    "section": "teamModeAi.actionRequirements",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Team Mode Settings",
+       "label": "Reset Team Mode Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Enable Action Requirements Sets hard and soft permission rules (cash thresholds, wager ran",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Show in Transparency (soft-violation notes)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionRequirementsTransparencyEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "+ Add Requirement Group",
+       "label": "Enable Action Requirements Sets hard and soft permission rules (cash thresholds, wager ran",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionRequirementGroups"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "automation",
+    "section": "advancedSystems.humanAutomation",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Advanced Settings",
+       "label": "Reset Advanced Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "🤖 Open Live Control Center (Automations) →",
+       "label": "🤖 Open Live Control Center (Automations) →",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [
+       "showSettings=false",
+       "showLiveControlCenter=true"
+      ],
+      "modal": "human_automation_dashboard",
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "ON",
+       "label": "Enable Human Player Automation A separate, optional system for the human player's own turn",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "humanAutomationEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "ON",
+       "label": "Transparency Notification whenever an automation runs (silent_autorun stays quiet regardle",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "humanAutomationTransparencyEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "1. Sequence Launch Allow rules to launch action sequences. OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "automationSequenceLaunchEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "2. Dynamic Slot Progression Scale max rule slots with level (4-20). OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "automationSlotProgressionEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "3. Execution Run History Log Record and display execution log entries. OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "automationRunHistoryEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "4. Extended Triggers Enable day, turn, challenge, and level triggers. OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "automationExtendedTriggersEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "5. Extended Actions Enable end turn, wait, cashout, loan actions. OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "automationExtendedActionsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "6. Conflict Warnings & Rank Show collision warnings and priority rank badges. OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "automationConflictWarningsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "7. Daily Digest Notification Issue daily summary notifications at day start. OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "automationDailyDigestEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "8. Import / Export Envelope Enable JSON import and export envelope buttons. OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "automationImportExportEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Open Dashboard",
+       "label": "Open Dashboard + Add Automation",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [
+       "showHumanAutomationDashboard=true"
+      ],
+      "modal": "human_automation_dashboard",
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "+ Add Automation",
+       "label": "Open Dashboard + Add Automation",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Auto Challenge on Arrival",
+       "label": "Auto Challenge on Arrival Auto Sell at Target Price Auto Craft When Ready Maintain Cash Re",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Auto Sell at Target Price",
+       "label": "Auto Challenge on Arrival Auto Sell at Target Price Auto Craft When Ready Maintain Cash Re",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Auto Craft When Ready",
+       "label": "Auto Challenge on Arrival Auto Sell at Target Price Auto Craft When Ready Maintain Cash Re",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Maintain Cash Reserve",
+       "label": "Auto Challenge on Arrival Auto Sell at Target Price Auto Craft When Ready Maintain Cash Re",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Buy Equipment When Affordable",
+       "label": "Auto Challenge on Arrival Auto Sell at Target Price Auto Craft When Ready Maintain Cash Re",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Invest Surplus Cash",
+       "label": "Auto Challenge on Arrival Auto Sell at Target Price Auto Craft When Ready Maintain Cash Re",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Stock Up When Cheap",
+       "label": "Auto Challenge on Arrival Auto Sell at Target Price Auto Craft When Ready Maintain Cash Re",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Daily Challenge Routine",
+       "label": "Auto Challenge on Arrival Auto Sell at Target Price Auto Craft When Ready Maintain Cash Re",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Deposit Surplus in Region",
+       "label": "Auto Challenge on Arrival Auto Sell at Target Price Auto Craft When Ready Maintain Cash Re",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Collect Before Traveling",
+       "label": "Auto Challenge on Arrival Auto Sell at Target Price Auto Craft When Ready Maintain Cash Re",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "automation",
+    "section": "autoMode.main",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Auto Mode Master Switch",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "autoModeSettings.enabled|autoModeSettings.autoModeEnabled|autoModeSettings.numericalLimits"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "automation",
+    "section": "autoMode.advanced",
+    "controls": [
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Allow Numerical Modifiers",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "autoModeSettings.allowNumericalModifiers|autoModeSettings.numericalLimits"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Human Autopilot Allowed",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "autoModeSettings.allowHumanAutopilot|autoModeSettings.numericalLimits"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Require Approval for Human Changes",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Preserve Replay Determinism",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "autoModeSettings.preserveReplayDeterminism|autoModeSettings.numericalLimits"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Inherit Global",
+       "label": "Inherit Global",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "autoModeSettings.numericalLimits|autoModeSettings.actorPolicies"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Inherit Global",
+       "label": "Inherit Global",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "autoModeSettings.numericalLimits|autoModeSettings.actorPolicies"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Inherit Global",
+       "label": "Inherit Global",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "autoModeSettings.numericalLimits|autoModeSettings.actorPolicies"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Inherit Global",
+       "label": "Inherit Global",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "autoModeSettings.numericalLimits|autoModeSettings.actorPolicies"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Inherit Global",
+       "label": "Inherit Global",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "autoModeSettings.numericalLimits|autoModeSettings.actorPolicies"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Inherit Global",
+       "label": "Player Team (Team Player) Inherit Global",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "autoModeSettings.numericalLimits|autoModeSettings.teamPolicies"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Inherit Global",
+       "label": "Opponent Team (Team AI) Inherit Global",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "autoModeSettings.numericalLimits|autoModeSettings.teamPolicies"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "oversight",
+    "section": "teamModeAi.economyGovernor",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Team Mode Settings",
+       "label": "Reset Team Mode Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Enable Team Economy Governor Gives each Team Mode AI actor phase-aware financial disciplin",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "teamEconomyGovernorEnabled"
+      ],
+      "uiChanged": [
+       "settingsActiveTab=\"oversight\""
+      ],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     },
+     {
+      "err": "section gone"
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "oversight",
+    "section": "teamModeAi.treasury",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "oversight",
+    "section": "teamModeAi.overseer",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "oversight",
+    "section": "teamModeAi.governanceControlSurface",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "oversight",
+    "section": "teamModeAi.auditor",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "oversight",
+    "section": "advancedSystems.priority",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "replayDiag",
+    "section": "advancedSystems.decisionTransparency",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Advanced Settings",
+       "label": "Reset Advanced Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Enable Decision Transparency Track current AI priorities, alternatives, and setting contri",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "decisionTransparencyEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Standard mode Human-AI AI-AI All modes",
+       "label": "Visibility Scope Standard mode Human-AI AI-AI All modes",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "decisionTransparencyVisibilityScope"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Simple Advanced",
+       "label": "View Mode Simple Advanced",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Show Real-Time Decision Breakdown",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "decisionTransparencyRealtimeBreakdown"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Show Decision Timeline",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Show Per-Setting Contributions",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "decisionTransparencySettingContributions"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Show Reason Explanations",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "decisionTransparencyReasonExplanations"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Show Alternative Actions",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "decisionTransparencyAlternativeActions"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Show Priority Flow",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "decisionTransparencyPriorityFlow"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "30",
+       "label": "setting-slider-105-max-history-retained-decisiontransparenc",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "setting-slider-106-detail-level-decisiontransparencydetaill",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "setting-slider-107-explanation-depth-decisiontransparencyex",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "15",
+       "label": "setting-slider-108-timeline-length-decisiontransparencytime",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Multi-AI Overview Enabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "decisionTransparencyMultiAiOverviewEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Show Per-AI Mini Cards",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "decisionTransparencyShowPerAiMiniCards"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Show Adaptive AI Actor Breakdown",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "decisionTransparencyShowAdaptiveActorBreakdown"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Show Team Adaptive Source",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Show Actor Applied Effects",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "decisionTransparencyShowActorAppliedEffects"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Show Only Active AIs",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "decisionTransparencyShowOnlyActiveAis"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Show Unaffected AIs",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "All Active AIs My Team Only Opponents Only Adaptiv",
+       "label": "Default Transparency Group View All Active AIs My Team Only Opponents Only Adaptive AIs On",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "decisionTransparencyDefaultGroupView"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "4",
+       "label": "setting-slider-109-max-visible-ai-cards-decisiontransparenc",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "setting-slider-110-per-ai-timeline-density-decisiontranspar",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "15",
+       "label": "setting-slider-111-per-ai-timeline-length-decisiontranspare",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "replayDiag",
+    "section": "advancedSystems.gameActivityLedger",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Advanced Settings",
+       "label": "Reset Advanced Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Enable Game Activity Ledger A separate, optional, append-only history of match activity — ",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "gameActivityLedgerEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Open Ledger Dashboard",
+       "label": "99 / 500 events recorded this match. Open Ledger Dashboard",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [
+       "showGameActivityLedgerDashboard=true"
+      ],
+      "modal": "activity_ledger",
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "RECORDING",
+       "label": "Recording Paused Pauses only new Ledger recording — never pauses gameplay itself. Existing",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "500",
+       "label": "setting-slider-112-max-recorded-events-gameactivityledgerma",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Keep Recent",
+       "label": "Keep Recent Keep Critical",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Keep Critical",
+       "label": "Keep Recent Keep Critical",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "gameActivityLedgerRetentionPolicy"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Standard",
+       "label": "Standard Detailed Developer",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Detailed",
+       "label": "Standard Detailed Developer",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "gameActivityLedgerDetailLevel"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Developer",
+       "label": "Standard Detailed Developer",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "gameActivityLedgerDetailLevel"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Include in Save File Off by default — when off, a save file's recorded events are stripped",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "gameActivityLedgerIncludeInSaveFile"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "replayDiag",
+    "section": "advancedSystems.aiPipelineInspector",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Advanced Settings",
+       "label": "Reset Advanced Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Enable AI Action Pipeline Inspector A separate, optional, purely observational trace of on",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiPipelineInspectorEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "replayDiag",
+    "section": "advancedSystems.diag2Overlay",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Advanced Settings",
+       "label": "Reset Advanced Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Enable DIAG-2 Overlay Shows the on-screen DIAG-2 telemetry panel and writes Co-Pilot/turn ",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "diag2OverlayEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "replayDiag",
+    "section": "advancedSystems.coPilotStartPhase",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Advanced Settings",
+       "label": "Reset Advanced Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Enable Co-Pilot Start Box Shows the top-left [Co-Pilot Start] phase box used to debug take",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "coPilotStartPhaseOverlayEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "replayDiag",
+    "section": "advancedSystems.postMatchDebrief",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Advanced Settings",
+       "label": "Reset Advanced Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Enable Post-Match Debrief Analytics Automatically compiles a comprehensive 5-card post-mat",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "postMatchDebriefEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "replayDiag",
+    "section": "advancedSystems.replaySafety",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Open Replay Studio",
+       "label": "Open Replay Studio What-If Alternate Timelines Fork parallel game histories, compare branc",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "What-If Alternate Timelines Fork parallel game histories, compare branch performance metri",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "whatIfTimelinesEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Canonical Action Routing (V9.7) Infrastructure, expedition and crisis actions reach their ",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "canonicalActionRoutingV97"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "number",
+       "text": "10000",
+       "label": "Max Cap:",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiReplayMaxEvents"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Apply Replay-Safe Defaults",
+       "label": "🛡️ Replay-Safe Default Settings Ensures match replayability with deterministic world PRNG",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "action-button"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "⚖️ Replay Stream Comparison Engine Controls DISABLED Controls replay comparison mode, dive",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "replayComparisonEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "0.1",
+       "label": "setting-slider-replay-comparison-tolerance",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "ON",
+       "label": "Ignore Minor Timing Drift When enabled, day/turn timing variations with matching actions a",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "replayComparisonIgnoreMinorTiming"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "replayDiag",
+    "section": "advancedSystems.balanceLab",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "🔄 Reset to Canonical Defaults",
+       "label": "🧪 Balance Lab & Simulation Sandbox Interactive developer parameter tuning & real-time sim",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "action-button"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "ENABLED",
+       "label": "Auto Stress Tracking Automatically track balance stress metrics across simulation iteratio",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "balanceLabAutoStressTracking"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "quick-resource-yields",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "quick-event-risk",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "quick-ai-difficulty-scaling",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "quick-shop-price-scaling",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "1",
+       "label": "quick-investment-return-yields",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.appearance",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Dark",
+       "label": "Dark Light Retro System",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Light",
+       "label": "Dark Light Retro System",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Retro",
+       "label": "Dark Light Retro System",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "System",
+       "label": "Dark Light Retro System",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Comfortable",
+       "label": "Comfortable Compact",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Compact",
+       "label": "Comfortable Compact",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "teamOverviewDensity"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.mapSound",
+    "controls": [
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "✨ Enhanced 🎨 Classic look",
+       "label": "Visual mode",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "visualMode"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Sound effects Synthesised in the browser; silent until you first click or press a key.",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "soundEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "40",
+       "label": "Volume 40%",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "soundVolume"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Follow system On — no animations Off — always anim",
+       "label": "Reduced motion",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "reducedMotion"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.changelog",
+    "controls": []
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.firstRun",
+    "controls": [
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Guided first match Start new players in the guided tutorial. Turning it off is permanent f",
+       "disabled": false,
+       "header": false,
+       "fieldId": "guidedFirstRunEnabled",
+       "visible": true
+      },
+      "changed": [
+       "guidedFirstRunEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.uxAssist",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Interface Settings",
+       "label": "Reset Interface Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "settings-field-uxAssistPackEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "uxAssistPackEnabled",
+       "visible": true
+      },
+      "changed": [
+       "uxAssistPackEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON (guided level)",
+       "label": "settings-field-simplifiedActionBarEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "simplifiedActionBarEnabled",
+       "visible": true
+      },
+      "changed": [
+       "simplifiedActionBarEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON (guided level)",
+       "label": "settings-field-disabledActionFeedbackEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "disabledActionFeedbackEnabled",
+       "visible": true
+      },
+      "changed": [
+       "disabledActionFeedbackEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON (guided level)",
+       "label": "settings-field-interactiveMapEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "interactiveMapEnabled",
+       "visible": true
+      },
+      "changed": [
+       "interactiveMapEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "settings-field-winConditionCoachEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "winConditionCoachEnabled",
+       "visible": true
+      },
+      "changed": [
+       "winConditionCoachEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "settings-field-settingsPresetsEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "settingsPresetsEnabled",
+       "visible": true
+      },
+      "changed": [
+       "settingsPresetsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "settings-field-groupedInventoryCardsEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "groupedInventoryCardsEnabled",
+       "visible": true
+      },
+      "changed": [
+       "groupedInventoryCardsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "settings-field-teamModeAiSystemsEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "teamModeAiSystemsEnabled",
+       "visible": true
+      },
+      "changed": [
+       "teamModeAiSystemsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Classic Cooperative Competitive Role Based Support",
+       "label": "settings-field-teamModeAiSystemProfile",
+       "disabled": false,
+       "header": false,
+       "fieldId": "teamModeAiSystemProfile",
+       "visible": true
+      },
+      "changed": [
+       "teamModeAiSystemProfile"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.startScreen",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Start-Screen Protection Settings",
+       "label": "Reset Start-Screen Protection Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "settings-field-startScreenConflictProtection",
+       "disabled": false,
+       "header": false,
+       "fieldId": "startScreenConflictProtection",
+       "visible": true
+      },
+      "changed": [
+       "startScreenConflictProtection"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "settings-field-showFloatingControlsOnStartScreen",
+       "disabled": false,
+       "header": false,
+       "fieldId": "showFloatingControlsOnStartScreen",
+       "visible": true
+      },
+      "changed": [
+       "showFloatingControlsOnStartScreen"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Hidden (Default) Docked Safe Area (Bottom-Right) N",
+       "label": "settings-field-startScreenFloatingLayout",
+       "disabled": false,
+       "header": false,
+       "fieldId": "startScreenFloatingLayout",
+       "visible": true
+      },
+      "changed": [
+       "startScreenFloatingLayout"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "settings-field-restoreEligibleFloatingControlsAfterMatchStarts",
+       "disabled": false,
+       "header": false,
+       "fieldId": "restoreEligibleFloatingControlsAfterMatchStarts",
+       "visible": true
+      },
+      "changed": [
+       "restoreEligibleFloatingControlsAfterMatchStarts"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "settings-field-hideGameplaySidePanelsOnStartScreen",
+       "disabled": false,
+       "header": false,
+       "fieldId": "hideGameplaySidePanelsOnStartScreen",
+       "visible": true
+      },
+      "changed": [
+       "hideGameplaySidePanelsOnStartScreen"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.floatingUi",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "settings-field-conflictControlEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "conflictControlEnabled",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.enabled",
+       "conflictControlEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "settings-field-conflictAllowRelocation",
+       "disabled": false,
+       "header": false,
+       "fieldId": "conflictAllowRelocation",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.allowRelocation",
+       "conflictAllowRelocation"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "settings-field-conflictReturnToPreferred",
+       "disabled": false,
+       "header": false,
+       "fieldId": "conflictReturnToPreferred",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.returnToPreferred",
+       "conflictReturnToPreferred"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "settings-field-conflictShowExplanations",
+       "disabled": false,
+       "header": false,
+       "fieldId": "conflictShowExplanations",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.showConflictExplanations",
+       "conflictShowExplanations"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Preview Floating Layout",
+       "label": "Preview Floating Layout Reset Unsafe Positions Test Widget Collisions",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "action-button"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Unsafe Positions",
+       "label": "Preview Floating Layout Reset Unsafe Positions Test Widget Collisions",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "action-button"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Test Widget Collisions",
+       "label": "Preview Floating Layout Reset Unsafe Positions Test Widget Collisions",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0,
+      "nativeDialogs": [
+       "alert: Collision Diagnostic Test: [Scenario scenario_a] Initiating diagnostic simulation...\nStep 1: Opening"
+      ]
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▲",
+       "label": "▲ ▼",
+       "disabled": true,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "disabled"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▼",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.1|floatingUiPriorityMatrix.2"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▲",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.1|floatingUiPriorityMatrix.2"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▼",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▲",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.2|floatingUiPriorityMatrix.3"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▼",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▲",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.3|floatingUiPriorityMatrix.4"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▼",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.4|floatingUiPriorityMatrix.5"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▲",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.4|floatingUiPriorityMatrix.5"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▼",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.5|floatingUiPriorityMatrix.6"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▲",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.5|floatingUiPriorityMatrix.6"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▼",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.6|floatingUiPriorityMatrix.7"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▲",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.6|floatingUiPriorityMatrix.7"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▼",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.7|floatingUiPriorityMatrix.8"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▲",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.7|floatingUiPriorityMatrix.8"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▼",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.8|floatingUiPriorityMatrix.9"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▲",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.8|floatingUiPriorityMatrix.9"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▼",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.9|floatingUiPriorityMatrix.10"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▲",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.9|floatingUiPriorityMatrix.10"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▼",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.10|floatingUiPriorityMatrix.11"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▲",
+       "label": "▲ ▼",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "conflictControlSettings.customPriorityOrder",
+       "floatingUiPriorityMatrix.10|floatingUiPriorityMatrix.11"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "▼",
+       "label": "▲ ▼",
+       "disabled": true,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "disabled"
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.aiAssistants",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "settings-field-aiCommandCenterUiEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "aiCommandCenterUiEnabled",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "settings-field-askGameAiUiEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "askGameAiUiEnabled",
+       "visible": true
+      },
+      "changed": [
+       "askGameAiUiEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "ON",
+       "label": "settings-field-aiTuningLabUiEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "aiTuningLabUiEnabled",
+       "visible": true
+      },
+      "changed": [
+       "aiTuningLabUiEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Open Lab",
+       "label": "settings-field-aiTuningLabUiEnabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "aiTuningLabUiEnabled",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.launcherDock",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "settings-field-launcherSettings",
+       "disabled": false,
+       "header": false,
+       "fieldId": "launcherSettings",
+       "visible": true
+      },
+      "changed": [
+       "launcherSettings.enabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Allow Dragging OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "launcherSettings.allowDragging"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "ON",
+       "label": "Auto-Collapse Menu ON",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "launcherSettings.autoCollapse"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "settings-field-dockSettings",
+       "disabled": false,
+       "header": false,
+       "fieldId": "dockSettings",
+       "visible": true
+      },
+      "changed": [
+       "dockSettings.enabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free Positioning Snap to Edge Left Vertical Toolba",
+       "label": "Dock Positioning Mode (8 Modes) Free Positioning Snap to Edge Left Vertical Toolbar Right ",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "dockSettings.positionMode"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.quickActionsVisibility",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "ON",
+       "label": "settings-field-keepQuickActionsReopenHandleWhenClosed",
+       "disabled": false,
+       "header": false,
+       "fieldId": "keepQuickActionsReopenHandleWhenClosed",
+       "visible": true
+      },
+      "changed": [
+       "keepQuickActionsReopenHandleWhenClosed"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "settings-field-fullyHideQuickActionsWhenClosed",
+       "disabled": false,
+       "header": false,
+       "fieldId": "fullyHideQuickActionsWhenClosed",
+       "visible": true
+      },
+      "changed": [
+       "fullyHideQuickActionsWhenClosed"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "⚡ Open Quick Actions Now",
+       "label": "Need to restore Quick Actions? ⚡ Open Quick Actions Now",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.uiRescue",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset UI Rescue & Hotkeys",
+       "label": "Reset UI Rescue & Hotkeys ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Enable Escape Key Closing Closing active modal windows and floating panels with the Escape",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "uiRescueSettings.enableEscapeKeyClosing|uiRescueSettings.escapeKeyRescueEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Emergency UI Rescue Hotkey (Shift+Escape) Instantly clears stuck modals, resets off-screen",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "uiRescueSettings.enableShiftEscapeRescueHotkey|uiRescueSettings.emergencyRescueHotkeyEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Shift + Escape (Default Standard) Ctrl + Shift + R",
+       "label": "Rescue Hotkey Combination Select the key combo used to execute Emergency UI Rescue. Shift ",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "uiRescueSettings.rescueHotkeyCombo"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Preserve Active Approval Modals During Rescue Keep critical human decision dialogs (Treasu",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Restore Scale & Dock Presets on Rescue Reset modal scale multipliers and dock positions to",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "uiRescueSettings.restoreDefaultScaleOnRescue"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "🆘 Execute Full UI Rescue Now",
+       "label": "🆘 Execute Full UI Rescue Now 🎯 Reposition Off-Screen Widgets 🚀 Reset Widget Dock Layout",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "action-button"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "🎯 Reposition Off-Screen Widgets",
+       "label": "🆘 Execute Full UI Rescue Now 🎯 Reposition Off-Screen Widgets 🚀 Reset Widget Dock Layout",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "🚀 Reset Widget Dock Layout",
+       "label": "🆘 Execute Full UI Rescue Now 🎯 Reposition Off-Screen Widgets 🚀 Reset Widget Dock Layout",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "action-button"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "📐 Reset UI Scale Presets",
+       "label": "🆘 Execute Full UI Rescue Now 🎯 Reposition Off-Screen Widgets 🚀 Reset Widget Dock Layout",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "action-button"
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.safeAreaPreview",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Safe-Area Preview Settings",
+       "label": "Reset Safe-Area Preview Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Enable Safe-Area Grid Preview Overlay Render reserved viewport boundary lines, toast rails",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "safeAreaPreviewSettings.enableSafeAreaPreviewOverlay"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "All Reserved Zones & Widgets Active Collisions & R",
+       "label": "Preview Display Mode Choose which wireframes and safety boundaries are highlighted. All Re",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "safeAreaPreviewSettings.previewDisplayMode"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Show Priority Tier Badges on Widgets Display tier markers (e.g. T1, T3, T8) on registered ",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "safeAreaPreviewSettings.showPriorityTierLabels"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Test Modal vs Floating Overlap",
+       "label": "Test Modal vs Floating Overlap Test Toast Rail Collision Test Out-of-Bounds Drag Test Star",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Test Toast Rail Collision",
+       "label": "Test Modal vs Floating Overlap Test Toast Rail Collision Test Out-of-Bounds Drag Test Star",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Test Out-of-Bounds Drag",
+       "label": "Test Modal vs Floating Overlap Test Toast Rail Collision Test Out-of-Bounds Drag Test Star",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Test Start Screen Transition",
+       "label": "Test Modal vs Floating Overlap Test Toast Rail Collision Test Out-of-Bounds Drag Test Star",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "action-button"
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.accessibility",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Accessibility Settings",
+       "label": "Reset Accessibility Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "🎓 Guided first match New players start in a guided match: one goal, three actions, new to",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "guidedFirstRunEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Developer diagnostics (render counter) The existing diagnostics switch. While on, an overl",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "diagnosticsSettings.enabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Focus Trapping for Modal Windows Keep keyboard Tab focus locked inside active modal window",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "accessibilitySettings.trapFocusInModals"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "High-Contrast Focus Rings Enhance focus indicators around active buttons and inputs for cl",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "accessibilitySettings.highContrastFocusRings"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Reduced Motion Mode Disable sliding and bouncing animations for smoother performance. OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "accessibilitySettings.reduceMotion"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "A-",
+       "label": "Smaller text",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "accessibilitySettings.textScaleMultiplier"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "A+",
+       "label": "Larger text",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "accessibilitySettings.textScaleMultiplier"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset",
+       "label": "Reset text size to 100%",
+       "disabled": true,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "disabled"
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.layoutPresets",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Clean Minimal UI & auto-collapse",
+       "label": "Clean Minimal UI & auto-collapse Assisted Beginner & coach focused Advanced Full AI & stra",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "dockSettings.enabled|dockSettings.positionMode|dockSettings.dockOpacity",
+       "presetSettings.activePreset|presetSettings.lastSelectedPreset"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Assisted Beginner & coach focused",
+       "label": "Clean Minimal UI & auto-collapse Assisted Beginner & coach focused Advanced Full AI & stra",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "dockSettings.enabled|dockSettings.activeWidgets",
+       "presetSettings.activePreset|presetSettings.lastSelectedPreset"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Advanced Full AI & strategy controls",
+       "label": "Clean Minimal UI & auto-collapse Assisted Beginner & coach focused Advanced Full AI & stra",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "launcherSettings.enabled|launcherSettings.autoCollapse",
+       "dockSettings.enabled",
+       "presetSettings.activePreset|presetSettings.lastSelectedPreset",
+       "autoHideSettings.alwaysShowEnabledWidgets",
+       "modalSizeSettings.globalSizeMode"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Developer Diagnostics & dev tools",
+       "label": "Clean Minimal UI & auto-collapse Assisted Beginner & coach focused Advanced Full AI & stra",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "launcherSettings.enabled|launcherSettings.autoCollapse",
+       "dockSettings.enabled|dockSettings.positionMode|dockSettings.activeWidgets",
+       "presetSettings.activePreset|presetSettings.lastSelectedPreset",
+       "autoHideSettings.contextualFloatingUiVisibility|autoHideSettings.alwaysShowEnabledWidgets|autoHideSettings.autoHideDevWidgetsOutsideDevLayout",
+       "modalSizeSettings.globalSizeMode"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.modalSizes",
+    "controls": [
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Compact (480px / 50vh) Standard (640px / 70vh) Wid",
+       "label": "Global Modal Size Mode Controls size for Guardian, AI Command, Ask Game, Strategy Planner,",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "modalSizeSettings.globalSizeMode"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "ON",
+       "label": "Contextual Auto-Hide Engine Dynamically hide floating controls based on active game phase,",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "autoHideSettings.contextualFloatingUiVisibility"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Always Show Enabled Widgets (Override) Forces all enabled floating widgets to stay visible",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "autoHideSettings.alwaysShowEnabledWidgets"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Top Right Top Center Bottom Right Bottom Center De",
+       "label": "Notification Lane Anchor Position Top Right Top Center Bottom Right Bottom Center Dedicate",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationLaneSettings.anchor"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.categoryNavigation",
+    "controls": [
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Full (All Category Tabs) Collapsed Active (Expande",
+       "label": "settings-field-settingsCategoryNavigationMode",
+       "disabled": false,
+       "header": false,
+       "fieldId": "settingsCategoryNavigationMode",
+       "visible": true
+      },
+      "changed": [
+       "settingsCategoryNavigationMode"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "ON",
+       "label": "settings-field-allowSettingsCategoryCollapse",
+       "disabled": false,
+       "header": false,
+       "fieldId": "allowSettingsCategoryCollapse",
+       "visible": true
+      },
+      "changed": [
+       "allowSettingsCategoryCollapse"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "settings-field-startSettingsCategoryCollapsed",
+       "disabled": false,
+       "header": false,
+       "fieldId": "startSettingsCategoryCollapsed",
+       "visible": true
+      },
+      "changed": [
+       "startSettingsCategoryCollapsed"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "settings-field-rememberCategoryNavigationState",
+       "disabled": false,
+       "header": false,
+       "fieldId": "rememberCategoryNavigationState",
+       "visible": true
+      },
+      "changed": [
+       "rememberCategoryNavigationState"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "interfaceAcc",
+    "section": "interface.notifications",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Nano",
+       "label": "Nano Small Medium Large Custom",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.size"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Small",
+       "label": "Nano Small Medium Large Custom",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Medium",
+       "label": "Nano Small Medium Large Custom",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.size"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Large",
+       "label": "Nano Small Medium Large Custom",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.size"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Custom",
+       "label": "Nano Small Medium Large Custom",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.size"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Top-Left Top-Right Bottom-Left Bottom-Right Top-Ce",
+       "label": "Position Top-Left Top-Right Bottom-Left Bottom-Right Top-Center Bottom-Center",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.position"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Ctrl+Shift+C Ctrl+Alt+C Disabled",
+       "label": "Clear Shortcut Ctrl+Shift+C Ctrl+Alt+C Disabled",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationClearShortcut"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Slide-in Fade-in None",
+       "label": "Animation Slide-in Fade-in None",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.animation"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "0.3s 0.5s 1.0s",
+       "label": "Animation Speed 0.3s 0.5s 1.0s",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.animationSpeed"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Never 3s 5s 10s 15s",
+       "label": "AI Actions AI-related turns, trades, sabotage, and travel. Never 3s 5s 10s 15s",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Never 3s 5s 10s 15s",
+       "label": "Resource Updates Market buys, sells, crafting, and resource price updates. Never 3s 5s 10s",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.autoDismiss"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Never 3s 5s 10s 15s",
+       "label": "Region Control Changes Deposits, cash-out, control gains, and control losses. Never 3s 5s ",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.autoDismiss"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Never 3s 5s 10s 15s",
+       "label": "Negotiation Events Proposals, counters, accept/decline, and task completion. Never 3s 5s 1",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Never 3s 5s 10s 15s",
+       "label": "Challenge Results Challenge wins, failures, and challenge outcome notices. Never 3s 5s 10s",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.autoDismiss"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Never 3s 5s 10s 15s",
+       "label": "Level Ups / Achievements Level ups and milestone announcements. Never 3s 5s 10s 15s",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.autoDismiss"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Never 3s 5s 10s 15s",
+       "label": "System Messages General rules, settings, and informational system notices. Never 3s 5s 10s",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ AI Actions AI-related turns, trades, sabotage, and travel.",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.typeFilters"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Resource Updates Market buys, sells, crafting, and resource price updates.",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.typeFilters"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Region Control Changes Deposits, cash-out, control gains, and control losses.",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.typeFilters"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Negotiation Events Proposals, counters, accept/decline, and task completion.",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.typeFilters"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Challenge Results Challenge wins, failures, and challenge outcome notices.",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.typeFilters"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ Level Ups / Achievements Level ups and milestone announcements.",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "☑ System Messages General rules, settings, and informational system notices.",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.typeFilters"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "70% 80% 90% 100%",
+       "label": "Opacity 70% 80% 90% 100%",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.opacity"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "1 2 3 5 10 20 Unlimited",
+       "label": "Max Visible 1 2 3 5 10 20 Unlimited",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Newest First Oldest First",
+       "label": "Stack Behavior Newest First Oldest First",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.stackOrder"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "None Thin Thick",
+       "label": "Border Style None Thin Thick",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.borderStyle"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "None Subtle Prominent",
+       "label": "Shadow None Subtle Prominent",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "notificationSettings.shadow"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Test Notification",
+       "label": "Test Notification Reset to Default",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Reset to Default",
+       "label": "Test Notification Reset to Default",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "action-button"
+     }
+    ]
+   }
+  ]
+ },
+ "errors": []
+}
