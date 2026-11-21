@@ -1,0 +1,1922 @@
+{
+ "passes": {
+  "advanced:allOn": [
+   {
+    "pass": "advanced:allOn",
+    "tab": "gameplay",
+    "section": "gameplay.v101",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Rival Recap: off",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "rivalRecapEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Daily Challenge (fixed rules): off",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "rivalRecapEnabled",
+       "dailyFixedRulesEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Classic rules (V10.0): off",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "rivalRecapEnabled",
+       "dailyFixedRulesEnabled",
+       "classicRulesV100"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "gameplay",
+    "section": "gameplay.v100",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Rival Races: off",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "rivalRacesEnabled",
+       "rivalRecapEnabled",
+       "dailyFixedRulesEnabled",
+       "classicRulesV100"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Classic rival (V9.9): off",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "classicRivalV99"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "gameplay",
+    "section": "gameplay.v99",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Autosave & Resume: off",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "matchRecoveryEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Match Journal & Daily Seed: off",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "matchJournalEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Turn Digest: off",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "turnDigestEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Warn before closing the tab mid-match: off",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "warnBeforeUnloadEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Normal — the original timing Fast — shorter pauses",
+       "label": "Rival turn pace How quickly the rival's turn is shown. Normal is the original timing; Fast",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "rivalTurnPace"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Classic sticky toasts: off",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "classicStickyToasts"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Classic play-screen layout: off",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "classicPlayScreenLayout"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Ask me again",
+       "label": "Confirmation questions The game asks before travelling, selling, taking a challenge and en",
+       "disabled": true,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "disabled"
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "gameplay",
+    "section": "gameplay.core",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Gameplay Settings",
+       "label": "Reset Gameplay Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "30",
+       "label": "setting-slider-2-total-days-totaldays",
+       "disabled": true,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "disabled"
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "3",
+       "label": "setting-slider-3-player-actions-per-day-playeractionsperd",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "3",
+       "label": "setting-slider-4-ai-actions-per-day-aiactionsperday",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Show Day Transition Screen Display summary between days OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "showDayTransition"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "gameplay",
+    "section": "gameplay.actionLimits",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Gameplay Settings",
+       "label": "Reset Gameplay Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Enable Action Limits Restrict actions per turn ON",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionLimitsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "3",
+       "label": "setting-slider-7-max-actions-human-maxactionsperturn",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "3",
+       "label": "setting-slider-8-max-actions-ai-aimaxactionsperturn",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Shared",
+       "label": "Shared Separate Human / AI",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Separate Human / AI",
+       "label": "Shared Separate Human / AI",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.costScope"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Reset Costs",
+       "label": "Reset Costs Make All Free Make All Standard (1 AP) Core Actions Only Strategic Actions Onl",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "action-button"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Make All Free",
+       "label": "Reset Costs Make All Free Make All Standard (1 AP) Core Actions Only Strategic Actions Onl",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Make All Standard (1 AP)",
+       "label": "Reset Costs Make All Free Make All Standard (1 AP) Core Actions Only Strategic Actions Onl",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Core Actions Only",
+       "label": "Reset Costs Make All Free Make All Standard (1 AP) Core Actions Only Strategic Actions Onl",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "Strategic Actions Only",
+       "label": "Reset Costs Make All Free Make All Standard (1 AP) Core Actions Only Strategic Actions Onl",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn",
+       "label": "Free (0 AP) Standard (1 AP) Major (2 AP) Full Turn (3 AP)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "actionPointConsumptionSettings.actionCosts|actionPointConsumptionSettings.aiActionCosts|actionPointConsumptionSettings.activePresetId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "gameplay",
+    "section": "gameplay.actionOverride",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "ON",
+       "label": "Allow Override Pay to exceed limit ON",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "allowActionOverride"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "range",
+       "text": "500",
+       "label": "setting-slider-9-override-base-cost-overridecost",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "gameplay",
+    "section": "gameplay.challengeRules",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Dynamic Wager System Scale max wager based on challenge difficulty (default: fixed $50-500",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "dynamicWagerEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Double or Nothing After winning, risk reward for double payout OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "doubleOrNothingEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Challenge Approaches (V9.6) Choose how to attempt each challenge — stat, odds, reward, fai",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "challengeApproachesEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Expanded Challenge Content (V9.6) 128 more hand-written challenges on a rotating 4-slot bo",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "expandedChallengeContentEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Procedural Challenges (V9.6) Deterministic template-generated challenges top up a board on",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "proceduralChallengesEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "gameplay",
+    "section": "gameplay.expansions",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Gameplay Settings",
+       "label": "Reset Gameplay Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Regional Investments Buy properties for daily passive income OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "investmentsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Equipment Shop Buy gear with travel, XP, and challenge bonuses OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "equipmentShopEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Sabotage Actions Spend money to debuff your opponent OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "sabotageEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "gameplay",
+    "section": "gameplay.matchVariety",
+    "controls": [
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "🧭 Explorer — Travel, challenges and rivalry. Noth",
+       "label": "Experience mode",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "input",
+       "type": "checkbox",
+       "text": "on",
+       "label": "Dynamic situations (contracts, decisions, events, crises)",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "v93ContentEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Standard — The classic start. Liquidity Rich — Hig",
+       "label": "Starting conditions Standard — The classic start. Liquidity Rich — High cash, low standing",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Varied (seeded) Balanced Australia Resource Cycle ",
+       "label": "Regional opening Varied (seeded) Balanced Australia Resource Cycle — Strong commodity dema",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "v93RegionalOpening"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Scarce Normal Abundant",
+       "label": "Contract offers Scarce Normal Abundant",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "v93ContractAbundance"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Low Normal High",
+       "label": "Crisis intensity Low Normal High",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "v93CrisisIntensity"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Off Normal More frequent",
+       "label": "Rare events Off Normal More frequent",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "v93RareEventFrequency"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "gameplay",
+    "section": "gameplay.scenarioMode",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "Reset Gameplay Settings",
+       "label": "Reset Gameplay Settings ▾",
+       "disabled": false,
+       "header": true,
+       "fieldId": "",
+       "visible": true
+      },
+      "skipped": "header"
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "submit",
+       "text": "OFF",
+       "label": "Scenario Mode Master Switch Enables custom scenario preset challenges with locked seeds, f",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "scenarioModeEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "select",
+       "type": "select-one",
+       "text": "Outback Siege (Hard • challenge) Mining Tycoon (Ea",
+       "label": "Active Scenario Preset Outback Siege (Hard • challenge) Mining Tycoon (Easy • beginner) Di",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "selectedScenarioId"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Scenario Engine V7.3No effect in this version Core scenario evaluation & objective engine ",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "selectedScenarioId",
+       "scenarioEngineV73Enabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Custom Scenario BuilderNo effect in this version Interactive scenario creation & editing O",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "customScenarioBuilderEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Campaign Story Mode Multi-chapter narrative campaign mode OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "campaignModeEnabled",
+       "campaignEngineEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Campaign Engine (5 Chapters) Multi-chapter campaign progression OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "campaignModeEnabled",
+       "campaignEngineEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Narrative Engine Story intros, outros & event choices OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "narrativeEngineEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Dynamic Crises Escalating crisis events & stability management OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "dynamicCrisesEnabled",
+       "dynamicCrisisChainsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Dynamic Crisis Chains (4 Chains) Multi-turn escalating crisis events OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "dynamicCrisesEnabled",
+       "dynamicCrisisChainsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Public Stability System National stability meter & unrest effects OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "publicStabilityEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "National Events EngineNo effect in this version Country-wide random & scripted events OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "nationalEventsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Career Progression Player level, XP & unlock progression OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "careerProgressionEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Achievements System Career badges & achievement tracking OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "achievementsEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "Fog of War System Hides rival details from you (the one-on-one rival still reads your weal",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "fogOfWarEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     },
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "AI Rivalry System Dynamic rival attitudes & rivalry perks OFF",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "aiRivalryEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   },
+   {
+    "pass": "advanced:allOn",
+    "tab": "gameplay",
+    "section": "gameplay.rivalryCampaign",
+    "controls": [
+     {
+      "desc": {
+       "tag": "button",
+       "type": "button",
+       "text": "OFF",
+       "label": "The Long Rivalry An eight-chapter campaign against one rival who remembers every chapter. ",
+       "disabled": false,
+       "header": false,
+       "fieldId": "",
+       "visible": true
+      },
+      "changed": [
+       "rivalryCampaignEnabled"
+      ],
+      "uiChanged": [],
+      "modal": null,
+      "native": 0
+     }
+    ]
+   }
+  ]
+ },
+ "errors": []
+}

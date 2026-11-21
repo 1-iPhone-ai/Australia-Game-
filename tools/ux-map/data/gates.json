@@ -1,0 +1,266 @@
+{
+ "gateSettings": {
+  "negotiationMode": [
+   "economy.winCondition",
+   "competition.negotiations"
+  ],
+  "aiWinConditionSpendingEnabled": [
+   "ai.settings"
+  ],
+  "aiRegionsMajorityRushEnabled": [
+   "ai.settings"
+  ],
+  "aiReplayRecordingEnabled": [
+   "ai.settings"
+  ],
+  "aiStrategyLabEnabled": [
+   "aiStrategyLab.main"
+  ],
+  "aiStrategyLabSeparateProfilesEnabled": [
+   "aiStrategyLab.main"
+  ],
+  "teamBrainV63Enabled": [
+   "teamModeAi.teamBrain"
+  ],
+  "teamCompetitiveAiEnabled": [
+   "teamModeAi.actionOverrides",
+   "teamModeAi.sharedActionBank",
+   "teamModeAi.actionLending",
+   "teamModeAi.teamPlans",
+   "teamModeAi.reservations",
+   "teamModeAi.threatTargeting",
+   "teamModeAi.endgameAcceleration",
+   "teamModeAi.emergencyActions",
+   "teamModeAi.teamInitiative",
+   "teamModeAi.comboBonuses",
+   "teamModeAi.cashVault",
+   "teamModeAi.economyGovernor",
+   "teamModeAi.performanceSync2",
+   "teamModeAi.parallelPlanning",
+   "teamModeAi.actionSequences",
+   "teamModeAi.actionApproval",
+   "teamModeAi.actionRequirements",
+   "teamModeAi.treasury",
+   "teamModeAi.overseer",
+   "teamModeAi.auditor"
+  ],
+  "teamAiActionOverridesEnabled": [
+   "teamModeAi.actionOverrides"
+  ],
+  "teamActionBankEnabled": [
+   "teamModeAi.sharedActionBank"
+  ],
+  "teamAiActionLendingEnabled": [
+   "teamModeAi.actionLending"
+  ],
+  "teamAiPlanCommitmentEnabled": [
+   "teamModeAi.teamPlans"
+  ],
+  "teamAiThreatTargetingEnabled": [
+   "teamModeAi.threatTargeting"
+  ],
+  "teamAiEndgameAccelerationEnabled": [
+   "teamModeAi.endgameAcceleration"
+  ],
+  "teamAiEmergencyActionsEnabled": [
+   "teamModeAi.emergencyActions"
+  ],
+  "teamInitiativeEnabled": [
+   "teamModeAi.teamInitiative"
+  ],
+  "teamComboBonusesEnabled": [
+   "teamModeAi.comboBonuses"
+  ],
+  "teamCashVaultEnabled": [
+   "teamModeAi.cashVault"
+  ],
+  "teamEconomyGovernorEnabled": [
+   "teamModeAi.economyGovernor"
+  ],
+  "teamAiProductiveRecoveryLadderEnabled": [
+   "teamModeAi.economyGovernor"
+  ],
+  "teamAiGovernorAutomaticExceptionsEnabled": [
+   "teamModeAi.economyGovernor"
+  ],
+  "teammatePerformanceSync2Enabled": [
+   "teamModeAi.performanceSync2"
+  ],
+  "teammatePerformanceSyncExpertiseDecayEnabled": [
+   "teamModeAi.performanceSync2"
+  ],
+  "teammatePerformanceSync2ChallengeExpertiseEnabled": [
+   "teamModeAi.performanceSync2"
+  ],
+  "guaranteedRecoveryProtocolEnabled": [
+   "teamModeAi.performanceSync2"
+  ],
+  "parallelAiPlanningEnabled": [
+   "teamModeAi.parallelPlanning"
+  ],
+  "teamAiActionSequencesEnabled": [
+   "teamModeAi.actionSequences"
+  ],
+  "aiActionApprovalEnabled": [
+   "teamModeAi.actionApproval"
+  ],
+  "aiActionApprovalAutoRulesEnabled": [
+   "teamModeAi.actionApproval"
+  ],
+  "actionRequirementsEnabled": [
+   "teamModeAi.actionRequirements"
+  ],
+  "teamTreasuryEnabled": [
+   "teamModeAi.treasury"
+  ],
+  "treasuryAutomaticContributionEnabled": [
+   "teamModeAi.treasury"
+  ],
+  "teamAiOverseerSystemEnabled": [
+   "teamModeAi.overseer"
+  ],
+  "teamAiStrategicCommandEnabled": [
+   "teamModeAi.overseer"
+  ],
+  "directiveBudgetEnabled": [
+   "teamModeAi.overseer"
+  ],
+  "teamAiAdaptiveOverseerEnabled": [
+   "teamModeAi.overseer"
+  ],
+  "teamAiSafeModeEnabled": [
+   "teamModeAi.overseer"
+  ],
+  "governanceControlSurfaceEnabled": [
+   "teamModeAi.governanceControlSurface"
+  ],
+  "teamAiAuditorSystemEnabled": [
+   "teamModeAi.auditor"
+  ],
+  "teamAiAuditorSafeModeEnabled": [
+   "teamModeAi.auditor"
+  ],
+  "aiTuningLabUiEnabled": [
+   "teamModeAi.aiThinkingAlgorithm"
+  ],
+  "aiAlgorithmBuilderEnabled": [
+   "teamModeAi.algorithmBuilder"
+  ],
+  "advancedLoansEnabled": [
+   "economy.loans"
+  ],
+  "adaptiveAiEnabled": [
+   "ai.adaptive"
+  ],
+  "enablePersistentOpponentModels": [
+   "ai.adaptive"
+  ],
+  "projectedOutcomeEnabled": [
+   "ai.adaptive"
+  ],
+  "decisionTransparencyEnabled": [
+   "advancedSystems.decisionTransparency"
+  ],
+  "gameActivityLedgerEnabled": [
+   "advancedSystems.gameActivityLedger"
+  ],
+  "humanAutomationEnabled": [
+   "advancedSystems.humanAutomation"
+  ],
+  "regionalStandingEnabled": [
+   "competition.regionalStanding"
+  ],
+  "externalTerritoriesEnabled": [
+   "competition.externalTerritories"
+  ]
+ },
+ "gateOpeners": {
+  "aiCommandCenterUiEnabled": [
+   "showAiCommandCenterModal=!uiState.showAiCommandCenterModal"
+  ],
+  "showDayTransition": [
+   "showDayTransition=true"
+  ],
+  "allowActionOverride": [
+   "showMarket=true",
+   "showChallenges=true",
+   "showTravelModal=true"
+  ],
+  "investmentsEnabled": [
+   "showInvestments=true"
+  ],
+  "equipmentShopEnabled": [
+   "showShop=true"
+  ],
+  "sabotageEnabled": [
+   "showSabotage=true"
+  ],
+  "teamCompetitiveAiEnabled": [
+   "showLiveControlCenter=true,liveControlCenterTab='approvals'",
+   "showLiveControlCenter=true,liveControlCenterTab='treasury'",
+   "showLiveControlCenter=true,liveControlCenterTab='exceptions'",
+   "showOverseerDashboard=true",
+   "showAuditorDashboard=true"
+  ],
+  "gameActivityLedgerEnabled": [
+   "showGameActivityLedgerDashboard=true"
+  ],
+  "humanAutomationEnabled": [
+   "showHumanAutomationDashboard=true"
+  ],
+  "teamAiOverseerSystemEnabled": [
+   "showOverseerDashboard=true"
+  ],
+  "teamAiOverseerDashboardEnabled": [
+   "showOverseerDashboard=true"
+  ],
+  "teamAiAuditorSystemEnabled": [
+   "showAuditorDashboard=true"
+  ],
+  "teamAiAuditorDashboardEnabled": [
+   "showAuditorDashboard=true"
+  ],
+  "campaignModeEnabled": [
+   "showCampaignProgressionModal=true"
+  ],
+  "campaignEngineEnabled": [
+   "showCampaignProgressionModal=true"
+  ],
+  "dynamicCrisesEnabled": [
+   "showCrisisManagementModal=true"
+  ],
+  "dynamicCrisisChainsEnabled": [
+   "showCrisisManagementModal=true"
+  ],
+  "fogOfWarEnabled": [
+   "showFogOfWarIntelModal=true"
+  ],
+  "regionalContractsEnabled": [
+   "showRegionalContractsModal=true"
+  ],
+  "stateInfrastructureEnabled": [
+   "showInfrastructureProjectsModal=true"
+  ],
+  "expeditionsRelicsEnabled": [
+   "showExpeditionsRelicsModal=true"
+  ],
+  "whatIfTimelinesEnabled": [
+   "showWhatIfTimelinesModal=true"
+  ],
+  "challengeApproachesEnabled": [
+   "wagerAmount=w"
+  ],
+  "showGuardianFloatingButton": [
+   "showGuardianStatusPanel=!uiState.showGuardianStatusPanel",
+   "showGuardianAiCenter=!uiState.showGuardianAiCenter"
+  ],
+  "hideGuardianFloatingButtonWhileCenterOpen": [
+   "showGuardianStatusPanel=!uiState.showGuardianStatusPanel",
+   "showGuardianAiCenter=!uiState.showGuardianAiCenter"
+  ],
+  "enableGuardianSidePanelAccess": [
+   "showGuardianStatusPanel=!uiState.showGuardianStatusPanel",
+   "showGuardianAiCenter=!uiState.showGuardianAiCenter"
+  ]
+ }
+}
