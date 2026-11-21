@@ -12,7 +12,7 @@ const baseBuf = fs.readFileSync(BASE_FILE);
 if (crypto.createHash('md5').update(baseBuf).digest('hex') !== BASE_MD5) throw new Error(`${BASE_FILE} is not the V10.1 file the map was audited against (md5 ${BASE_MD5})`);
 const baseSrc = baseBuf.toString('utf8');
 const P = require('./plan.cjs');
-const reg = require(path.join(DATA, 'registries-ux5.json')); // the module after UX-5 (registries-ux4.json and registries-ux3.json keep the modules after UX-4 and UX-3)
+const reg = require(path.join(DATA, 'registries-ux6.json')); // the module after UX-6 (registries-ux5.json, registries-ux4.json and registries-ux3.json keep the modules after UX-5, UX-4 and UX-3)
 reg.v101 = require(path.join(DATA, 'registries-v101.json')); // the UX-1 audit's V10.1 registries
 const ast = require(path.join(DATA, 'ast.json'));
 const gates = require(path.join(DATA, 'gates.json'));
@@ -106,10 +106,12 @@ P.SECTION_GROUP['interface.findAnything'] = P.SECTION_GROUP['interface.aiAssista
 P.SECTION_GROUP['interface.settingsLayers'] = P.SECTION_GROUP['interface.aiAssistants']; // UX-3: the layered Settings' own switch
 P.SECTION_GROUP['interface.whatsInTheGame'] = P.SECTION_GROUP['interface.aiAssistants']; // UX-4: What's in the game's own switch
 P.SECTION_GROUP['interface.dockedPanel'] = P.SECTION_GROUP['interface.aiAssistants']; // UX-5: the side panel's own switch
+P.SECTION_GROUP['interface.classicLayout'] = P.SECTION_GROUP['interface.aiAssistants']; // UX-6: the classic switch's section (its key's home is ⭐ Essentials; ux6-overlay.cjs says so)
 const extra = require('./build-map-body.cjs');
 extra.build({ UX2, searchAll, gatedKeys, probeStats, baseSrc, P, reg, ast, gates, crawl, crawl3, probe, paths, extraFacts, defaults, profile, scopeOf, inert, tabLabel, secById, rendered, renderedIds, simpleKeys, essentialKey, labBySection, labTabOnly, labCards, MORE_TO_TAB, tabClicks, probeSaw, probeHome, probeTimeouts, astWrites, flagsBySurface, best, bestFlag, KEYS, pathText, esc, code, fmtVal, w });
 require('./ux3-overlay.cjs')(L, { reg, P });
 require('./ux4-overlay.cjs')(L, { reg, P });
 if (fs.existsSync(path.join(__dirname, 'ux5-overlay.cjs'))) require('./ux5-overlay.cjs')(L, { reg, P });
+if (fs.existsSync(path.join(__dirname, 'ux6-overlay.cjs'))) require('./ux6-overlay.cjs')(L, { reg, P });
 fs.writeFileSync(OUT, L.join('\n') + '\n');
 console.log(`wrote ${OUT}: ${L.length} lines, ${fs.statSync(OUT).size} bytes`);

@@ -1,8 +1,8 @@
-// node tools/selftest/node-eval.mjs tools/ux-map/extract.mjs --file "(V11.0) australia-game-with-ai.tsx"   (UXMAP_OUT=path; default: data/registries-ux5.json)
+// node tools/selftest/node-eval.mjs tools/ux-map/extract.mjs --file "(V11.0) australia-game-with-ai.tsx"   (UXMAP_OUT=path; default: data/registries-ux6.json)
 // Reads the registries the map is built from out of the running module (not from text) and writes them as JSON.
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-const OUT = process.env.UXMAP_OUT || fileURLToPath(new URL('./data/registries-ux5.json', import.meta.url));
+const OUT = process.env.UXMAP_OUT || fileURLToPath(new URL('./data/registries-ux6.json', import.meta.url));
 const typeOf = v => v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v;
 export default async (G) => {
   const out = {};
@@ -29,6 +29,12 @@ export default async (G) => {
     tabs: G.V115_TABS.map(t => ({ id: t.id, label: t.label, icon: t.icon, windows: [...t.windows], hotkeys: t.hotkeys })),
     windows: G.V115_WINDOWS.map(w => ({ key: w.key, tab: w.tab, side: w.side, flag: w.flag, surfaceId: w.surfaceId, label: w.label, hotkey: w.hotkey })),
     decisions: [...G.V115_MAP_DECISION_IDS], actionWindows: [...G.V115_MAP_ACTION_WINDOW_IDS], toolWindows: [...G.V115_MAP_TOOL_WINDOW_IDS],
+  } : null;
+  // UX-6: the switch-over (the four layout switches and their defaults, the classic switch, its section, home and label, the switch-over record), for §2, §7 and §20.
+  out.switchOver = G.V116_LAYOUT_KEYS ? {
+    layoutKeys: [...G.V116_LAYOUT_KEYS], layoutDefaults: Object.fromEntries(G.V116_LAYOUT_KEYS.map(k => [k, G.DEFAULT_GAME_SETTINGS[k]])), classicKey: G.V116_SETTING_KEYS[0], classicDefault: G.DEFAULT_GAME_SETTINGS[G.V116_SETTING_KEYS[0]],
+    sectionId: G.V116_SECTION_ID, sectionTitle: G.V116_SECTION_TITLE, label: G.V116_CLASSIC_LABEL, home: G.v113HomeOf(G.V116_SETTING_KEYS[0]), storageKey: G.V116_SWITCH_OVER_STORAGE_KEY, suites: [...G.V116_SUITE_IDS],
+    findEntries: G.v110FindIndex().length, findEntriesAllOn: G.v115IndexFor(G.v114IndexWithFeatures(G.v110FindIndex()), G.DEFAULT_GAME_SETTINGS).length,
   } : null;
   const cp = G.v95WithIsolatedGlobals(() => G.runCoPilotDevSelfTests());
   out.copilot = { keys: Object.keys(cp), totalTests: cp.totalTests, passed: cp.passedCount ?? cp.passed, failed: cp.failedCount ?? cp.failed, cats: (cp.categories || []).map(c => ({ name: c.name || c.categoryName || c.id, total: c.total, passed: c.passed })) };

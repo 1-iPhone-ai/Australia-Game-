@@ -1,0 +1,222 @@
+{
+ "totals": {
+  "before": "3,176 checks in 82 suites",
+  "after": "3,216 checks in 83 suites, all pass",
+  "registeredAfter": "3,043 checks, 78 suites, all pass"
+ },
+ "release": {
+  "after": "158 of 158 (READY_WITH_WARNINGS, the same warnings: K01–K03)"
+ },
+ "integrity": "ok (103 / 78)",
+ "copilot": "85 of 85",
+ "browserSummary": "139 of 140 scripted steps pass (1 step could not draw the Guardian button and was redone with the Guardian on); classic matches V10.1 in the six windows (6 of 6) and differs in Settings only by the new switch rows; 10 of 10 real-save traces identical; the map walked in both layouts; 0 console errors",
+ "marks": {
+  "lines": 178,
+  "places": "159 places, none unmarked"
+ },
+ "olderChecks": [
+  [
+   "v110fa_07_switch_defaults_off",
+   "default off → on (junk values fall back to the new default; an explicit false still turns it off)"
+  ],
+  [
+   "v110fa_09_switch_is_filed_under_its_goal",
+   "the catalog default is now true"
+  ],
+  [
+   "v110fa_18_every_setting_indexed",
+   "count + the classic switch (604 keys)"
+  ],
+  [
+   "v110fa_36_find_switch_is_findable_and_off",
+   "\"off\" is now an explicit false (the default is on)"
+  ],
+  [
+   "v113sl_01_switch_defaults_off",
+   "default off → on"
+  ],
+  [
+   "v113sl_02_switch_is_a_profile_setting",
+   "the catalog default is now true"
+  ],
+  [
+   "v113sl_04_off_is_ux2",
+   "\"off\" is now explicit (layers and Find Anything set false), not the defaults"
+  ],
+  [
+   "v113sl_05_keys_defaults_scopes_kept",
+   "the new keys include the classic switch; 604 keys"
+  ],
+  [
+   "v113sl_06_walk_every_setting_one_home",
+   "604 settings (the classic switch is homed in ⭐ Essentials)"
+  ],
+  [
+   "v113sl_07_walk_every_section_grouped",
+   "92 grouped sections (+ the classic switch’s)"
+  ],
+  [
+   "v113sl_08_group_counts",
+   "Essentials 15 → 16"
+  ],
+  [
+   "v113sl_16_sections_follow_their_group",
+   "8 dissolved sections"
+  ],
+  [
+   "v114wg_01_switch_defaults_off",
+   "default off → on"
+  ],
+  [
+   "v114wg_02_switch_is_a_profile_setting",
+   "the catalog default is now true"
+  ],
+  [
+   "v114wg_04_off_changes_nothing",
+   "\"off\" is an explicit false"
+  ],
+  [
+   "v114wg_20_no_default_changes",
+   "the extra keys include the classic switch; 604 keys"
+  ],
+  [
+   "v114wg_25_links_to_the_home",
+   "\"classic\" = layers explicitly off"
+  ],
+  [
+   "v114wg_28_find_anything_results",
+   "\"off\" is an explicit false"
+  ],
+  [
+   "v114wg_29_features_and_whats_in_the_game",
+   "\"off\" is an explicit false"
+  ],
+  [
+   "v114wg_31_page_has_its_own_id",
+   "\"off\" is an explicit false"
+  ],
+  [
+   "v114wg_33_map_walk_nothing_lost",
+   "counts + the classic switch (section and key)"
+  ],
+  [
+   "v115dp_01_switch_defaults_off",
+   "default off → on"
+  ],
+  [
+   "v115dp_02_switch_is_a_profile_setting",
+   "the catalog default is now true"
+  ],
+  [
+   "v115dp_04_off_changes_nothing",
+   "\"off\" is an explicit false"
+  ],
+  [
+   "v115dp_05_where_the_panel_is_used",
+   "\"off\" is an explicit false"
+  ],
+  [
+   "v115dp_31_find_anything_has_the_panel",
+   "\"off\" is an explicit false"
+  ],
+  [
+   "v115dp_33_map_walk_nothing_lost",
+   "counts + the classic switch (section and key)"
+  ],
+  [
+   "v115dp_34_labels_unique",
+   "604 labels"
+  ]
+ ],
+ "browser": [
+  [
+   "A new profile: its guided first match, start to finish, in the new layout",
+   "12 of 12: the tour starts in the new layout (🔎 Find in the header) with no switch-over notice and the record says *new*; the tour's Challenges and Travel buttons open those tabs in the side panel and Escape closes it; the match plays through day 8 until the tour card is gone, the first-run record says *completed*, the full action bar (⋯ More) is on screen and R opens Market › Sell in the panel; no console errors."
+  ],
+  [
+   "A returning profile: moved once, the notice once",
+   "22 of 22: a stored profile (sound off, light theme, first run done) lands on the main menu with the notice, which names 🕰️ Classic layout (V10.1); 🔎 Find and 🧩 What's in the game are on the menu and the classic switch says Off; the record says *moved* and *seen*; the stored preferences are kept; Escape inside the notice closes it and a reload never shows it again; classic on hides Find and What's in the game, Ctrl+K opens nothing, it survives a reload and leaves the four switches untouched; classic off brings the new layout back; a switch the player turns off stays off across a reload and across classic on and off; no second move."
+  ],
+  [
+   "Classic against the V10.1 build: the six windows",
+   "6 of 6 identical, element for element (challenges 160 lines, travel 97 lines, market 77 lines, resource_market 983 lines, workshop 1,145 lines, investments 163 lines)."
+  ],
+  [
+   "Classic against V10.1: every Settings tab (the Simple view and the 11 Advanced tabs)",
+   "All 12 differ only by the new switch rows and the counts they move: on every tab the section count (86 → 91) and \"5 → 6 settings differ from the defaults\" (the classic switch itself is on); on Settings Home the settings count (599/603 → 604/608), the Modified counts and the classic switch's own line in the Modified list; in Interface & Accessibility the five V11.0 sections (Find Anything, Settings Layout, What's in the game, Side panel, Classic layout) and V11.0's What's New entry; the Simple view's \"What's new in V10.1\" is one text node instead of two (the same words, written out in SECTION 20BL)."
+  ],
+  [
+   "Classic against V10.1: the play screen, ⋯ More, the LAB, INTELLIGENCE and Help",
+   "4 of 5 identical (play screen, ⋯ More menu, 🧠 INTELLIGENCE layer, Help window (?)); 🧪 LAB layer (\"10.1.0\" → \"11.0.0\"): the version number."
+  ],
+  [
+   "Keyboard only, widths 1280, 1024 and phone (390), a solo and a Team Mode match",
+   "82 of 82: at each width and in each mode, Ctrl+K opens Find Anything with focus in its box, Enter on \"settings\" opens ⭐ Essentials, What's in the game opens with focus inside and Tab stays inside it, C opens Challenges (the panel at 1280 and 1024; the window on a phone), Tab alone reaches 🔎 Find and Enter opens it, Escape closes each one; no horizontal page scroll; no console errors."
+  ],
+  [
+   "Real V9.7, V9.8, V10.0 and V10.1 saves, move for move",
+   "10 of 10 traces identical to the V10.1 build's (5 real saves: v97_d01, v98_mid, v100_d01, v100_mid and v101_d04, each in the new layout and in classic; the same moves for three days, the HUD compared after every move and every day); console errors 0. Headless, `v116so_39` plays the same five saves for three days with all four on, all off, as saved and in classic: 20 of 20 identical to the V10.1 build's own results."
+  ],
+  [
+   "One look: light and dark, every visual mode, reduced motion, the largest text size, contrast",
+   "11 configurations (dark, light, retro, system (OS light), system (OS dark), dark · classic visual mode, light · classic visual mode, dark · text 150%, light · text 150%, dark · reduce motion (setting), light · high-contrast rings off): Find Anything, ⭐ Essentials, the group bar, the cards page and the panel's tabs all drawn; every text at WCAG AA or better (lowest 4.54:1); the smallest text 11 px; no horizontal overflow; the keyboard ring: solid 3px #facc15 / solid 2px #0284c7; console errors 0. The panel's tab bodies are V10.1's own windows: measured against V10.1's own Challenges window, the same number of texts falls below AA in the panel in 3 of 3 themes (dark 38 (V10.1 38; lowest 2.3 against 2.3), light 53 (V10.1 53; lowest 1.53 against 1.53), retro 53 (V10.1 53; lowest 1.86 against 1.96); these are V10.1's faded completed challenges and season notes), and the classic window matches V10.1's exactly in 3 of 3."
+  ],
+  [
+   "Map walk, new layout: every setting, window id, shortcut and LAB card through Find Anything",
+   "Settings 604: each is the first result for its own key (604 of 604; 603 before UX-6, which has no classic switch). Enter lands on its row 182 times (70 by its anchor, 112 found by its title), on its ⭐ Essentials choice 15, on its section 183 (its row is gated or has no title to match), on the Teams gate 223 (a solo match: the Teams group is behind its switch), and 1 (`playerIntentOnboardingDismissed`) is not shown in Settings, as before. The same walk on the build before UX-6 (the four switches on): its row 69 (all by anchor), its section 292, and nothing marked for 243 (the Teams group's 223, the 15 Essentials choices, 3 in sections, the one Settings does not show, and the classic switch, which that build does not have). After UX-6, the 19 the walk's ring check found nothing for were re-checked one by one, side by side with the build before UX-6: 14 Teams settings that landed nowhere there land on the Teams gate, and the rest land as they did. Window ids 83: 52 open, 20 say why they cannot open now and offer their switch, 10 open nothing a window detector sees (`base_game`, `game_hud`, `quick_actions`, `quick_actions_reopen_handle`, `notification_drawer`, `replay_viewer`, `what_if_timelines_modal`, `help_shortcuts_modal`, `intent_panels`, `intelligence_tabs`: the screen itself, the quick bar already on screen, a drawer, the replay viewer without a replay, in-page tabs, and 2 whose titles read as questions, where Ask comes first and the window second), and 1 (`find_anything`) is the search itself; the 8 checked side by side (7 of these and the LAB card below) behave exactly as before UX-6 in 8 of 8. Shortcuts 17: 9 open their window, 1 explains, 7 are actions (space, g, shift-escape, ctrl-s, ctrl-shift-c, replay-keys, layer-arrows). LAB cards 48: 43 open, 4 explain, 1 (`rules_whatif`) has Ask first and its window second, as before. Console errors 0."
+  ],
+  [
+   "Map walk, classic: V10.1's click paths and keys, and the settings search for every key",
+   "25 of 25 shortest click paths from V10.1's play screen open the same window as in V10.1; 10 of 10 shortcut keys the same; the classic settings search, run for every one of the 604 keys in both builds side by side, draws the same sections as V10.1's for 599 (the others: `findAnythingEnabled`, `settingsLayersEnabled`, `whatsInTheGameEnabled`, `dockedPanelEnabled`, `classicLayoutV101`), the key's own section among them for 548 in V10.1 and 553 in classic. Console errors 0."
+  ],
+  [
+   "The clean-ups in the browser (a, b; c and d in the walks)",
+   "23 of 24: Negotiations lists each of its six options once in the layered view and keeps V10.1's two lists in classic; with the panel open the Ask button, the Guardian button, the Widget Dock and the notification lane sit left of it (at 1280 and 1024) and come back when it closes; the classic layout's floating quick bar and turn pill centre on the page beside the panel. The first script could not draw the Guardian button (it needs the Guardian itself on, a match setting); the second loads the same save with the Guardian on and measures it."
+  ],
+  [
+   "Console errors",
+   "0 across every script above (both builds)."
+  ]
+ ],
+ "timingsNote": "from the press to the next frame after the screen is drawn, in the same loaded Day 4 match at 1280×900: the production build (React production mode, the way the game is played), median of 15; the dev build (React dev mode, served by Vite; measured on the build before the last two class-only style fixes), median of 7, in brackets. An earlier quiet production run of 15 gave, before UX-6 with the four on and after: Settings 31.3 and 36.9 ms, Find Anything 21.7 and 22.4 ms, the cards page 48.0 and 57.1 ms, so the cards page moves by up to 15 ms between runs while the 5 ms on Settings repeats",
+ "timings": [
+  [
+   "V10.1 build",
+   "31.4 ms (dev 607)",
+   "—",
+   "—"
+  ],
+  [
+   "Before UX-6, its default (the four off)",
+   "20.6 ms (dev 620)",
+   "—",
+   "—"
+  ],
+  [
+   "Before UX-6, the four on",
+   "32.4 ms (dev 1,262)",
+   "24.8 ms (dev 582)",
+   "63.7 ms (dev 710)"
+  ],
+  [
+   "After UX-6, the default (new layout)",
+   "37.4 ms (dev 1,252)",
+   "25.7 ms (dev 596)",
+   "49.2 ms (dev 687)"
+  ],
+  [
+   "After UX-6, classic layout on",
+   "27.3 ms (dev 653)",
+   "—",
+   "—"
+  ]
+ ],
+ "disagreements": [
+  "The map's §1 said UX-6 \"restyles everything\"; the brief says the new V11.0 screens only and the classic layout untouched. UX-6 followed the brief: the shared styles are on Find Anything, ⭐ Essentials and the group bar, What's in the game and the side panel, nowhere else.",
+  "Item 4 (the shared label table for rows drawn from old sections) was asked as \"Twins only\" and done that way: the Team Brain toggle and slider, and the Floating UI row and its options label. Floating UI Conflict Control is drawn once in the layered view, so only its options object needed a name of its own.",
+  "The file held no real V10.1 save (only fixtures). One was made with the V10.1 build in the browser (a Day 4 Team Mode match), shrunk, and embedded in SECTION 20BW with the V10.1 build's own three-day results as the reference.",
+  "What's New already had a V11.0 entry from UX-2 (V110_CHANGELOG). UX-6's entry covers the whole round and is the one drawn; V110_CHANGELOG stays in the file unchanged.",
+  "Classic Settings is V10.1 apart from the new switch rows, as the brief asks, and also the counts those rows move (sections 86 → 91, settings 599 → 604) and \"6 settings differ from the defaults\" while the classic switch is on."
+ ],
+ "open": "A setting whose row draws only when its parent switch is on (or inside a closed group) still lands on its section, or on the Teams gate, not the row. A widget the player dragged, or Floating UI Conflict Control relocated, keeps its place when the panel opens. V10.1's own Guardian and Ask buttons overlap each other by 9 px (unchanged). Layered Settings draws about twice the elements of the classic Simple view, so it opens a few milliseconds slower (see the times). The in-game LAB runner's numbers were not re-measured (the node runner was)."
+}

@@ -14120,14 +14120,16 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   dailyFixedRulesEnabled: false,
   /** V10.1 (SECTION 20BA): on = a new match plays by the V10.0 rules (match rule; off = the V10.1 rules in a V10.1 match). */
   classicRulesV100: false,
-  /** V11.0 (SECTION 20BL): Find Anything — one search box over actions, screens, settings, shortcuts and LAB cards. New, off by default (profile). */
-  findAnythingEnabled: false,
-  /** V11.0 (SECTION 20BN): the layered Settings — ⭐ Essentials and five goal groups in place of the 11 tabs. New, off by default (profile). */
-  settingsLayersEnabled: false,
-  /** V11.0 (SECTION 20BP): What's in the game — one page with a card for every optional feature and its real switch. New, off by default (profile). */
-  whatsInTheGameEnabled: false,
-  /** V11.0 (SECTION 20BR): the side panel — Market, Challenges, Travel, Workshop and Investments as tabs beside the map. New, off by default (profile). */
-  dockedPanelEnabled: false,
+  /** V11.0 (SECTION 20BL): Find Anything — one search box over actions, screens, settings, shortcuts and LAB cards (profile). V11.0 (SECTION 20BU): on by default (UX-6; was off). */
+  findAnythingEnabled: true,
+  /** V11.0 (SECTION 20BN): the layered Settings — ⭐ Essentials and five goal groups in place of the 11 tabs (profile). V11.0 (SECTION 20BU): on by default (UX-6; was off). */
+  settingsLayersEnabled: true,
+  /** V11.0 (SECTION 20BP): What's in the game — one page with a card for every optional feature and its real switch (profile). V11.0 (SECTION 20BU): on by default (UX-6; was off). */
+  whatsInTheGameEnabled: true,
+  /** V11.0 (SECTION 20BR): the side panel — Market, Challenges, Travel, Workshop and Investments as tabs beside the map (profile). V11.0 (SECTION 20BU): on by default (UX-6; was off). */
+  dockedPanelEnabled: true,
+  /** V11.0 (SECTION 20BU): the classic layout — on = the four switches above read as off (their values are kept) and the game looks and works as V10.1 did. New, off by default (profile). */
+  classicLayoutV101: false,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -15273,6 +15275,7 @@ export function sanitizeGameSettings(input: unknown): GameSettingsState {
     settingsLayersEnabled: typeof src.settingsLayersEnabled === 'boolean' ? src.settingsLayersEnabled : defaults.settingsLayersEnabled, // V11.0 (SECTION 20BN): only a real boolean switches it on
     whatsInTheGameEnabled: typeof src.whatsInTheGameEnabled === 'boolean' ? src.whatsInTheGameEnabled : defaults.whatsInTheGameEnabled, // V11.0 (SECTION 20BP): only a real boolean switches it on
     dockedPanelEnabled: typeof src.dockedPanelEnabled === 'boolean' ? src.dockedPanelEnabled : defaults.dockedPanelEnabled, // V11.0 (SECTION 20BR): only a real boolean switches it on
+    classicLayoutV101: typeof src.classicLayoutV101 === 'boolean' ? src.classicLayoutV101 : defaults.classicLayoutV101, // V11.0 (SECTION 20BU): only a real boolean switches it on
     rememberCategoryNavigationState: typeof src.rememberCategoryNavigationState === 'boolean' ? src.rememberCategoryNavigationState : defaults.rememberCategoryNavigationState,
     rememberCategoryNavigationMode: typeof src.rememberCategoryNavigationMode === 'boolean' ? src.rememberCategoryNavigationMode : defaults.rememberCategoryNavigationMode,
     autoCollapseCategoriesOnNarrow: typeof src.autoCollapseCategoriesOnNarrow === 'boolean' ? src.autoCollapseCategoriesOnNarrow : defaults.autoCollapseCategoriesOnNarrow,
@@ -18520,7 +18523,7 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     label: 'Find Anything',
     description: 'One search box for every action, screen, setting, keyboard shortcut and LAB card (the 🔎 Find button and Ctrl/⌘+K). Nothing about how a match plays changes.',
     valueType: 'boolean',
-    defaultValue: false,
+    defaultValue: true, // V11.0 (SECTION 20BU): on by default (UX-6)
     validate: (v: unknown) => typeof v === 'boolean',
     isLiveSafe: true,
     affectsFairness: false,
@@ -18532,7 +18535,7 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     label: 'Essentials and goal groups',
     description: 'Settings opens on Essentials, the 12 choices most players want, with everything else filed under five goals instead of 11 tabs. Every setting keeps its key, default and value. Nothing about how a match plays changes.',
     valueType: 'boolean',
-    defaultValue: false,
+    defaultValue: true, // V11.0 (SECTION 20BU): on by default (UX-6)
     validate: (v: unknown) => typeof v === 'boolean',
     isLiveSafe: true,
     affectsFairness: false,
@@ -18544,7 +18547,7 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     label: "What's in the game",
     description: 'One page with a card for every optional feature: what it does, whether it is on, its switch and what it needs. A switch on a card is the same switch as in Settings. Nothing about how a match plays changes.',
     valueType: 'boolean',
-    defaultValue: false,
+    defaultValue: true, // V11.0 (SECTION 20BU): on by default (UX-6)
     validate: (v: unknown) => typeof v === 'boolean',
     isLiveSafe: true,
     affectsFairness: false,
@@ -18555,6 +18558,18 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     category: 'interface',
     label: 'Side panel',
     description: 'Market, Challenges, Travel, Workshop and Investments open as tabs in one panel beside the map instead of windows over it, on screens at least 1024 px wide. Nothing about how a match plays changes.',
+    valueType: 'boolean',
+    defaultValue: true, // V11.0 (SECTION 20BU): on by default (UX-6)
+    validate: (v: unknown) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: false,
+  },
+  // V11.0 (SECTION 20BU): the classic layout (new, off by default, profile). The label is the one its row shows (V116_CLASSIC_LABEL; pinned by v116so).
+  {
+    key: 'classicLayoutV101',
+    category: 'interface',
+    label: 'Classic layout (V10.1)',
+    description: "On = the game looks and works as V10.1 did: no Find Anything, Settings opens on the Simple view and its 11 tabs, no What's in the game page and no side panel. Those four switches keep your choices and bring them back when you turn this off. Nothing about how a match plays changes.",
     valueType: 'boolean',
     defaultValue: false,
     validate: (v: unknown) => typeof v === 'boolean',
@@ -27062,14 +27077,16 @@ export type GameSettingsState = {
   classicRivalV99?: boolean;
   /** V10.1 Rival Recap (SECTION 20BC): true = a card after the rival's turn lists what it did and why. Off (default) = nothing is built or shown. Profile-scoped. */
   rivalRecapEnabled?: boolean;
-  /** V11.0 Find Anything (SECTION 20BM): true = the 🔎 Find button and Ctrl/⌘+K open one search box over everything. Off (default) = as in V10.1. Profile-scoped. */
+  /** V11.0 Find Anything (SECTION 20BM): true = the 🔎 Find button and Ctrl/⌘+K open one search box over everything. Off = as in V10.1. V11.0 (SECTION 20BU): on by default since UX-6. Profile-scoped. */
   findAnythingEnabled?: boolean; // V11.0 (SECTION 20BL): the round's switch
-  /** V11.0 (SECTION 20BN): Settings layers — true = Settings opens on ⭐ Essentials with five goal groups. Off (default) = the classic tabs. Profile-scoped. */
+  /** V11.0 (SECTION 20BN): Settings layers — true = Settings opens on ⭐ Essentials with five goal groups. Off = the classic tabs. V11.0 (SECTION 20BU): on by default since UX-6. Profile-scoped. */
   settingsLayersEnabled?: boolean;
-  /** V11.0 (SECTION 20BP): What's in the game — true = a page with a card for every optional feature (main menu, More, the Settings group bar, Find Anything). Off (default) = as after UX-3. Profile-scoped. */
+  /** V11.0 (SECTION 20BP): What's in the game — true = a page with a card for every optional feature (main menu, More, the Settings group bar, Find Anything). Off = as after UX-3. V11.0 (SECTION 20BU): on by default since UX-6. Profile-scoped. */
   whatsInTheGameEnabled?: boolean;
-  /** V11.0 (SECTION 20BR): the side panel — true = Market, Challenges, Travel, Workshop and Investments open as tabs beside the map (in a match, on a screen at least 1024 px wide). Off (default) = as after UX-4. Profile-scoped. */
+  /** V11.0 (SECTION 20BR): the side panel — true = Market, Challenges, Travel, Workshop and Investments open as tabs beside the map (in a match, on a screen at least 1024 px wide). Off = as after UX-4. V11.0 (SECTION 20BU): on by default since UX-6. Profile-scoped. */
   dockedPanelEnabled?: boolean;
+  /** V11.0 (SECTION 20BU): the classic layout — true = the four V11.0 layout switches read as off (their stored values are kept) and the game looks and works as V10.1 did. Off (default) = each switch decides. Profile-scoped. */
+  classicLayoutV101?: boolean;
   /** V10.1 Daily Challenge with fixed rules (SECTION 20BJ): true = the Daily Seed match runs on pinned rules. Off (default) = the Daily Seed is as in V9.9. Match-scoped. */
   dailyFixedRulesEnabled?: boolean;
   /** V10.1 (SECTION 20BA): true = a match started now plays by the V10.0 rules (no Resource Market spread, no V10.1 rival costs, rules editable mid-match, …).
@@ -65203,10 +65220,11 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'home.dashboard', tab: 'home', title: 'Settings Dashboard', tags: ['UX'], fieldKeys: [], keywords: 'home dashboard settings overview welcome quick setup' },
   { id: 'interface.startScreen', tab: 'interfaceAcc', title: '🛡️ Start-Screen Protection', tags: ['UX'], fieldKeys: ['startScreenConflictProtection', 'showFloatingControlsOnStartScreen', 'startScreenFloatingLayout', 'restoreEligibleFloatingControlsAfterMatchStarts', 'hideGameplaySidePanelsOnStartScreen'], keywords: 'start screen protection floating controls safe area layout conflict' },
   { id: 'interface.floatingUi', tab: 'interfaceAcc', title: '🎯 Floating UI Conflict Control & Priority Matrix', tags: ['UX', 'Floating UI'], fieldKeys: ['conflictControlSettings', 'conflictControlEnabled', 'conflictAllowRelocation', 'conflictReturnToPreferred', 'conflictShowExplanations', 'floatingUiPriorityMatrix'], keywords: 'floating ui conflict control priority matrix spatial collision relocation return to preferred' },
-  { id: 'interface.findAnything', tab: 'interfaceAcc', title: '🔎 Find Anything', tags: ['UX'], chips: ['Off by default'], fieldKeys: ['findAnythingEnabled'], keywords: 'find anything search everything command palette ctrl k cmd k go to open jump look up where is' }, // V11.0 (SECTION 20BL, Q7): filed under its goal, no version in the title
-  { id: 'interface.settingsLayers', tab: 'interfaceAcc', title: '🗂️ Settings Layout', tags: ['UX'], chips: ['Off by default'], fieldKeys: ['settingsLayersEnabled'], keywords: 'settings layout essentials goal groups simple tabs classic layered organise organize declutter' }, // V11.0 (SECTION 20BN): filed under its goal, no version in the title
-  { id: 'interface.whatsInTheGame', tab: 'interfaceAcc', title: "🧩 What's in the game", tags: ['UX'], chips: ['Off by default'], fieldKeys: ['whatsInTheGameEnabled'], keywords: 'what s in the game whats features feature list optional features every feature catalogue catalog overview cards switches discover' }, // V11.0 (SECTION 20BP): filed under its goal, no version in the title
-  { id: 'interface.dockedPanel', tab: 'interfaceAcc', title: '📑 Side panel', tags: ['UX'], chips: ['Off by default'], fieldKeys: ['dockedPanelEnabled'], keywords: 'side panel docked panel dock sidebar tabs beside the map market sell buy challenges travel workshop investments windows' }, // V11.0 (SECTION 20BR): filed under its goal, no version in the title
+  { id: 'interface.findAnything', tab: 'interfaceAcc', title: '🔎 Find Anything', tags: ['UX'], chips: ['On by default'], fieldKeys: ['findAnythingEnabled'], keywords: 'find anything search everything command palette ctrl k cmd k go to open jump look up where is' }, // V11.0 (SECTION 20BL, Q7): filed under its goal, no version in the title // V11.0 (SECTION 20BU): on by default (UX-6)
+  { id: 'interface.settingsLayers', tab: 'interfaceAcc', title: '🗂️ Settings Layout', tags: ['UX'], chips: ['On by default'], fieldKeys: ['settingsLayersEnabled'], keywords: 'settings layout essentials goal groups simple tabs classic layered organise organize declutter' }, // V11.0 (SECTION 20BN): filed under its goal, no version in the title // V11.0 (SECTION 20BU): on by default (UX-6)
+  { id: 'interface.whatsInTheGame', tab: 'interfaceAcc', title: "🧩 What's in the game", tags: ['UX'], chips: ['On by default'], fieldKeys: ['whatsInTheGameEnabled'], keywords: 'what s in the game whats features feature list optional features every feature catalogue catalog overview cards switches discover' }, // V11.0 (SECTION 20BP): filed under its goal, no version in the title // V11.0 (SECTION 20BU): on by default (UX-6)
+  { id: 'interface.dockedPanel', tab: 'interfaceAcc', title: '📑 Side panel', tags: ['UX'], chips: ['On by default'], fieldKeys: ['dockedPanelEnabled'], keywords: 'side panel docked panel dock sidebar tabs beside the map market sell buy challenges travel workshop investments windows' }, // V11.0 (SECTION 20BR): filed under its goal, no version in the title // V11.0 (SECTION 20BU): on by default (UX-6)
+  { id: 'interface.classicLayout', tab: 'interfaceAcc', title: '🕰️ Classic layout', tags: ['UX'], chips: ['Off by default'], fieldKeys: ['classicLayoutV101'], keywords: 'classic layout old layout previous layout v10 1 look back to v10 1 simple view eleven tabs no side panel no find anything classic look' }, // V11.0 (SECTION 20BU): the classic switch, filed with the four V11.0 switches
   { id: 'interface.aiAssistants', tab: 'interfaceAcc', title: '🧠 AI Assistant Surfaces', tags: ['UX', 'AI', 'Floating UI'], fieldKeys: ['aiCommandCenterUiEnabled', 'askGameAiUiEnabled', 'aiTuningLabUiEnabled'], keywords: 'ai command center ask game assistant tuning lab floating button hud widget hide show off by default alt+c ctrl+k' },
   { id: 'interface.launcherDock', tab: 'interfaceAcc', title: '🚀 Unified Launcher & Dock', tags: ['UX', 'Launcher', 'Dock'], fieldKeys: ['launcherSettings', 'dockSettings'], keywords: 'unified launcher floating widget dock positioning mode dragging collapse badge' },
   { id: 'interface.quickActionsVisibility', tab: 'interfaceAcc', title: '⚡ Quick Actions Visibility & Close Behavior', tags: ['UX', 'Quick Actions'], fieldKeys: ['keepQuickActionsReopenHandleWhenClosed', 'fullyHideQuickActionsWhenClosed'], keywords: 'quick actions visibility reopen handle button close behavior minimize hide' },
@@ -99993,7 +100011,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
                         ? 'bg-sky-600 text-white shadow'
                         : v99Shell.tabIdle
                     }`}
-                    data-testid="settings-view-experience" /* V11.0 (SECTION 20BM): Find Anything's "Game Experience" result presses this button */
+                    data-testid={v116ClassicOn(gameSettings) ? undefined : "settings-view-experience"} /* V11.0 (SECTION 20BM): Find Anything's "Game Experience" result presses this button. V11.0 (SECTION 20BU): none in the classic layout (V10.1 had none) */
                   >
                     🎮 Game Experience
                   </button>
@@ -100005,7 +100023,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
                         ? 'bg-sky-600 text-white shadow'
                         : v99Shell.tabIdle
                     }`}
-                    data-testid="settings-view-advanced" /* V11.0 (SECTION 20BN): a test id for the layered view's "All settings" */
+                    data-testid={v116ClassicOn(gameSettings) ? undefined : "settings-view-advanced"} /* V11.0 (SECTION 20BN): a test id for the layered view's "All settings". V11.0 (SECTION 20BU): none in the classic layout (V10.1 had none) */
                   >
                     {v113On ? '🗂️ All settings' : '⚙️ Advanced Settings'}{/* V11.0 (SECTION 20BN) */}
                   </button>
@@ -134508,6 +134526,7 @@ export const V95_PROFILE_SCOPED_SETTING_KEYS: readonly string[] = [
   'settingsLayersEnabled', // V11.0 (SECTION 20BN): an interface preference, remembered between visits, never in a save
   'whatsInTheGameEnabled', // V11.0 (SECTION 20BP): an interface preference, remembered between visits, never in a save
   'dockedPanelEnabled', // V11.0 (SECTION 20BR): an interface preference, remembered between visits, never in a save
+  'classicLayoutV101', // V11.0 (SECTION 20BU): an interface preference, remembered between visits, never in a save
   'allowSettingsCategoryCollapse',
   'startSettingsCategoryCollapsed',
   'settingsCategoryNavigationMode',
@@ -137039,6 +137058,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v113sl', label: 'V11.0 UX-3: Settings Layers', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV113SettingsLayersSelfTests()) }, // V11.0 (SECTION 20BO)
   { id: 'v114wg', label: "V11.0 UX-4: What's in the Game", tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV114WhatsInTheGameSelfTests()) }, // V11.0 (SECTION 20BQ)
   { id: 'v115dp', label: 'V11.0 UX-5: Docked Panel', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV115DockedPanelSelfTests()) }, // V11.0 (SECTION 20BS)
+  { id: 'v116so', label: 'V11.0 UX-6: Switch-over', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV116SwitchOverSelfTests()) }, // V11.0 (SECTION 20BW)
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
@@ -217463,6 +217483,7 @@ export const V101_SUITE_MANIFEST: ReadonlyArray<readonly [string, string]> = [
   ['runV113SettingsLayersSelfTests', 'v113sl'], // V11.0 (SECTION 20BO)
   ['runV114WhatsInTheGameSelfTests', 'v114wg'], // V11.0 (SECTION 20BQ)
   ['runV115DockedPanelSelfTests', 'v115dp'], // V11.0 (SECTION 20BS)
+  ['runV116SwitchOverSelfTests', 'v116so'], // V11.0 (SECTION 20BW)
   ['runV102StrategicInfrastructureNetworksSelfTests', 'v102'], ['runV103NationalMegaprojectSelfTests', 'v103'], ['runV104NationalDevelopmentSelfTests', 'v104'],
   ['runV105InnovationCapabilitiesSelfTests', 'v105'], ['runV106ResilienceSystemicRiskSelfTests', 'v106'], ['runV107DynamicNationalPrioritiesSelfTests', 'v107'],
   ['runV108RegionalCompetitionSelfTests', 'v108'], ['runV109StrategicCapitalSelfTests', 'v109'], ['runV1010WorkforceHumanCapitalSelfTests', 'v1010'],
@@ -218220,8 +218241,8 @@ export const V110_FIND_LABEL = 'Find Anything';
 export const V110_FIND_DESCRIPTION = 'One search box for every action, screen, setting, keyboard shortcut and LAB card. Press 🔎 Find or Ctrl/⌘+K, type a few letters and press Enter: the result opens through the same button you would have pressed. While it is on, Ctrl/⌘+K opens Find Anything (the Ask drawer is one of its results) and every window has an id of its own, so Escape always closes the window on top.';
 
 /** True only when Find Anything is switched on (a real true; anything else, including a missing value, is off). */
-export function v110FindAnythingOn(settings: { readonly findAnythingEnabled?: unknown } | null | undefined): boolean {
-  return settings?.findAnythingEnabled === true;
+export function v110FindAnythingOn(settings: { readonly findAnythingEnabled?: unknown; readonly classicLayoutV101?: unknown } | null | undefined): boolean {
+  return settings?.findAnythingEnabled === true && settings?.classicLayoutV101 !== true; // V11.0 (SECTION 20BU): the classic layout holds it off (its stored value is kept)
 }
 
 /** True for the keys of the V11.0 switch (the Simple view's card may write exactly these). */
@@ -219497,7 +219518,7 @@ export function v110FindSearch(index: readonly V110FindEntry[], query: string, l
   }
   const hits: V110FindHit[] = [];
   const pq = v110PrepareQuery(text);
-  const everyday = [...v113SynonymTargets(text), ...v114SynonymTargets(text, index), ...v115SynonymTargets(text, index) /* V11.0 (SECTION 20BR): + "side panel" */]; /* V11.0 (SECTION 20BP): + "features", "what's in the game" */ // V11.0 (SECTION 20BO): everyday words ("harder", "mute", "restart") lift the place they mean
+  const everyday = [...v113SynonymTargets(text), ...v114SynonymTargets(text, index), ...v115SynonymTargets(text, index) /* V11.0 (SECTION 20BR): + "side panel" */, ...v116SynonymTargets(text, index) /* V11.0 (SECTION 20BU): + the classic switch, and "dock" finds the side panel too */]; /* V11.0 (SECTION 20BP): + "features", "what's in the game" */ // V11.0 (SECTION 20BO): everyday words ("harder", "mute", "restart") lift the place they mean
   index.forEach(entry => { const score = v110ScorePrepared(entry, pq) + (everyday.includes(entry.id) ? V113_SYNONYM_BOOST : 0); if (score > 0) hits.push({ entry, score }); });
   hits.sort((a, b) => (b.score - a.score) || (V110_KIND_ORDER[a.entry.kind] - V110_KIND_ORDER[b.entry.kind]) || (a.entry.order - b.entry.order));
   const ranked = hits.slice(0, Math.max(0, limit - 1));
@@ -219687,11 +219708,11 @@ export function V110FindAnythingView(p: V110FindViewProps): React.ReactElement {
     <div className="fixed inset-0 flex items-start justify-center p-4 pt-[8vh] bg-black/60" style={{ zIndex: p.zIndex }} data-testid="v110-find-backdrop"
       onMouseDown={e => { if (e.target === e.currentTarget) p.onClose(); }}>
       <div {...p.dialogProps} onKeyDown={p.onKeyDown} className={`${p.theme.card} ${p.theme.text || ''} ${p.theme.border} border rounded-xl w-full max-w-xl ${p.theme.shadow} flex flex-col max-h-[80dvh] overflow-hidden`} data-testid="v110-find">
-        <div className="flex items-center justify-between gap-2 px-4 pt-3">
-          <h2 id={v101DialogTitleId('find_anything')} className="font-bold text-base">🔎 Find Anything</h2>
-          <button type="button" onClick={p.onClose} aria-label="Close Find Anything" className={`${p.theme.buttonSecondary} px-2 py-1 rounded text-xs`} data-testid="v110-find-close">✕</button>
+        <div className={`flex items-center justify-between gap-3 ${V116_UI.head}`} >{/* V11.0 (SECTION 20BT): the shared look */}
+          <h2 id={v101DialogTitleId('find_anything')} className={V116_UI.title}>🔎 Find Anything</h2>
+          <button type="button" onClick={p.onClose} aria-label="Close Find Anything" className={`${p.theme.buttonSecondary} ${V116_UI.icon} ${V116_UI.focus}`} data-testid="v110-find-close">✕</button>
         </div>
-        <div className="px-4 py-2">
+        <div className={V116_UI.band}>{/* V11.0 (SECTION 20BT): the shared look */}
           <input
             type="text"
             role="combobox"
@@ -219706,7 +219727,7 @@ export function V110FindAnythingView(p: V110FindViewProps): React.ReactElement {
             spellCheck={false}
             value={p.query}
             onChange={e => p.onQuery(e.target.value)}
-            className={`${p.theme.input} w-full px-3 py-2 rounded-lg text-sm`}
+            className={`${p.theme.input} w-full ${V116_UI.field} ${V116_UI.focus}` /* V11.0 (SECTION 20BT): the shared look */}
             data-testid="v110-find-input"
           />
         </div>
@@ -219722,25 +219743,25 @@ export function V110FindAnythingView(p: V110FindViewProps): React.ReactElement {
               onMouseDown={e => e.preventDefault()}
               onMouseMove={() => { if (i !== active) p.onHover(i); }}
               onClick={() => p.onPick(i)}
-              className={`px-3 py-2 rounded-lg cursor-pointer ${i === active ? 'ring-2 ring-sky-500 bg-sky-500/10' : ''} ${r.availability.available ? '' : 'opacity-75'}`}
+              className={`${V116_UI.option} cursor-pointer ${i === active ? V116_UI.selected : ''} ${r.availability.available ? '' : 'opacity-75'}` /* V11.0 (SECTION 20BT): the shared look */}
               data-testid={`v110-find-result-${r.entry.id}`}
             >
               <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="text-[10px] uppercase tracking-wide font-semibold opacity-70 shrink-0">{V110_FIND_KIND_LABELS[r.entry.kind]}</span>
-                <span className="font-semibold text-sm">{r.entry.title}</span>
+                <span className={`${V116_UI.kicker} opacity-80 shrink-0` /* V11.0 (SECTION 20BT): the shared look */}>{V110_FIND_KIND_LABELS[r.entry.kind]}</span>
+                <span className={V116_UI.name}>{r.entry.title}</span>
               </div>
-              <div className={`text-xs ${p.theme.textMuted || 'opacity-75'}`}>{r.entry.where}{r.entry.settingKey ? <span className="font-mono opacity-70"> · {r.entry.settingKey}</span> : null}</div>
-              {r.entry.note && <div className="text-xs opacity-90">{r.entry.note}</div>}
+              <div className={`${V116_UI.meta} ${p.theme.textMuted || 'opacity-80'}` /* V11.0 (SECTION 20BT): the shared look */}>{r.entry.where}{r.entry.settingKey ? <span className={'font-mono' /* V11.0 (SECTION 20BT): the ON state reads 4.5:1 or better */}> · {r.entry.settingKey}</span> : null}</div>
+              {r.entry.note && <div className={`${V116_UI.meta} opacity-90` /* V11.0 (SECTION 20BT): the shared look */}>{r.entry.note}</div>}
               {!r.availability.available && r.availability.reason !== r.entry.note && (
-                <div className="text-xs font-semibold" data-testid={`v110-find-reason-${r.entry.id}`}>
+                <div className={`${V116_UI.meta} font-semibold` /* V11.0 (SECTION 20BT): the shared look */} data-testid={`v110-find-reason-${r.entry.id}`}>
                   {r.availability.reason}{r.availability.fallback ? ' Enter opens that switch.' : ''}
                 </div>
               )}
             </li>
           ))}
-          {p.results.length === 0 && <li role="presentation" className="px-3 py-2 text-xs opacity-75">Nothing matches. Try fewer letters.</li>}
+          {p.results.length === 0 && <li role="presentation" className={`${V116_UI.option} ${V116_UI.meta} opacity-80` /* V11.0 (SECTION 20BT): the shared look */}>Nothing matches. Try fewer letters.</li>}
         </ul>
-        <div className="px-4 py-2 text-[11px] opacity-70 border-t border-current border-opacity-10">↑ ↓ move · Enter opens · Esc closes</div>
+        <div className={V116_UI.foot} >{/* V11.0 (SECTION 20BT): the shared look */}↑ ↓ move · Enter opens · Esc closes</div>
       </div>
     </div>
   );
@@ -219749,7 +219770,7 @@ export function V110FindAnythingView(p: V110FindViewProps): React.ReactElement {
 /** The header's 🔎 Find button (drawn only while Find Anything is on). */
 export function V110FindButton({ onOpen, className }: { onOpen: () => void; className: string }): React.ReactElement {
   return (
-    <button type="button" onClick={onOpen} className={className} aria-label="Find Anything (Ctrl+K)" aria-keyshortcuts="Control+K Meta+K" title="Find Anything (Ctrl/⌘+K)" data-testid="v110-find-button">
+    <button type="button" onClick={onOpen} className={`${className} ${V116_UI.focus}` /* V11.0 (SECTION 20BT): the shared look */} aria-label="Find Anything (Ctrl+K)" aria-keyshortcuts="Control+K Meta+K" title="Find Anything (Ctrl/⌘+K)" data-testid="v110-find-button">
       🔎 Find
     </button>
   );
@@ -219762,7 +219783,7 @@ export function V110FindSettingsBody({ on, onToggle, onClassName, offClassName }
       <div id="settings-field-findAnythingEnabled" data-setting-key="findAnythingEnabled" className="flex items-center justify-between gap-3">
         <div>
           <div className="font-semibold text-sm">{V110_FIND_LABEL}</div>
-          <div className="opacity-75">{V110_FIND_DESCRIPTION} (Off by default)</div>
+          <div className="opacity-75">{V110_FIND_DESCRIPTION} (On by default)</div>{/* V11.0 (SECTION 20BU): on by default (UX-6) */}
         </div>
         <button type="button" id="v110-setting-findAnythingEnabled" data-testid="v110-setting-findAnythingEnabled" aria-pressed={on} aria-label={`${V110_FIND_LABEL}: ${on ? 'on' : 'off'}`}
           onClick={onToggle} className={`px-4 py-2 rounded font-semibold shrink-0 ${on ? onClassName : offClassName}`}>
@@ -219997,13 +220018,13 @@ export function runV110FindAnythingSelfTests(): V9SelfTestResult[] {
     });
     return wrong.length === 0 || wrong.join('; ');
   });
-  check('v110fa_07_switch_defaults_off', 'Find Anything is off by default, only a real true turns it on, and it is read with === true', () => {
+  check('v110fa_07_switch_defaults_off', 'Find Anything is on by default since UX-6 (it was off), only a real boolean changes it, and it is read with === true' /* V11.0 (SECTION 20BU): UX-6 */, () => {
     const d = createDefaultGameSettings();
     const junk = sanitizeGameSettings({ ...d, findAnythingEnabled: 'yes' } as unknown as Partial<GameSettingsState>);
     const one = sanitizeGameSettings({ ...d, findAnythingEnabled: 1 } as unknown as Partial<GameSettingsState>);
     const on = sanitizeGameSettings({ ...d, findAnythingEnabled: true });
-    return (DEFAULT_GAME_SETTINGS.findAnythingEnabled === false && junk.findAnythingEnabled === false && one.findAnythingEnabled === false && on.findAnythingEnabled === true
-      && !v110FindAnythingOn(d) && !v110FindAnythingOn({ findAnythingEnabled: 'true' }) && !v110FindAnythingOn(null) && v110FindAnythingOn({ findAnythingEnabled: true })) || json({ junk: junk.findAnythingEnabled, one: one.findAnythingEnabled });
+    return (DEFAULT_GAME_SETTINGS.findAnythingEnabled === true /* V11.0 (SECTION 20BU): UX-6 */ && junk.findAnythingEnabled === true && one.findAnythingEnabled === true && on.findAnythingEnabled === true
+      && v110FindAnythingOn(d) && !v110FindAnythingOn({ ...d, findAnythingEnabled: false }) && !v110FindAnythingOn({ findAnythingEnabled: 'true' }) && !v110FindAnythingOn(null) && v110FindAnythingOn({ findAnythingEnabled: true })) || json({ junk: junk.findAnythingEnabled, one: one.findAnythingEnabled });
   });
   check('v110fa_08_switch_is_a_profile_setting', 'Find Anything is a profile setting: remembered between visits, never written into or read back from a save', () => {
     const save: SaveGameData = JSON.parse(json(createV95SaveFixture()));
@@ -220016,7 +220037,7 @@ export function runV110FindAnythingSelfTests(): V9SelfTestResult[] {
     const sections = SETTINGS_HUB_SECTION_INDEX.filter(s => (s.fieldKeys as readonly string[]).includes('findAnythingEnabled'));
     const catalog = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(row => row.key === 'findAnythingEnabled');
     return (sections.length === 1 && sections[0].id === V110_FIND_SECTION_ID && sections[0].tab === 'interfaceAcc' && sections[0].title === V110_FIND_SECTION_TITLE
-      && !/v\d|new in/i.test(sections[0].title) && Boolean(catalog) && catalog!.label === V110_FIND_LABEL && catalog!.defaultValue === false && isV110SettingKeyName('findAnythingEnabled')) || json({ sections: sections.map(s => s.id), catalog: Boolean(catalog) });
+      && !/v\d|new in/i.test(sections[0].title) && Boolean(catalog) && catalog!.label === V110_FIND_LABEL && catalog!.defaultValue === true /* V11.0 (SECTION 20BU): UX-6 */ && isV110SettingKeyName('findAnythingEnabled')) || json({ sections: sections.map(s => s.id), catalog: Boolean(catalog) });
   });
   check('v110fa_10_suite_registered', 'v110fa is registered once, quick tier, after the V10.1 suites, and the suite manifest is whole', () => {
     const ids = V95_EXISTING_SUITES.map(s => s.id);
@@ -220085,7 +220106,7 @@ export function runV110FindAnythingSelfTests(): V9SelfTestResult[] {
     const settingIds = index.filter(entry => entry.kind === 'setting').map(entry => entry.settingKey || '');
     const missing = [...V110_MAP_SETTING_KEYS, 'findAnythingEnabled'].filter(key => settingIds.filter(id => id === key).length !== 1);
     const uncovered = keys.filter(key => !settingIds.includes(key));
-    return (V110_MAP_SETTING_KEYS.length === 599 && keys.length === 600 + V113_SETTING_KEYS.length /* V11.0 (SECTION 20BN): + the Settings layers switch */ + V114_SETTING_KEYS.length /* V11.0 (SECTION 20BP): + What's in the game */ + V115_SETTING_KEYS.length /* V11.0 (SECTION 20BR): + the side panel */ && missing.length === 0 && uncovered.length === 0 && settingIds.length === keys.length) || json({ missing: missing.slice(0, 10), uncovered });
+    return (V110_MAP_SETTING_KEYS.length === 599 && keys.length === 600 + V113_SETTING_KEYS.length /* V11.0 (SECTION 20BN): + the Settings layers switch */ + V114_SETTING_KEYS.length /* V11.0 (SECTION 20BP): + What's in the game */ + V115_SETTING_KEYS.length /* V11.0 (SECTION 20BR): + the side panel */ + V116_SETTING_KEYS.length /* V11.0 (SECTION 20BU): + the classic switch */ && missing.length === 0 && uncovered.length === 0 && settingIds.length === keys.length) || json({ missing: missing.slice(0, 10), uncovered });
   });
   check('v110fa_19_every_setting_found_by_key', 'Every one of the 600 settings is the first result when you type its key', () => {
     const wrong = keys.filter(key => { const top = v110FindSearch(index, key, 5)[0]; return !top || top.entry.id !== `setting:${key}`; });
@@ -220253,10 +220274,10 @@ export function runV110FindAnythingSelfTests(): V9SelfTestResult[] {
     v110FindSearch(buildV110FindIndex(), 'travel'); v110FindResults(index, 'loans', matchCtx());
     return (banned.length === 0 && json(captureRngState()) === before) || json({ banned, rng: json(captureRngState()) === before });
   });
-  check('v110fa_36_find_switch_is_findable_and_off', 'Find Anything itself is findable (by "find", "search", "ctrl k" and its key), and with it off the hook renders nothing and listens to no key', () => {
+  check('v110fa_36_find_switch_is_findable_and_off', 'Find Anything itself is findable (by "find", "search", "ctrl k" and its key), and with it off the hook renders nothing and listens to no key (it is on by default since UX-6)' /* V11.0 (SECTION 20BU): UX-6 */, () => {
     const tops = ['find anything', 'ctrl k', 'findAnythingEnabled'].map(q => v110FindSearch(index, q, 3).map(h => h.entry.id));
     const ok = tops[0].includes('section:interface.findAnything') && tops[1].includes('shortcut:ctrl-k') && tops[2][0] === 'setting:findAnythingEnabled';
-    return (ok && !v110FindAnythingOn(createDefaultGameSettings())) || json(tops);
+    return (ok && !v110FindAnythingOn({ ...createDefaultGameSettings(), findAnythingEnabled: false }) && v110FindAnythingOn(createDefaultGameSettings()) /* V11.0 (SECTION 20BU): UX-6 */) || json(tops);
   });
   check('v110fa_37_suggestions_and_status', 'The empty box shows the ten everyday results, the live region counts results, and "nothing matches" offers Ask', () => {
     const empty = v110FindResults(index, '', matchCtx());
@@ -220343,8 +220364,8 @@ export const V113_SECTION_TITLE = '🗂️ Settings Layout';
 export const V113_LABEL = 'Essentials and goal groups';
 export const V113_DESCRIPTION = 'Settings opens on ⭐ Essentials, the 12 choices most players want, and everything else is filed under five goals (Match & rules, Your rival, Teams & automation, Help, screen & sound, Records & tools) instead of 11 tabs. Every setting keeps its key, default and value, and the settings search still finds all of them. Turn it off any time for the classic tabs.';
 /** True only when the layered Settings is switched on (a real true; anything else is off). */
-export function v113LayersOn(settings: { readonly settingsLayersEnabled?: unknown } | null | undefined): boolean {
-  return settings?.settingsLayersEnabled === true;
+export function v113LayersOn(settings: { readonly settingsLayersEnabled?: unknown; readonly classicLayoutV101?: unknown } | null | undefined): boolean {
+  return settings?.settingsLayersEnabled === true && settings?.classicLayoutV101 !== true; // V11.0 (SECTION 20BU): the classic layout holds it off (its stored value is kept)
 }
 export function isV113SettingKeyName(key: unknown): boolean {
   return typeof key === 'string' && (V113_SETTING_KEYS as readonly string[]).includes(key);
@@ -220370,7 +220391,7 @@ export const V113_PSEUDO: Readonly<Record<V113PseudoId, { group: V113GroupId | n
 export function isV113PseudoId(id: unknown): id is V113PseudoId { return typeof id === 'string' && Object.prototype.hasOwnProperty.call(V113_PSEUDO, id); }
 
 /** Sections every key of which now lives elsewhere: the layered view does not draw them (the classic view still does). */
-export const V113_DISSOLVED_SECTIONS: readonly string[] = ['quickSetup.core', 'interface.firstRun', 'interface.mapSound', 'competition.competitiveActions', 'gameplay.v99', 'gameplay.v100', 'gameplay.v101'];
+export const V113_DISSOLVED_SECTIONS: readonly string[] = ['quickSetup.core', 'interface.firstRun', 'interface.mapSound', 'competition.competitiveActions', 'gameplay.v99', 'gameplay.v100', 'gameplay.v101', 'interface.classicLayout' /* V11.0 (SECTION 20BU): its one switch lives in ⭐ Essentials */];
 
 
 // ---- The map, as data: which group each section belongs to (§6) and the one home of every setting (§7) ------------------------------
@@ -220466,7 +220487,8 @@ export const V113_SECTION_GROUP: Readonly<Record<string, V113GroupId>> = {
   "interface.findAnything": 'help',
   "interface.settingsLayers": 'help',
   "interface.whatsInTheGame": 'help', // V11.0 (SECTION 20BP): What's in the game's switch, beside Settings Layout
-  "interface.dockedPanel": 'help' // V11.0 (SECTION 20BR): the side panel's switch, beside What's in the game
+  "interface.dockedPanel": 'help', // V11.0 (SECTION 20BR): the side panel's switch, beside What's in the game
+  "interface.classicLayout": 'help' // V11.0 (SECTION 20BU): the classic switch's section (dissolved in the layered view: the switch is in ⭐ Essentials)
 };
 /** The single home of every setting (map §7, "V11.0 home"): a section id, or one of the layered view's own blocks (v113.*). */
 export const V113_HOME_KEYS: Readonly<Record<string, readonly string[]>> = {
@@ -220552,7 +220574,7 @@ export const V113_HOME_KEYS: Readonly<Record<string, readonly string[]>> = {
   "v113.classicRival": ['classicRivalV99'],
   "v113.classicRules": ['classicRulesV100'],
   "v113.dailyJournal": ['dailyFixedRulesEnabled', 'matchJournalEnabled'],
-  "v113.essentials": ['totalDays', 'winCondition', 'actionLimitsEnabled', 'playerActionsPerDay', 'experienceMode', 'matchRecoveryEnabled', 'warnBeforeUnloadEnabled', 'rivalTurnPace', 'guidedFirstRunEnabled', 'visualMode', 'soundEnabled', 'soundVolume', 'reducedMotion', 'playerIntentOnboardingEnabled', 'guidedLearning'],
+  "v113.essentials": ['totalDays', 'winCondition', 'actionLimitsEnabled', 'playerActionsPerDay', 'experienceMode', 'matchRecoveryEnabled', 'warnBeforeUnloadEnabled', 'rivalTurnPace', 'guidedFirstRunEnabled', 'visualMode', 'soundEnabled', 'soundVolume', 'reducedMotion', 'playerIntentOnboardingEnabled', 'guidedLearning', 'classicLayoutV101' /* V11.0 (SECTION 20BU): the classic switch's home */],
   "v113.internal": ['v93RecentRare', 'aiDifficulty', 'smartSettingsProfile', 'autoModeDiagnosticsDrawerOpen', 'deferredTransactions', 'playerIntentOnboardingDismissed'],
   "v113.rivalExtras": ['rivalRecapEnabled', 'rivalRacesEnabled'],
   "v113.teamOs": ['teamIntelligenceOsEnabled', 'teamOsAuthorityLevel', 'teamOsEnemyEnabled', 'teamOsFullInspectionEnabled'],
@@ -220868,13 +220890,13 @@ export function V113Row({ spec, settings, w, cls }: { spec: V113RowSpec; setting
     const on = v113ToggleState(rec, spec.key, c.on || 'true');
     control = (
       <button type="button" aria-pressed={on} aria-label={`${label}: ${on ? 'on' : 'off'}`} data-testid={`v113-row-${spec.key}`}
-        onClick={() => v113FlipRow(spec, on, w)} className={`px-4 py-2 rounded font-semibold shrink-0 ${on ? `${cls.success} text-white` : cls.buttonSecondary}`}>
+        onClick={() => v113FlipRow(spec, on, w)} className={`${V116_UI.toggle} ${V116_UI.focus} ${on ? v116OnClass(cls.success) : cls.buttonSecondary}` /* V11.0 (SECTION 20BT): the ON state reads 4.5:1 or better */}>
         {on ? 'ON' : 'OFF'}
       </button>
     );
   } else if (c.kind === 'select') {
     control = (
-      <select aria-label={label} data-testid={`v113-row-${spec.key}`} value={String(rec[spec.key] ?? '')} onChange={e => v113WriteRow(spec, e.target.value, w)} className={`${cls.select} rounded px-3 py-2 shrink-0 max-w-[16rem]`}>
+      <select aria-label={label} data-testid={`v113-row-${spec.key}`} value={String(rec[spec.key] ?? '')} onChange={e => v113WriteRow(spec, e.target.value, w)} className={`${cls.select} ${V116_UI.field} ${V116_UI.focus} shrink-0 max-w-[16rem]` /* V11.0 (SECTION 20BT): the shared look */}>
         {c.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     );
@@ -220882,7 +220904,7 @@ export function V113Row({ spec, settings, w, cls }: { spec: V113RowSpec; setting
     const n = Number(rec[spec.key]);
     control = (
       <input type="number" aria-label={label} data-testid={`v113-row-${spec.key}`} min={c.min} max={c.max} step={c.step} value={Number.isFinite(n) ? n : c.min}
-        onChange={e => v113WriteRow(spec, Math.max(c.min, Math.min(c.max, Number(e.target.value) || c.fallback)), w)} className={`${cls.select} rounded px-3 py-2 w-28 shrink-0`} />
+        onChange={e => v113WriteRow(spec, Math.max(c.min, Math.min(c.max, Number(e.target.value) || c.fallback)), w)} className={`${cls.select} ${V116_UI.field} ${V116_UI.focus} w-28 shrink-0` /* V11.0 (SECTION 20BT): the shared look */} />
     );
   } else if (c.kind === 'explain') {
     const mode = String(rec.playerIntentExplainMode || 'high_impact');
@@ -220890,7 +220912,7 @@ export function V113Row({ spec, settings, w, cls }: { spec: V113RowSpec; setting
       <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={label} data-testid={`v113-row-${spec.key}`}>
         {V113_EXPLAIN_OPTIONS.map(o => (
           <button key={o.value} type="button" role="radio" aria-checked={mode === o.value} onClick={() => v113WriteRow(spec, o.value, w)}
-            className={`px-2 py-1 rounded text-xs border ${mode === o.value ? `${cls.button} text-white` : `${cls.border} ${cls.buttonSecondary}`}`}>{o.label}</button>
+            className={`${V116_UI.buttonSmall} border ${V116_UI.focus} ${mode === o.value ? `${cls.button} text-white` : `${cls.border} ${cls.buttonSecondary}`}` /* V11.0 (SECTION 20BT): the shared look */}>{o.label}</button>
         ))}
       </div>
     );
@@ -220898,14 +220920,14 @@ export function V113Row({ spec, settings, w, cls }: { spec: V113RowSpec; setting
     const ready = !c.needs || rec[c.needs] === true;
     control = (
       <button type="button" disabled={!ready} onClick={() => w.open(c.patch)} data-testid={`v113-row-${spec.key}`}
-        title={ready ? undefined : `Switch on ${v113SettingLabel(c.needs || '')} first.`} className={`px-3 py-2 rounded font-semibold shrink-0 ${cls.buttonSecondary} disabled:opacity-50`}>{c.button}</button>
+        title={ready ? undefined : `Switch on ${v113SettingLabel(c.needs || '')} first.`} className={`${V116_UI.button} shrink-0 ${V116_UI.focus} ${cls.buttonSecondary} ${V116_UI.disabled}` /* V11.0 (SECTION 20BT): the shared look */}>{c.button}</button>
     );
   }
   return (
     <div id={`settings-field-${spec.key}`} data-setting-key={spec.key} className="flex items-center justify-between gap-3 flex-wrap">
       <div className="min-w-0">
-        <div className="font-semibold">{label}{inert ? <V99NoEffectChip settingKey={spec.key} /> : null}</div>
-        <div className="text-sm opacity-75">{spec.description}</div>
+        <div className={V116_UI.name}>{label}{inert ? <V99NoEffectChip settingKey={spec.key} /> : null}</div>{/* V11.0 (SECTION 20BT): the shared look */}
+        <div className={`${V116_UI.body} opacity-80`}>{spec.description}</div>
       </div>
       {control}
     </div>
@@ -220916,10 +220938,10 @@ export function V113Row({ spec, settings, w, cls }: { spec: V113RowSpec; setting
 // ---- The layered view's own blocks --------------------------------------------------------------------------------------------------------------
 export function V113Block({ id, title, cls, note, children }: { id: string; title: string; cls: V113Classes; note?: string; children: React.ReactNode }): React.ReactElement {
   return (
-    <div id={id} data-setting-key={id} className={`${cls.border} border rounded-lg p-4 space-y-4`} data-testid={`v113-block-${id}`}>
+    <div id={id} data-setting-key={id} className={`${cls.border} ${V116_UI.block}` /* V11.0 (SECTION 20BT): the shared look */} data-testid={`v113-block-${id}`}>
       <div>
-        <h4 className="text-lg font-bold">{title}</h4>
-        {note ? <div className="text-sm opacity-75 mt-1">{note}</div> : null}
+        <h4 className={V116_UI.title /* V11.0 (SECTION 20BT): the shared look */}>{title}</h4>
+        {note ? <div className={`${V116_UI.body} opacity-80 mt-1` /* V11.0 (SECTION 20BT) */}>{note}</div> : null}
       </div>
       {children}
     </div>
@@ -220946,7 +220968,7 @@ export function V113PresetOnlyList({ group, settings, showInactive, cls }: { gro
       <dl className="space-y-1 text-sm" data-testid={`v113-presets-only-${group}`}>
         {keys.map(key => (
           <div key={key} id={`settings-field-${key}`} data-setting-key={key} className="flex items-baseline justify-between gap-3">
-            <dt className="min-w-0">{v113SettingLabel(key)}<V99NoEffectChip settingKey={key} />{V110_SETTING_VERDICTS[key] === 'reset-only' ? <span className="ml-2 text-[10px] opacity-70">(only a reset changes it)</span> : null}</dt>
+            <dt className="min-w-0">{v113SettingLabel(key)}<V99NoEffectChip settingKey={key} />{V110_SETTING_VERDICTS[key] === 'reset-only' ? <span className={'ml-2 text-[11px] opacity-80' /* V11.0 (SECTION 20BT): the shared look */}>(only a reset changes it)</span> : null}</dt>
             <dd className="font-mono text-xs opacity-90 shrink-0" data-testid={`v113-value-${key}`}>{v113FormatValue(rec[key])}</dd>
           </div>
         ))}
@@ -220986,8 +221008,8 @@ export interface V113EssentialsProps {
 }
 function V113Choice({ e, cls, children }: { e: V113Essential; cls: V113Classes; children: React.ReactNode }): React.ReactElement {
   return (
-    <div id={`v113-essential-${e.id}`} data-setting-key={`v113-essential-${e.id}`} className={`${cls.border} border rounded-lg p-3 space-y-2`} data-testid={`v113-essential-${e.id}`}>
-      <div><div className="font-semibold">{e.title}</div><div className="text-xs opacity-75">{e.help}</div></div>
+    <div id={`v113-essential-${e.id}`} data-setting-key={`v113-essential-${e.id}`} className={`${cls.border} ${V116_UI.card}` /* V11.0 (SECTION 20BT): the shared look */} data-testid={`v113-essential-${e.id}`}>
+      <div><div className={V116_UI.name}>{e.title}</div><div className={`${V116_UI.meta} opacity-80`}>{e.help}</div></div>
       {children}
     </div>
   );
@@ -220995,9 +221017,9 @@ function V113Choice({ e, cls, children }: { e: V113Essential; cls: V113Classes; 
 function v113Toggle(label: string, on: boolean, onClick: () => void, cls: V113Classes, testId: string): React.ReactElement {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-sm">{label}</span>
+      <span className={V116_UI.body /* V11.0 (SECTION 20BT): the shared look */}>{label}</span>
       <button type="button" aria-pressed={on} aria-label={`${label}: ${on ? 'on' : 'off'}`} onClick={onClick} data-testid={testId}
-        className={`px-3 py-1.5 rounded font-semibold text-sm shrink-0 ${on ? `${cls.success} text-white` : cls.buttonSecondary}`}>{on ? 'ON' : 'OFF'}</button>
+        className={`${V116_UI.toggle} ${V116_UI.focus} ${on ? v116OnClass(cls.success) : cls.buttonSecondary}` /* V11.0 (SECTION 20BT): the ON state reads 4.5:1 or better */}>{on ? 'ON' : 'OFF'}</button>
     </div>
   );
 }
@@ -221007,7 +221029,7 @@ export function V113EssentialsPage(p: V113EssentialsProps): React.ReactElement {
   const rec = p.settings as unknown as Record<string, unknown>;
   const byId = (id: string) => V113_ESSENTIALS.find(e => e.id === id)!;
   const sel = (aria: string, value: string, options: ReadonlyArray<{ value: string; label: string }>, onChange: (v: string) => void, testId: string, disabled = false) => (
-    <select aria-label={aria} value={value} disabled={disabled} onChange={ev => onChange(ev.target.value)} data-testid={testId} className={`${p.cls.select} rounded px-3 py-2 w-full disabled:opacity-60`}>
+    <select aria-label={aria} value={value} disabled={disabled} onChange={ev => onChange(ev.target.value)} data-testid={testId} className={`${p.cls.select} ${V116_UI.field} w-full ${V116_UI.focus} disabled:opacity-60` /* V11.0 (SECTION 20BT): the shared look */}>
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   );
@@ -221016,7 +221038,7 @@ export function V113EssentialsPage(p: V113EssentialsProps): React.ReactElement {
     return (
       <label className="flex items-center gap-3 text-sm">
         <input type="range" aria-label={d ? d.label : key} min={d?.min ?? 0} max={d?.max ?? 100} step={d?.step ?? 1} value={value} disabled={disabled}
-          onChange={ev => p.w.simple(key, Number(ev.target.value))} className="flex-1" data-testid={`v113-essential-input-${key}`} />
+          onChange={ev => p.w.simple(key, Number(ev.target.value))} className={`flex-1 ${V116_UI.focus}` /* V11.0 (SECTION 20BT): the shared look */} data-testid={`v113-essential-input-${key}`} />
         <span className="w-28 text-right">{fmt(value)}</span>
       </label>
     );
@@ -221058,7 +221080,7 @@ export function V113EssentialsPage(p: V113EssentialsProps): React.ReactElement {
           <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="Tips while you play" data-testid="v113-essential-input-guidedLearning">
             {LEARNING_MODE_OPTIONS.map(o => (
               <button key={o.id} type="button" role="radio" aria-checked={p.learning === o.id} title={o.detail} onClick={() => p.w.learningMode(o.id)}
-                className={`px-2 py-1 rounded text-xs border ${p.learning === o.id ? `${p.cls.button} text-white` : `${p.cls.border} ${p.cls.buttonSecondary}`}`}>{o.label}</button>
+                className={`${V116_UI.buttonSmall} border ${V116_UI.focus} ${p.learning === o.id ? `${p.cls.button} text-white` : `${p.cls.border} ${p.cls.buttonSecondary}`}` /* V11.0 (SECTION 20BT): the shared look */}>{o.label}</button>
             ))}
           </div>
           {v113Toggle('Guided first match', rec.guidedFirstRunEnabled !== false, () => p.w.simple('guidedFirstRunEnabled', rec.guidedFirstRunEnabled === false), p.cls, 'v113-essential-input-guidedFirstRunEnabled')}
@@ -221071,7 +221093,7 @@ export function V113EssentialsPage(p: V113EssentialsProps): React.ReactElement {
           <div className={`flex ${p.cls.border} border rounded overflow-hidden w-fit`} role="radiogroup" aria-label="Theme" data-testid="v113-essential-input-theme">
             {V113_THEMES.map(t => (
               <button key={t} type="button" role="radio" aria-checked={p.theme === t} onClick={() => p.w.theme(t)}
-                className={`px-3 py-1.5 text-sm font-semibold capitalize ${p.theme === t ? `${p.cls.button} text-white` : p.cls.buttonSecondary}`}>{t}</button>
+                className={`${V116_UI.segment} capitalize ${V116_UI.focus} ${p.theme === t ? `${p.cls.button} text-white` : p.cls.buttonSecondary}` /* V11.0 (SECTION 20BT): the shared look */}>{t}</button>
             ))}
           </div>
         </V113Choice>
@@ -221086,6 +221108,7 @@ export function V113EssentialsPage(p: V113EssentialsProps): React.ReactElement {
           {range('soundVolume', vol, v => `${Math.round(v * 100)}%`, rec.soundEnabled === false)}
         </V113Choice>
       </div>
+      {v116EssentialsClassicRow(p.settings, p.w, p.cls)}{/* V11.0 (SECTION 20BU): the classic switch, after the 12 choices */}
     </V113Block>
   );
 }
@@ -221098,19 +221121,19 @@ export function V113GroupNav({ active, searching, showInactive, inactiveCount, o
 }): React.ReactElement {
   const counts = v113GroupKeyCounts();
   return (
-    <div className={`px-3 py-1.5 border-b ${cls.border} ${searching ? 'opacity-70' : ''} flex items-center gap-1.5 flex-wrap shrink-0`} role="tablist" aria-label="Settings groups" data-testid="v113-group-nav">
+    <div className={`px-3 py-2 border-b ${cls.border} ${searching ? 'opacity-70' : ''} flex items-center gap-2 flex-wrap shrink-0` /* V11.0 (SECTION 20BT): the shared look */} role="tablist" aria-label="Settings groups" data-testid="v113-group-nav">
       {V113_GROUPS.map(g => (
         <button key={g.id} type="button" role="tab" aria-selected={!searching && active === g.id} title={g.goal} onClick={() => onGroup(g.id)} data-testid={`v113-group-${g.id}`}
-          className={`px-3 py-1.5 rounded text-xs font-semibold whitespace-nowrap shrink-0 ${!searching && active === g.id ? `${cls.button} text-white font-bold` : cls.buttonSecondary}`}>
-          {g.icon} {g.label} <span className="opacity-70 font-normal">{counts[g.id]}</span>
+          className={`${V116_UI.tab} ${V116_UI.focus} ${!searching && active === g.id ? `${cls.button} text-white font-bold` : cls.buttonSecondary}` /* V11.0 (SECTION 20BT): the shared look */}>
+          {g.icon} {g.label} <span className="font-normal">{counts[g.id]}</span>{/* V11.0 (SECTION 20BT): the ON state and its count read 4.5:1 or better in every theme */}
         </button>
       ))}
       {extra ? extra : null /* V11.0 (SECTION 20BP) */}
       <label className="ml-auto flex items-center gap-1.5 text-xs whitespace-nowrap shrink-0" title="Settings that have no effect in this version">
-        <input type="checkbox" checked={showInactive} onChange={e => onShowInactive(e.target.checked)} data-testid="v113-show-inactive" />
+        <input type="checkbox" checked={showInactive} onChange={e => onShowInactive(e.target.checked)} className={V116_UI.focus} data-testid="v113-show-inactive" />{/* V11.0 (SECTION 20BT): the shared look */}
         Show inactive ({inactiveCount})
       </label>
-      <button type="button" onClick={onClassic} className={`px-2 py-1 rounded text-[11px] whitespace-nowrap shrink-0 ${cls.buttonSecondary}`} data-testid="v113-classic-layout" title="Back to the 11 classic tabs">Classic tabs</button>
+      <button type="button" onClick={onClassic} className={`${V116_UI.buttonSmall} whitespace-nowrap shrink-0 ${V116_UI.focus} ${cls.buttonSecondary}` /* V11.0 (SECTION 20BT): the shared look */} data-testid="v113-classic-layout" title="Back to the 11 classic tabs">Classic tabs</button>
     </div>
   );
 }
@@ -221180,7 +221203,7 @@ export function v113SettingsLayers(d: V113Deps): V113Layers {
           <div id={`settings-field-${V113_TEAMS_MASTER_KEY}`} data-setting-key={V113_TEAMS_MASTER_KEY} className="flex items-center justify-between gap-3">
             <div><div className="font-semibold">Enable Competitive AI</div><div className="text-sm opacity-75">Coordinated, harder Team Mode AI opponents and teammates.</div></div>
             <button type="button" aria-pressed={masterOn} data-testid="v113-teams-master" onClick={() => d.w.tracked('Team Brain', prev => ({ ...prev, teamCompetitiveAiEnabled: !prev.teamCompetitiveAiEnabled }))}
-              className={`px-4 py-2 rounded font-semibold shrink-0 ${masterOn ? `${d.cls.success} text-white` : d.cls.buttonSecondary}`}>{masterOn ? 'ON' : 'OFF'}</button>
+              className={`${V116_UI.toggle} ${V116_UI.focus} ${masterOn ? v116OnClass(d.cls.success) : d.cls.buttonSecondary}` /* V11.0 (SECTION 20BT): the ON state reads 4.5:1 or better */}>{masterOn ? 'ON' : 'OFF'}</button>
           </div>
         </V113Block>
       );
@@ -221199,7 +221222,7 @@ export function v113SettingsLayers(d: V113Deps): V113Layers {
       const view = v113BuildView({ group, showInactive, teamsOpen, searchMatchedIds });
       return v113CreateHub(view,
         home => rowsNode(v113RowsFor(home).filter(spec => view.keyVisible(spec.key, home))),
-        blockId => { const meta = V113_MOVED_BLOCKS[blockId]; return <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70 mb-2">{meta.title} · moved here from {meta.from}</div>; });
+        blockId => { const meta = V113_MOVED_BLOCKS[blockId]; return <div className={`${V116_UI.kicker} opacity-80 mb-2` /* V11.0 (SECTION 20BT): the shared look */}>{meta.title} · moved here from {meta.from}</div>; });
     },
     nav: (searching) => (
       <V113GroupNav active={group} searching={searching} showInactive={showInactive} inactiveCount={v113InactiveKeys().length} cls={d.cls} extra={d.navExtra} /* V11.0 (SECTION 20BP) */
@@ -221219,7 +221242,7 @@ export function V113LayoutSettingsBody({ on, onToggle, onClassName, offClassName
       <div id="settings-field-settingsLayersEnabled" data-setting-key="settingsLayersEnabled" className="flex items-center justify-between gap-3">
         <div>
           <div className="font-semibold text-sm">{V113_LABEL}</div>
-          <div className="opacity-75">{V113_DESCRIPTION} (Off by default)</div>
+          <div className="opacity-75">{V113_DESCRIPTION} (On by default)</div>{/* V11.0 (SECTION 20BU): on by default (UX-6) */}
         </div>
         <button type="button" id="v113-setting-settingsLayersEnabled" data-testid="v113-setting-settingsLayersEnabled" aria-pressed={on} aria-label={`${V113_LABEL}: ${on ? 'on' : 'off'}`}
           onClick={onToggle} className={`px-4 py-2 rounded font-semibold shrink-0 ${on ? onClassName : offClassName}`}>{on ? 'ON' : 'OFF'}</button>
@@ -221804,13 +221827,13 @@ export function runV113SettingsLayersSelfTests(): V9SelfTestResult[] {
   const top = (q: string, n: number) => v110FindSearch(index, q, n).map(h => h.entry.id);
 
   // ---- 1. The switch ------------------------------------------------------------------------------------------------------------------------
-  check('v113sl_01_switch_defaults_off', 'The layered Settings is off by default, only a real true turns it on, and it is read with === true', () => {
+  check('v113sl_01_switch_defaults_off', 'The layered Settings is on by default since UX-6 (it was off), only a real boolean changes it, and it is read with === true' /* V11.0 (SECTION 20BU): UX-6 */, () => {
     const d = createDefaultGameSettings();
     const junk = sanitizeGameSettings({ ...d, settingsLayersEnabled: 'yes' } as unknown as Partial<GameSettingsState>);
     const one = sanitizeGameSettings({ ...d, settingsLayersEnabled: 1 } as unknown as Partial<GameSettingsState>);
     const yes = sanitizeGameSettings({ ...d, settingsLayersEnabled: true });
-    return (DEFAULT_GAME_SETTINGS.settingsLayersEnabled === false && d.settingsLayersEnabled === false && junk.settingsLayersEnabled === false && one.settingsLayersEnabled === false
-      && yes.settingsLayersEnabled === true && !v113LayersOn(d) && !v113LayersOn({ settingsLayersEnabled: 'true' }) && !v113LayersOn(null) && v113LayersOn({ settingsLayersEnabled: true })) || json({ junk: junk.settingsLayersEnabled, one: one.settingsLayersEnabled });
+    return (DEFAULT_GAME_SETTINGS.settingsLayersEnabled === true /* V11.0 (SECTION 20BU): UX-6 */ && d.settingsLayersEnabled === true && junk.settingsLayersEnabled === true && one.settingsLayersEnabled === true
+      && yes.settingsLayersEnabled === true && v113LayersOn(d) && !v113LayersOn({ ...d, settingsLayersEnabled: false }) && !v113LayersOn({ settingsLayersEnabled: 'true' }) && !v113LayersOn(null) && v113LayersOn({ settingsLayersEnabled: true })) || json({ junk: junk.settingsLayersEnabled, one: one.settingsLayersEnabled });
   });
   check('v113sl_02_switch_is_a_profile_setting', 'It is a profile setting (remembered between visits, never written into or read back from a save), filed under Interface & Accessibility, and the catalog describes it', () => {
     const save: SaveGameData = JSON.parse(json(createV95SaveFixture()));
@@ -221820,7 +221843,7 @@ export function runV113SettingsLayersSelfTests(): V9SelfTestResult[] {
     const catalog = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(row => row.key === 'settingsLayersEnabled');
     return (V95_PROFILE_SCOPED_SETTING_KEYS.includes('settingsLayersEnabled') && !(V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('settingsLayersEnabled')
       && V99_PERSISTED_PROFILE_SETTING_KEYS.includes('settingsLayersEnabled') && !('settingsLayersEnabled' in restored) && sections.length === 1 && sections[0].id === V113_SECTION_ID
-      && sections[0].tab === 'interfaceAcc' && !/v\d|new in/i.test(sections[0].title) && Boolean(catalog) && catalog!.label === V113_LABEL && catalog!.defaultValue === false && isV113SettingKeyName('settingsLayersEnabled'))
+      && sections[0].tab === 'interfaceAcc' && !/v\d|new in/i.test(sections[0].title) && Boolean(catalog) && catalog!.label === V113_LABEL && catalog!.defaultValue === true /* V11.0 (SECTION 20BU): UX-6 */ && isV113SettingKeyName('settingsLayersEnabled'))
       || json({ restored: restored.settingsLayersEnabled, sections: sections.map(s => s.id), catalog: Boolean(catalog) });
   });
   check('v113sl_03_suite_registered', 'v113sl is registered once, quick tier, right after v110fa, and the suite manifest is whole', () => {
@@ -221831,42 +221854,43 @@ export function runV113SettingsLayersSelfTests(): V9SelfTestResult[] {
       && V101_SUITE_MANIFEST.some(([fn, where]) => fn === 'runV113SettingsLayersSelfTests' && where === 'v113sl') && problems.length === 0) || json({ spec: spec.length, problems });
   });
   check('v113sl_04_off_is_ux2', 'Off, nothing changes: no hub, no group bar, every Find Anything result is the very same object, and Help gets the very same shortcut list', () => {
-    const layers = v113SettingsLayers(deps(createDefaultGameSettings()));
-    const same = index.every(entry => v113LayeredEntry(entry, createDefaultGameSettings()) === entry);
-    return (!layers.on && layers.hub(null) === null && layers.hub(new Set(['gameplay.core'])) === null && same && v113HelpShortcuts(createDefaultGameSettings()) === KEYBOARD_SHORTCUTS) || json({ on: layers.on, same });
+    const off: GameSettingsState = { ...createDefaultGameSettings(), settingsLayersEnabled: false, findAnythingEnabled: false }; // V11.0 (SECTION 20BU): off is an explicit false now (both switches are on by default); Find Anything off as in UX-2, for Help's list
+    const layers = v113SettingsLayers(deps(off));
+    const same = index.every(entry => v113LayeredEntry(entry, off) === entry);
+    return (!layers.on && layers.hub(null) === null && layers.hub(new Set(['gameplay.core'])) === null && same && v113HelpShortcuts(off) === KEYBOARD_SHORTCUTS) || json({ on: layers.on, same });
   });
   check('v113sl_05_keys_defaults_scopes_kept', 'Every setting keeps its key, default and scope: V10.1\'s 599 defaults and its profile and match lists are unchanged, and the only new keys are the V11.0 switches', () => { // V11.0 (SECTION 20BP): three now
     const mapKeys = V110_MAP_SETTING_KEYS.slice().sort();
     const defaults = v113Fingerprint(json(mapKeys.map(k => [k, (DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>)[k]])));
-    const fresh = ['dockedPanelEnabled', 'findAnythingEnabled', 'settingsLayersEnabled', 'whatsInTheGameEnabled']; // V11.0 (SECTION 20BP): + What's in the game. V11.0 (SECTION 20BR): + the side panel
+    const fresh = ['classicLayoutV101', 'dockedPanelEnabled', 'findAnythingEnabled', 'settingsLayersEnabled', 'whatsInTheGameEnabled']; // V11.0 (SECTION 20BU): + the classic switch; // V11.0 (SECTION 20BP): + What's in the game. V11.0 (SECTION 20BR): + the side panel
     const profile = V95_PROFILE_SCOPED_SETTING_KEYS.filter(k => !fresh.includes(k)).slice().sort();
     const match = (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).filter(k => !fresh.includes(k)).slice().sort();
     const extra = keys.filter(k => !V110_MAP_SETTING_KEYS.includes(k));
     const f = V113_V101_FINGERPRINTS;
     return (defaults === f.defaults && v113Fingerprint(json(profile)) === f.profile && profile.length === f.profileCount && v113Fingerprint(json(match)) === f.match && match.length === f.matchCount
-      && json(extra.slice().sort()) === json(fresh) && keys.length === 603 /* V11.0 (SECTION 20BP): 601 + What's in the game. V11.0 (SECTION 20BR): + the side panel */) || json({ defaults, profile: v113Fingerprint(json(profile)), match: v113Fingerprint(json(match)), extra });
+      && json(extra.slice().sort()) === json(fresh) && keys.length === 604 /* V11.0 (SECTION 20BU): UX-6 */ /* V11.0 (SECTION 20BP): 601 + What's in the game. V11.0 (SECTION 20BR): + the side panel */) || json({ defaults, profile: v113Fingerprint(json(profile)), match: v113Fingerprint(json(match)), extra });
   });
 
   // ---- 2. The map, walked ---------------------------------------------------------------------------------------------------------------------
-  check('v113sl_06_walk_every_setting_one_home', 'Walk: each of the 603 settings has exactly one home, every home is a real section or a layered block, and no home names an unknown key', () => { // V11.0 (SECTION 20BP): + What's in the game's switch. V11.0 (SECTION 20BR): the count in the name follows the side panel
+  check('v113sl_06_walk_every_setting_one_home', 'Walk: each of the 604 settings has exactly one home, every home is a real section or a layered block, and no home names an unknown key', () => { // V11.0 (SECTION 20BP): + What's in the game's switch. V11.0 (SECTION 20BR): the count in the name follows the side panel. V11.0 (SECTION 20BU): + the classic switch (604)
     const seen = new Map<string, string[]>();
     Object.entries(V113_HOME_KEYS).forEach(([home, ks]) => ks.forEach(k => seen.set(k, [...(seen.get(k) || []), home])));
     const twice = [...seen.entries()].filter(([, homes]) => homes.length !== 1).map(([k]) => k);
     const missing = keys.filter(k => !seen.has(k));
     const unknown = [...seen.keys()].filter(k => !keys.includes(k));
     const badHomes = Object.keys(V113_HOME_KEYS).filter(home => !isV113PseudoId(home) && !sectionIds.includes(home));
-    return (twice.length === 0 && missing.length === 0 && unknown.length === 0 && badHomes.length === 0 && seen.size === 603 /* V11.0 (SECTION 20BP): + whatsInTheGameEnabled. V11.0 (SECTION 20BR): + dockedPanelEnabled */) || json({ twice, missing, unknown, badHomes });
+    return (twice.length === 0 && missing.length === 0 && unknown.length === 0 && badHomes.length === 0 && seen.size === 604 /* V11.0 (SECTION 20BU): UX-6 */ /* V11.0 (SECTION 20BP): + whatsInTheGameEnabled. V11.0 (SECTION 20BR): + dockedPanelEnabled */) || json({ twice, missing, unknown, badHomes });
   });
   check('v113sl_07_walk_every_section_grouped', 'Walk: all 89 sections (the map\'s 87 — 86 indexed and the Balance Lab — plus Find Anything\'s and Settings Layout\'s) belong to one of the six groups', () => {
     const missing = sectionIds.filter(id => !isV113GroupId(V113_SECTION_GROUP[id]));
     const stale = Object.keys(V113_SECTION_GROUP).filter(id => !sectionIds.includes(id));
-    const mapped = [...V110_MAP_SECTION_IDS, V110_FIND_SECTION_ID, V113_SECTION_ID].every(id => isV113GroupId(V113_SECTION_GROUP[id]));
-    return (missing.length === 0 && stale.length === 0 && mapped && Object.keys(V113_SECTION_GROUP).length === 91 /* V11.0 (SECTION 20BP): + What's in the game's section. V11.0 (SECTION 20BR): + the side panel's */ && V110_MAP_SECTION_IDS.length === 87) || json({ missing, stale });
+    const mapped = [...V110_MAP_SECTION_IDS, V110_FIND_SECTION_ID, V113_SECTION_ID, V116_SECTION_ID /* V11.0 (SECTION 20BU): UX-6 */].every(id => isV113GroupId(V113_SECTION_GROUP[id]));
+    return (missing.length === 0 && stale.length === 0 && mapped && Object.keys(V113_SECTION_GROUP).length === 92 /* V11.0 (SECTION 20BU): UX-6 */ /* V11.0 (SECTION 20BP): + What's in the game's section. V11.0 (SECTION 20BR): + the side panel's */ && V110_MAP_SECTION_IDS.length === 87) || json({ missing, stale });
   });
-  check('v113sl_08_group_counts', 'The five goal groups hold the map\'s counts: Match & rules 100, Your rival 104, Teams & automation 251, Help, screen & sound 62 (+ the new switch), Records & tools 61 (+ deterministicRngActive); Essentials 15', () => {
+  check('v113sl_08_group_counts', 'The five goal groups hold the map\'s counts: Match & rules 100, Your rival 104, Teams & automation 251, Help, screen & sound 62 (+ the new switch), Records & tools 61 (+ deterministicRngActive); Essentials 15 (+ the classic switch since UX-6)' /* V11.0 (SECTION 20BU): UX-6 */, () => {
     const counts = v113GroupKeyCounts();
     const internal = (V113_HOME_KEYS['v113.internal'] || []).length;
-    return (json(counts) === json({ essentials: 15, match: 100, rival: 101, teams: 251, help: 65, tools: 65 }) /* V11.0 (SECTION 20BR): + the side panel (Help) */ /* V11.0 (SECTION 20BP, 20BQ): + What's in the game (Help); the Balance Lab's three settings moved from Your rival to Records & tools */ && internal === 6 && v113HomeOf('deterministicRngActive') === 'advancedSystems.replaySafety'
+    return (json(counts) === json({ essentials: 16 /* V11.0 (SECTION 20BU): + the classic switch */, match: 100, rival: 101, teams: 251, help: 65, tools: 65 }) /* V11.0 (SECTION 20BR): + the side panel (Help) */ /* V11.0 (SECTION 20BP, 20BQ): + What's in the game (Help); the Balance Lab's three settings moved from Your rival to Records & tools */ && internal === 6 && v113HomeOf('deterministicRngActive') === 'advancedSystems.replaySafety'
       && v113HomeOf('settingsLayersEnabled') === V113_SECTION_ID) || json({ counts, internal });
   });
   check('v113sl_09_walk_single_homes_named_by_the_map', 'The misfiled 18 (§11.4) live where their control is or get a row there; the version switches are filed by goal; nothing keeps a second home', () => {
@@ -221944,7 +221968,7 @@ export function runV113SettingsLayersSelfTests(): V9SelfTestResult[] {
     return (json(V113_GROUP_IDS) === json(['essentials', 'match', 'rival', 'teams', 'help', 'tools']) && tabs.length === 6 && json(selected) === json(['v113-group-rival'])
       && Boolean(byTestId(tree, 'v113-show-inactive')) && Boolean(byTestId(tree, 'v113-classic-layout')) && json(V113_GROUPS.slice(1).map(g => g.label)) === json(['Match & rules', 'Your rival', 'Teams & automation', 'Help, screen & sound', 'Records & tools'])) || json({ tabs: tabs.length, selected });
   });
-  check('v113sl_16_sections_follow_their_group', 'A group shows exactly its own sections; the seven dissolved sections never show; a section the map does not know shows under Records & tools', () => {
+  check('v113sl_16_sections_follow_their_group', 'A group shows exactly its own sections; the eight dissolved sections never show (UX-6 adds one for the classic switch); a section the map does not know shows under Records & tools', () => { // V11.0 (SECTION 20BU): eight dissolved sections (+ the classic switch's)
     const wrong: string[] = [];
     V113_GROUP_IDS.forEach(g => {
       const v = view({ group: g });
@@ -221953,7 +221977,7 @@ export function runV113SettingsLayersSelfTests(): V9SelfTestResult[] {
         if (v.sectionVisible(id) !== want) wrong.push(`${g}:${id}`);
       });
     });
-    return (wrong.length === 0 && view({ group: 'tools' }).sectionVisible('someFuture.section') && !view({ group: 'match' }).sectionVisible('someFuture.section') && V113_DISSOLVED_SECTIONS.length === 7) || wrong.slice(0, 12).join(', ');
+    return (wrong.length === 0 && view({ group: 'tools' }).sectionVisible('someFuture.section') && !view({ group: 'match' }).sectionVisible('someFuture.section') && V113_DISSOLVED_SECTIONS.length === 8 /* V11.0 (SECTION 20BU): UX-6 */) || wrong.slice(0, 12).join(', ');
   });
   check('v113sl_17_teams_gate_closed', 'Until Team Mode or the master switch is on, Teams & automation shows the master switch and the three solo automation sections only (24 settings); the other 227 wait', () => {
     const v = view({ group: 'teams', teamsOpen: false });
@@ -222218,8 +222242,8 @@ export const V114_SURFACE_ID = 'whats_in_the_game';
 /** The V11.0 suites added by UX-4. */
 export const V114_SUITE_IDS: readonly string[] = ['v114wg'];
 /** True only when the page is switched on (a real true; anything else, including a missing value, is off). */
-export function v114PageOn(settings: { readonly whatsInTheGameEnabled?: unknown } | null | undefined): boolean {
-  return settings?.whatsInTheGameEnabled === true;
+export function v114PageOn(settings: { readonly whatsInTheGameEnabled?: unknown; readonly classicLayoutV101?: unknown } | null | undefined): boolean {
+  return settings?.whatsInTheGameEnabled === true && settings?.classicLayoutV101 !== true; // V11.0 (SECTION 20BU): the classic layout holds it off (its stored value is kept)
 }
 export function isV114SettingKeyName(key: unknown): boolean {
   return typeof key === 'string' && (V114_SETTING_KEYS as readonly string[]).includes(key);
@@ -222862,25 +222886,25 @@ function v114CardNode(c: V114CardView, p: V114ViewProps): React.ReactElement {
   const t = p.theme;
   const domId = v114CardDomId(c.id);
   const status = !c.on ? 'Off' : c.ready ? 'On' : 'On · not active yet';
-  const statusClass = !c.on ? t.buttonSecondary : c.ready ? `${t.success} text-white` : 'bg-amber-500 text-black';
+  const statusClass = !c.on ? t.buttonSecondary : c.ready ? v116OnClass(t.success) : 'bg-amber-500 text-black'; // V11.0 (SECTION 20BT): the ON state reads 4.5:1 or better
   return (
-    <article key={c.id} id={domId} aria-labelledby={`${domId}-name`} data-testid={domId} data-on={c.on ? 'true' : 'false'} className={`${t.border} border rounded-lg p-3 space-y-2 ${p.view.focus === c.id ? 'ring-2 ring-sky-500' : ''}`}>
+    <article key={c.id} id={domId} aria-labelledby={`${domId}-name`} data-testid={domId} data-on={c.on ? 'true' : 'false'} className={`${t.border} ${V116_UI.card} ${p.view.focus === c.id ? V116_UI.selected : ''}` /* V11.0 (SECTION 20BT): the shared look */}>
       <div className="flex items-start justify-between gap-2">
-        <h4 id={`${domId}-name`} className="font-semibold">{c.icon ? `${c.icon} ` : ''}{c.name}</h4>
-        <span className={`text-[10px] px-2 py-0.5 rounded-full shrink-0 font-semibold ${statusClass}`} data-testid={`v114-status-${c.id}`}>{status}</span>
+        <h4 id={`${domId}-name`} className={V116_UI.name}>{c.icon ? `${c.icon} ` : ''}{c.name}</h4>
+        <span className={`${V116_UI.chip} shrink-0 ${statusClass}` /* V11.0 (SECTION 20BT): the shared look */} data-testid={`v114-status-${c.id}`}>{status}</span>
       </div>
-      <p className="text-sm opacity-90">{c.sentence}</p>
+      <p className={`${V116_UI.body} opacity-90` /* V11.0 (SECTION 20BT): the shared look */}>{c.sentence}</p>
       <div className="space-y-1.5">
         {c.switches.map(s => (
           <div key={s.key} className="flex items-center justify-between gap-2 flex-wrap" data-setting-key={s.key}>
-            <div className="min-w-0 text-xs"><span className="font-semibold">{s.label}</span> <span className="font-mono opacity-60 break-all">{s.shown}</span></div>
+            <div className="min-w-0 text-xs"><span className="font-semibold">{s.label}</span> <span className="font-mono opacity-75 break-all">{s.shown}</span>{/* V11.0 (SECTION 20BT): the shared look */}</div>
             {s.readOnly ? (
               <span className="text-xs opacity-80 shrink-0" data-testid={`v114-readonly-${s.key}`}>{s.on ? 'On' : 'Off'} · {s.verdict === 'reset-only' ? 'only a reset changes it' : 'set by presets'}</span>
             ) : (
               <button type="button" aria-pressed={s.on} aria-label={`${s.label}: ${s.on ? 'on' : 'off'}`} disabled={s.disabled} title={s.reason || undefined}
                 aria-describedby={s.disabled && s.reasonNeed >= 0 ? `${domId}-need-${s.reasonNeed}` : undefined}
                 onClick={() => p.onToggle(c.id, s.key)} data-testid={`v114-switch-${s.key}`}
-                className={`px-3 py-1 rounded text-xs font-semibold shrink-0 disabled:opacity-50 ${s.on ? `${t.success} text-white` : t.buttonSecondary}`}>{s.on ? 'ON' : 'OFF'}</button>
+                className={`${V116_UI.buttonSmall} shrink-0 ${V116_UI.focus} ${V116_UI.disabled} ${s.on ? v116OnClass(t.success) : t.buttonSecondary}` /* V11.0 (SECTION 20BT): the ON state reads 4.5:1 or better */}>{s.on ? 'ON' : 'OFF'}</button>
             )}
           </div>
         ))}
@@ -222894,15 +222918,15 @@ function v114CardNode(c: V114CardView, p: V114ViewProps): React.ReactElement {
       <div className="flex items-center gap-2 flex-wrap pt-1">
         {c.settings ? (
           <button type="button" onClick={() => p.onSettings(c.id)} disabled={!c.settings.available} title={c.settings.available ? c.settings.where : c.settings.reason}
-            className={`${t.buttonSecondary} px-2.5 py-1 rounded text-xs font-semibold disabled:opacity-50`} data-testid={`v114-settings-${c.id}`}>{c.settings.label}</button>
+            className={`${t.buttonSecondary} ${V116_UI.buttonSmall} ${V116_UI.focus} ${V116_UI.disabled}` /* V11.0 (SECTION 20BT): the shared look */} data-testid={`v114-settings-${c.id}`}>{c.settings.label}</button>
         ) : null}
         {c.window ? (
           <button type="button" onClick={() => p.onOpen(c.id)} disabled={!c.window.available} title={c.window.available ? undefined : c.window.reason}
-            className={`${t.button} text-white px-2.5 py-1 rounded text-xs font-semibold disabled:opacity-50`} data-testid={`v114-open-${c.id}`}>{c.window.label}</button>
+            className={`${t.button} text-white ${V116_UI.buttonSmall} ${V116_UI.focus} ${V116_UI.disabled}` /* V11.0 (SECTION 20BT): the shared look */} data-testid={`v114-open-${c.id}`}>{c.window.label}</button>
         ) : null}
       </div>
-      {c.settings ? <div className="text-[10px] opacity-60" data-testid={`v114-where-${c.id}`}>{c.settings.where}{c.settings.available ? '' : ` · ${c.settings.reason}`}</div> : null}
-      {c.window && !c.window.available ? <div className="text-[10px] opacity-70" data-testid={`v114-open-reason-${c.id}`}>{c.window.reason}</div> : null}
+      {c.settings ? <div className="text-[11px] opacity-80" data-testid={`v114-where-${c.id}`}>{/* V11.0 (SECTION 20BT): the shared look */}{c.settings.where}{c.settings.available ? '' : ` · ${c.settings.reason}`}</div> : null}
+      {c.window && !c.window.available ? <div className="text-[11px] opacity-80" data-testid={`v114-open-reason-${c.id}`}>{/* V11.0 (SECTION 20BT): the shared look */}{c.window.reason}</div> : null}
     </article>
   );
 }
@@ -222912,7 +222936,7 @@ export function V114WhatsInTheGameView(p: V114ViewProps): React.ReactElement {
   const t = p.theme;
   const filterButton = (id: V114Filter, label: string, count: number): React.ReactElement => (
     <button key={id} type="button" role="radio" aria-checked={v.filter === id} onClick={() => p.onFilter(id)} data-testid={`v114-filter-${id}`}
-      className={`px-3 py-1.5 text-xs font-semibold ${v.filter === id ? `${t.button} text-white` : t.buttonSecondary}`}>{label} <span className="font-normal opacity-75">{count}</span></button>
+      className={`${V116_UI.segment} ${V116_UI.focus} ${v.filter === id ? `${t.button} text-white` : t.buttonSecondary}` /* V11.0 (SECTION 20BT): the shared look */}>{label} <span className="font-normal">{count}</span>{/* V11.0 (SECTION 20BT): the count at full strength (4.5:1 or better in every theme) */}</button>
   );
   return (
     <div className="fixed inset-0 flex items-start justify-center p-3 sm:p-4 pt-[5vh] bg-black/60" style={{ zIndex: p.zIndex }} data-testid="v114-backdrop"
@@ -222920,13 +222944,13 @@ export function V114WhatsInTheGameView(p: V114ViewProps): React.ReactElement {
       <div {...p.dialogProps} onKeyDown={p.onKeyDown} className={`${t.card} ${t.text || ''} ${t.border} border rounded-xl w-full max-w-5xl ${t.shadow} flex flex-col max-h-[90dvh] overflow-hidden`} data-testid="v114-page">
         <div className="flex items-start justify-between gap-3 px-4 pt-3 pb-2 border-b border-current border-opacity-10">
           <div className="min-w-0">
-            <h2 id={v101DialogTitleId(V114_SURFACE_ID)} className="font-bold text-lg">🧩 What's in the game</h2>
-            <p className={`text-xs ${t.textMuted || 'opacity-75'}`} data-testid="v114-count">{v.on} of {v.total} features are on. A switch on a card is the same switch as in Settings.</p>
+            <h2 id={v101DialogTitleId(V114_SURFACE_ID)} className={V116_UI.title}>🧩 What's in the game</h2>{/* V11.0 (SECTION 20BT): the shared look */}
+            <p className={`${V116_UI.meta} ${t.textMuted || 'opacity-80'}` /* V11.0 (SECTION 20BT): the shared look */} data-testid="v114-count">{v.on} of {v.total} features are on. A switch on a card is the same switch as in Settings.</p>
           </div>
-          <button type="button" onClick={p.onClose} aria-label="Close What's in the game" className={`${t.buttonSecondary} px-2 py-1 rounded text-xs shrink-0`} data-testid="v114-close">✕</button>
+          <button type="button" onClick={p.onClose} aria-label="Close What's in the game" className={`${t.buttonSecondary} ${V116_UI.icon} ${V116_UI.focus}` /* V11.0 (SECTION 20BT): the shared look */} data-testid="v114-close">✕</button>
         </div>
         <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-semibold" id="v114-filter-label">Show</span>
+          <span className={`${V116_UI.meta} font-semibold` /* V11.0 (SECTION 20BT): the shared look */} id="v114-filter-label">Show</span>
           <div role="radiogroup" aria-labelledby="v114-filter-label" className={`flex ${t.border} border rounded overflow-hidden`} data-testid="v114-filter">
             {filterButton('all', 'All', v.total)}{filterButton('on', 'On', v.on)}{filterButton('off', 'Off', v.total - v.on)}
           </div>
@@ -222935,22 +222959,22 @@ export function V114WhatsInTheGameView(p: V114ViewProps): React.ReactElement {
           {v.groups.map(g => (
             <section key={g.id} aria-labelledby={`v114-group-${g.id}`} data-testid={`v114-group-${g.id}`}>
               <div className="flex items-baseline justify-between gap-2 flex-wrap">
-                <h3 id={`v114-group-${g.id}`} className="font-bold text-base">{g.icon} {g.label}</h3>
-                <span className="text-xs opacity-75" data-testid={`v114-group-count-${g.id}`}>{g.on} of {g.total} on</span>
+                <h3 id={`v114-group-${g.id}`} className={V116_UI.heading}>{g.icon} {g.label}</h3>
+                <span className={`${V116_UI.meta} opacity-80` /* V11.0 (SECTION 20BT): the shared look */} data-testid={`v114-group-count-${g.id}`}>{g.on} of {g.total} on</span>
               </div>
-              <p className="text-xs opacity-75 mb-2">{g.goal}</p>
+              <p className={`${V116_UI.meta} opacity-80 mb-2` /* V11.0 (SECTION 20BT): the shared look */}>{g.goal}</p>
               {g.id === 'teams' && !v.teamsOpen && v.teamsHidden > 0 ? (
                 <div role="note" className={`${t.border} border border-dashed rounded-lg p-2 mb-2 text-xs`} data-testid="v114-teams-gate">
                   👥 {v.teamsHidden} more team features appear while a Team Mode match is running or Competitive AI is on (its card is below).
                 </div>
               ) : null}
-              {g.cards.length === 0 ? <div className="text-xs opacity-70">Nothing here with this filter.</div> : (
+              {g.cards.length === 0 ? <div className={`${V116_UI.meta} opacity-80` /* V11.0 (SECTION 20BT): the shared look */}>Nothing here with this filter.</div> : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{g.cards.map(c => v114CardNode(c, p))}</div>
               )}
             </section>
           ))}
         </div>
-        <div className="px-4 py-2 text-[11px] opacity-70 border-t border-current border-opacity-10">Esc closes · ⚙️ Settings opens a feature's home · Nothing here changes how a match plays</div>
+        <div className={V116_UI.foot}>{/* V11.0 (SECTION 20BT): the shared look */}Esc closes · ⚙️ Settings opens a feature's home · Nothing here changes how a match plays</div>
       </div>
     </div>
   );
@@ -222972,19 +222996,19 @@ export function V114MoreEntry({ onOpen, className, testId }: { onOpen: () => voi
 }
 /** The Settings group bar's button (the layered Settings; drawn only while the page is switched on). */
 export function V114NavButton({ onOpen, className }: { onOpen: () => void; className: string }): React.ReactElement {
-  return <button type="button" onClick={onOpen} className={`px-2 py-1 rounded text-[11px] font-semibold whitespace-nowrap shrink-0 ${className}`} data-testid="v114-nav-button" title="Every optional feature, with its switch">🧩 What's in the game</button>;
+  return <button type="button" onClick={onOpen} className={`${V116_UI.buttonSmall} whitespace-nowrap shrink-0 ${V116_UI.focus} ${className}` /* V11.0 (SECTION 20BT): the shared look */} data-testid="v114-nav-button" title="Every optional feature, with its switch">🧩 What's in the game</button>;
 }
 /** The body of Settings › Interface & Accessibility › 🧩 What's in the game: the switch's own row, and Open while it is on. */
-export function V114SettingsBody({ on, onToggle, onOpen, onClassName, offClassName }: { on: boolean; onToggle: () => void; onOpen: () => void; onClassName: string; offClassName: string }): React.ReactElement {
+export function V114SettingsBody({ on, onToggle, onOpen, onClassName, offClassName, canOpen }: { on: boolean; onToggle: () => void; onOpen: () => void; onClassName: string; offClassName: string; canOpen?: boolean /* V11.0 (SECTION 20BU): false while the classic layout holds the page off */ }): React.ReactElement {
   return (
     <div className="space-y-3 text-xs" data-testid="v114-settings">
       <div id="settings-field-whatsInTheGameEnabled" data-setting-key="whatsInTheGameEnabled" className="flex items-center justify-between gap-3">
         <div>
           <div className="font-semibold text-sm">{V114_LABEL}</div>
-          <div className="opacity-75">{V114_DESCRIPTION} (Off by default)</div>
+          <div className="opacity-75">{V114_DESCRIPTION} (On by default)</div>{/* V11.0 (SECTION 20BU): on by default (UX-6) */}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {on ? <button type="button" onClick={onOpen} className={`px-3 py-2 rounded font-semibold ${offClassName}`} data-testid="v114-settings-open">Open</button> : null}
+          {on && canOpen !== false ? <button type="button" onClick={onOpen} className={`px-3 py-2 rounded font-semibold ${offClassName}`} data-testid="v114-settings-open">Open</button> : null}{/* V11.0 (SECTION 20BU): no Open while the classic layout holds the page off */}
           <button type="button" id="v114-setting-whatsInTheGameEnabled" data-testid="v114-setting-whatsInTheGameEnabled" aria-pressed={on} aria-label={`${V114_LABEL}: ${on ? 'on' : 'off'}`}
             onClick={onToggle} className={`px-4 py-2 rounded font-semibold ${on ? onClassName : offClassName}`}>{on ? 'ON' : 'OFF'}</button>
         </div>
@@ -223159,13 +223183,13 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
   };
 
   // ---- 1. The switch ------------------------------------------------------------------------------------------------------------------------
-  check('v114wg_01_switch_defaults_off', "What's in the game is off by default, only a real true turns it on, and it is read with === true", () => {
+  check('v114wg_01_switch_defaults_off', "What's in the game is on by default since UX-6 (it was off), only a real boolean changes it, and it is read with === true" /* V11.0 (SECTION 20BU): UX-6 */, () => {
     const d = defaults();
     const junk = sanitizeGameSettings({ ...d, whatsInTheGameEnabled: 'yes' });
     const one = sanitizeGameSettings({ ...d, whatsInTheGameEnabled: 1 });
     const yes = sanitizeGameSettings({ ...d, whatsInTheGameEnabled: true });
-    return (DEFAULT_GAME_SETTINGS.whatsInTheGameEnabled === false && d.whatsInTheGameEnabled === false && junk.whatsInTheGameEnabled === false && one.whatsInTheGameEnabled === false
-      && yes.whatsInTheGameEnabled === true && !v114PageOn(d) && !v114PageOn({ whatsInTheGameEnabled: 'true' }) && !v114PageOn(null) && v114PageOn({ whatsInTheGameEnabled: true })) || json({ junk: junk.whatsInTheGameEnabled, one: one.whatsInTheGameEnabled });
+    return (DEFAULT_GAME_SETTINGS.whatsInTheGameEnabled === true /* V11.0 (SECTION 20BU): UX-6 */ && d.whatsInTheGameEnabled === true && junk.whatsInTheGameEnabled === true && one.whatsInTheGameEnabled === true
+      && yes.whatsInTheGameEnabled === true && v114PageOn(d) && !v114PageOn({ ...d, whatsInTheGameEnabled: false }) && !v114PageOn({ whatsInTheGameEnabled: 'true' }) && !v114PageOn(null) && v114PageOn({ whatsInTheGameEnabled: true })) || json({ junk: junk.whatsInTheGameEnabled, one: one.whatsInTheGameEnabled });
   });
   check('v114wg_02_switch_is_a_profile_setting', 'It is a profile setting (remembered between visits, never written into or read back from a save), filed under Interface & Accessibility with no version in its title, and the catalog describes it', () => {
     const save: SaveGameData = JSON.parse(json(createV95SaveFixture()));
@@ -223175,7 +223199,7 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
     const catalog = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(row => row.key === 'whatsInTheGameEnabled');
     return (V95_PROFILE_SCOPED_SETTING_KEYS.includes('whatsInTheGameEnabled') && !(V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('whatsInTheGameEnabled')
       && V99_PERSISTED_PROFILE_SETTING_KEYS.includes('whatsInTheGameEnabled') && !('whatsInTheGameEnabled' in restored) && sections.length === 1 && sections[0].id === V114_SECTION_ID
-      && sections[0].tab === 'interfaceAcc' && sections[0].title === V114_SECTION_TITLE && !/v\d|new in/i.test(sections[0].title) && Boolean(catalog) && catalog?.label === V114_LABEL && catalog?.defaultValue === false
+      && sections[0].tab === 'interfaceAcc' && sections[0].title === V114_SECTION_TITLE && !/v\d|new in/i.test(sections[0].title) && Boolean(catalog) && catalog?.label === V114_LABEL && catalog?.defaultValue === true /* V11.0 (SECTION 20BU): UX-6 */
       && isV114SettingKeyName('whatsInTheGameEnabled') && v113HomeOf('whatsInTheGameEnabled') === V114_SECTION_ID && v113GroupOfKey('whatsInTheGameEnabled') === 'help')
       || json({ restored: 'whatsInTheGameEnabled' in restored, sections: sections.map(s => s.id), catalog: Boolean(catalog), home: v113HomeOf('whatsInTheGameEnabled') });
   });
@@ -223187,7 +223211,7 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
       && V101_SUITE_MANIFEST.some(([fn, where]) => fn === 'runV114WhatsInTheGameSelfTests' && where === 'v114wg') && problems.length === 0) || json({ spec: spec.length, problems });
   });
   check('v114wg_04_off_changes_nothing', 'Off, nothing looks different: Find Anything searches the very same index (no card, no page), the surface table and the state the manager gets are the very same objects, and the Settings group bar draws exactly as before', () => {
-    const d = defaults();
+    const d: GameSettingsState = { ...defaults(), whatsInTheGameEnabled: false }; // V11.0 (SECTION 20BU): off is an explicit false now (on by default)
     const rows: ReadonlyArray<V101SurfaceFlagEntry> = [{ flags: ['showHelp'], surfaceId: 'help_shortcuts_modal' }];
     const ui = { showHelp: true };
     const offIds = v110FindResults(base, 'features', ctxFor(d, 'menu'), 200).map(r => r.entry.id);
@@ -223389,7 +223413,7 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
   });
 
   // ---- 5. The page: groups, filter, gate --------------------------------------------------------------------------------------------------
-  check('v114wg_20_no_default_changes', 'Building the page and its Find Anything results changes no setting: V10.1\'s 599 defaults are the same, and the only new keys are the four V11.0 switches', () => { // V11.0 (SECTION 20BR): the count in the name follows the side panel
+  check('v114wg_20_no_default_changes', 'Building the page and its Find Anything results changes no setting: V10.1\'s 599 defaults are the same, and the only new keys are the four V11.0 switches and the classic switch', () => { // V11.0 (SECTION 20BR): the count in the name follows the side panel. V11.0 (SECTION 20BU): + the classic switch
     const d = defaults();
     const before = json(d);
     page(d); page(pageOn()); v110FindResults(base, 'shop', ctxFor(pageOn()));
@@ -223397,7 +223421,7 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
     const values = new Map<string, unknown>(Object.entries(DEFAULT_GAME_SETTINGS));
     const fingerprint = v113Fingerprint(json(mapKeys.map(k => [k, values.get(k)])));
     const extra = keys.filter(k => !V110_MAP_SETTING_KEYS.includes(k)).sort();
-    return (json(d) === before && fingerprint === V113_V101_FINGERPRINTS.defaults && json(extra) === json(['dockedPanelEnabled', 'findAnythingEnabled', 'settingsLayersEnabled', 'whatsInTheGameEnabled']) /* V11.0 (SECTION 20BR): + the side panel */ && keys.length === 603) || json({ same: json(d) === before, fingerprint, extra });
+    return (json(d) === before && fingerprint === V113_V101_FINGERPRINTS.defaults && json(extra) === json(['classicLayoutV101', 'dockedPanelEnabled', 'findAnythingEnabled', 'settingsLayersEnabled', 'whatsInTheGameEnabled']) /* V11.0 (SECTION 20BU): UX-6 */ /* V11.0 (SECTION 20BR): + the side panel */ && keys.length === 604) || json({ same: json(d) === before, fingerprint, extra });
   });
   check('v114wg_21_five_goal_groups', 'The cards are grouped by the five goal groups, in Settings\' order, each card in exactly one group, with each group\'s own count of what is on', () => {
     const view = page(pageOn(), { teamMode: true });
@@ -223441,7 +223465,7 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
 
   // ---- 6. Links: the feature's home, and its window ---------------------------------------------------------------------------------------
   check('v114wg_25_links_to_the_home', "Every card links to its feature's home: the very Find Anything result of its first switch, the classic place while the layered Settings is off and the new home while it is on", () => {
-    const classic = pageOn();
+    const classic = pageOn({ settingsLayersEnabled: false }); // V11.0 (SECTION 20BU): the classic place = the layered Settings off (on by default now)
     const layered = pageOn({ settingsLayersEnabled: true });
     const wrong: string[] = [];
     V114_CARDS.forEach(c => {
@@ -223487,14 +223511,14 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
     const ids = features.map(e => e.id.replace(V114_FEATURE_FIND_PREFIX, ''));
     const pageEntry = merged.find(e => e.id === V114_PAGE_FIND_ID);
     const missing = V114_CARDS.filter(c => !v110FindResults(base, v114CardName(c), ctxFor(pageOn(), 'menu'), 400).some(r => r.entry.id === `${V114_FEATURE_FIND_PREFIX}${c.id}`)).map(c => c.id);
-    const offAny = V114_CARDS.some(c => v110FindResults(base, v114CardName(c), ctxFor(defaults(), 'menu'), 400).some(r => r.entry.kind === 'feature'));
+    const offAny = V114_CARDS.some(c => v110FindResults(base, v114CardName(c), ctxFor({ ...defaults(), whatsInTheGameEnabled: false } /* V11.0 (SECTION 20BU): UX-6 */, 'menu'), 400).some(r => r.entry.kind === 'feature'));
     return (features.length === 101 && json(ids) === json(V114_CARDS.map(c => c.id)) && pageEntry?.surfaceId === V114_SURFACE_ID && missing.length === 0 && !offAny && merged.length === base.length + 102
       && features.every(e => !e.settingKey) && V110_FIND_KIND_LABELS.feature === 'Feature') || json({ features: features.length, missing: missing.slice(0, 6), offAny });
   });
   check('v114wg_29_features_and_whats_in_the_game', '"features" and "what\'s in the game" (and "whats in the game", "What\'s in the game?") open the page as the first result while it is on — Ask does not jump ahead of it — and find its switch first while it is off', () => {
     const queries = ['features', "what's in the game", 'whats in the game', "What's in the game?", 'feature list'];
     const firstOn = queries.map(q => v110FindResults(base, q, ctxFor(pageOn(), 'game'))[0]?.entry.id);
-    const firstOff = queries.map(q => v110FindResults(base, q, ctxFor(defaults(), 'game'))[0]?.entry.id);
+    const firstOff = queries.map(q => v110FindResults(base, q, ctxFor({ ...defaults(), whatsInTheGameEnabled: false } /* V11.0 (SECTION 20BU): UX-6 */, 'game'))[0]?.entry.id);
     const asked = v110FindResults(base, 'what is the opponent doing?', ctxFor(pageOn(), 'game'))[0]?.entry.kind;
     return (firstOn.every(id => id === V114_PAGE_FIND_ID) && firstOff.every(id => id === 'setting:whatsInTheGameEnabled') && asked === 'ask' && v114IsPagePhrase("What's in the game?") && !v114IsPagePhrase('what is the opponent doing?')) || json({ firstOn, firstOff, asked });
   });
@@ -223525,7 +223549,7 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
       const opened = tracking.getState().activeBlockingModal;
       const patch = v101EscapeFlagPatch(V114_SURFACE_ID, V114_ESCAPE_FLAGS[V114_SURFACE_ID], { showWhatsInTheGame: true });
       const idle = new GlobalUISurfaceManager();
-      idle.syncWithUIState(v114SyncState({ showWhatsInTheGame: true }, defaults()));
+      idle.syncWithUIState(v114SyncState({ showWhatsInTheGame: true }, { ...defaults(), whatsInTheGameEnabled: false } /* V11.0 (SECTION 20BU): UX-6 */));
       const untracked = idle.getState().activeBlockingModal;
       return (Boolean(def) && def.tier === 6 && def.isBlocking && def.allowEscapeClose === true && UI_Z_INDEX_TIERS[6] < UI_Z_INDEX_TIERS[7] && v114SurfaceFlagTable(rows, false) === rows && onTable.length === 2
         && onTable[1].surfaceId === V114_SURFACE_ID && v114SurfaceFlagTable(onTable, true) === onTable && opened === V114_SURFACE_ID && untracked !== V114_SURFACE_ID && json(patch) === json({ showWhatsInTheGame: false })) || json({ def, opened, untracked, patch });
@@ -223566,7 +223590,7 @@ export function runV114WhatsInTheGameSelfTests(): V9SelfTestResult[] {
       ...V110_MAP_LAB_CARD_IDS.filter(id => !merged.some(e => e.kind === 'lab' && e.labCardId === id)),
       ...V114_MAP_CARDS.filter(([name]) => { const c = V114_CARDS.find(x => x.map === name); return !c || !merged.some(e => e.id === `${V114_FEATURE_FIND_PREFIX}${c.id}`); }).map(([name]) => name),
     ];
-    return (json(counts) === json([61, 28, 87, 599, 17, 48, 101]) && registry.length === 61 + 28 + 1 + 1 && sectionIds.length === 87 + 2 + 1 + 1 && keys.length === 599 + 4 /* V11.0 (SECTION 20BR): + the side panel's id, section and switch */ && lost.length === 0) || json({ counts, registry: registry.length, sections: sectionIds.length, lost: lost.slice(0, 10) });
+    return (json(counts) === json([61, 28, 87, 599, 17, 48, 101]) && registry.length === 61 + 28 + 1 + 1 && sectionIds.length === 87 + 2 + 1 + 1 + 1 && keys.length === 599 + 5 /* V11.0 (SECTION 20BU): + the classic switch's section and key */ /* V11.0 (SECTION 20BR): + the side panel's id, section and switch */ && lost.length === 0) || json({ counts, registry: registry.length, sections: sectionIds.length, lost: lost.slice(0, 10) });
   });
 
   // ---- 10. The labels and the Balance Lab's home ---------------------------------------------------------------------------------------------
@@ -223687,8 +223711,8 @@ export const V115_DOCK_WIDTH_CSS = 'clamp(22rem, 32vw, 30rem)';
 export const V115_DOCK_Z = 45;
 export const V115_TABPANEL_ID = 'v115-tabpanel';
 /** True only when the side panel is switched on (a real true; anything else, including a missing value, is off). */
-export function v115DockOn(settings: { readonly dockedPanelEnabled?: unknown } | null | undefined): boolean {
-  return settings?.dockedPanelEnabled === true;
+export function v115DockOn(settings: { readonly dockedPanelEnabled?: unknown; readonly classicLayoutV101?: unknown } | null | undefined): boolean {
+  return settings?.dockedPanelEnabled === true && settings?.classicLayoutV101 !== true; // V11.0 (SECTION 20BU): the classic layout holds it off (its stored value is kept)
 }
 export function isV115SettingKeyName(key: unknown): boolean {
   return typeof key === 'string' && (V115_SETTING_KEYS as readonly string[]).includes(key);
@@ -223921,7 +223945,8 @@ export function v115DialogChildren(element: React.ReactNode): React.ReactNode {
 export function v115DockedCss(): string {
   const w = V115_DOCK_WIDTH_CSS;
   return `[data-testid="v99-end-turn-chip"]{right:calc(${w} + 0.75rem) !important;max-width:calc(100vw - ${w} - 1.5rem) !important}`
-    + `[data-testid="notification-toast-container"][class*="right-"]:not([class*="right-auto"]){right:calc(${w} + 1rem) !important}`;
+    + `[data-testid="notification-toast-container"][class*="right-"]:not([class*="right-auto"]){right:calc(${w} + 1rem) !important}`
+    + v116BesidePanelCss(w); // V11.0 (SECTION 20BV, b): the floating widgets move to the panel's left; the classic quick bar and turn pill centre beside it
 }
 /** The play screen's padding while the panel is open (it sits beside the map, not over it); undefined (no style at all) otherwise. */
 export function v115RootStyle(open: boolean): React.CSSProperties | undefined {
@@ -223947,12 +223972,12 @@ export function V115DockedPanelView(p: V115PanelViewProps): React.ReactElement {
   const side = view.sides ? view.sides.find(s => s.selected) || null : null;
   return (
     <section ref={p.regionRef} role="region" aria-label="Side panel" data-testid="v115-docked-panel" data-tab={view.tab}
-      className={`fixed top-0 right-0 bottom-0 flex flex-col border-l ${theme.card} ${theme.border} ${theme.text} ${theme.shadow}`}
+      className={`fixed top-0 right-0 bottom-0 flex flex-col border-l ${v116SolidCard(theme.card)} ${theme.border} ${theme.text} ${theme.shadow}` /* V11.0 (SECTION 20BT): a solid card (no backdrop behind the panel) */}
       style={{ width: V115_DOCK_WIDTH_CSS, zIndex: V115_DOCK_Z }}>
       <div className="flex items-center justify-between gap-2 pl-2.5 pr-1.5 pt-1.5 shrink-0">
-        <span aria-hidden="true" className="text-[11px] font-semibold uppercase tracking-wide opacity-70">Side panel</span>
+        <span aria-hidden="true" className={`${V116_UI.kicker} opacity-80` /* V11.0 (SECTION 20BT): the shared look */}>Side panel</span>
         <button type="button" aria-label="Close side panel" title="Close the side panel (Esc)" data-testid="v115-close" onClick={p.onClose}
-          className={`${theme.buttonSecondary} rounded-md w-7 h-7 shrink-0 text-xs font-bold leading-none`}>✕</button>
+          className={`${theme.buttonSecondary} ${V116_UI.icon} ${V116_UI.focus}` /* V11.0 (SECTION 20BT): the shared look */}>✕</button>
       </div>
       <div className="flex items-stretch px-1.5 pt-1 pb-1 shrink-0">
         <div role="tablist" aria-label="Side panel tabs" aria-orientation="horizontal" className="flex flex-1 min-w-0 gap-0.5" onKeyDown={p.onTabsKey} data-testid="v115-tablist">
@@ -223962,7 +223987,7 @@ export function V115DockedPanelView(p: V115PanelViewProps): React.ReactElement {
               aria-keyshortcuts={t.hotkeys || undefined} tabIndex={t.selected ? 0 : -1}
               title={t.available ? `${t.label}${t.hotkeys ? ` (${t.hotkeys.split(' ').join(' / ')})` : ''}` : t.reason}
               data-testid={`v115-tab-${t.id}`} onClick={() => p.onTab(t.id)}
-              className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 rounded-lg px-0.5 py-1.5 text-[10.5px] font-semibold leading-tight tracking-tight ${t.selected ? `${theme.button} text-white` : theme.buttonSecondary}${t.available ? '' : ' opacity-50'}`}>
+              className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 rounded-lg px-0.5 py-1.5 text-[11px] font-semibold leading-tight tracking-tight ${V116_UI.focus} ${t.selected ? `${theme.button} text-white` : theme.buttonSecondary}${t.available ? '' : ' opacity-50'}` /* V11.0 (SECTION 20BT): the shared look */}>
               <span aria-hidden="true" className="text-base leading-none">{t.icon}</span>
               <span className="truncate max-w-full">{t.label}</span>
             </button>
@@ -223977,7 +224002,7 @@ export function V115DockedPanelView(p: V115PanelViewProps): React.ReactElement {
               aria-disabled={s.available ? undefined : true} aria-describedby={s.available ? undefined : `${v115SideDomId(s.side)}-why`}
               aria-keyshortcuts={s.hotkey || undefined} tabIndex={s.selected ? 0 : -1} title={s.available ? `${s.label} (${s.hotkey})` : s.reason}
               data-testid={`v115-side-${s.side}`} onClick={() => p.onSide(s.side)}
-              className={`flex-1 rounded-lg px-2 py-1 text-xs font-semibold ${s.selected ? `${theme.button} text-white` : theme.buttonSecondary}${s.available ? '' : ' opacity-50'}`}>
+              className={`flex-1 ${V116_UI.buttonSmall} ${V116_UI.focus} ${s.selected ? `${theme.button} text-white` : theme.buttonSecondary}${s.available ? '' : ' opacity-50'}` /* V11.0 (SECTION 20BT): the shared look */}>
               <span aria-hidden="true">{s.icon}</span> {s.label} <span className="opacity-70">({s.hotkey})</span>
             </button>
           ))}
@@ -224133,7 +224158,7 @@ export function V115SettingsBody({ on, onToggle, onClassName, offClassName }: { 
       <div id="settings-field-dockedPanelEnabled" data-setting-key="dockedPanelEnabled" className="flex items-center justify-between gap-3">
         <div>
           <div className="font-semibold text-sm">{V115_LABEL}</div>
-          <div className="opacity-75">{V115_DESCRIPTION} (Off by default)</div>
+          <div className="opacity-75">{V115_DESCRIPTION} (On by default)</div>{/* V11.0 (SECTION 20BU): on by default (UX-6) */}
         </div>
         <button type="button" id="v115-setting-dockedPanelEnabled" data-testid="v115-setting-dockedPanelEnabled" aria-pressed={on} aria-label={`${V115_LABEL}: ${on ? 'on' : 'off'}`}
           onClick={onToggle} className={`px-4 py-2 rounded font-semibold shrink-0 ${on ? onClassName : offClassName}`}>{on ? 'ON' : 'OFF'}</button>
@@ -224181,27 +224206,33 @@ export function useV115DockedPanel(p: V115DockProps): V115DockHandle {
   const input: V115AvailabilityInput = { humanTurn: p.humanTurn, firstRun: p.firstRun, investmentsOn: p.settings.investmentsEnabled === true, investmentsWhere: mode === 'off' ? '' : v115InvestmentsWhere(p.settings) };
   const flags = V115_WINDOWS.map(w => p.uiState[w.flag] === true);
   const flagKey = flags.map(f => (f ? '1' : '0')).join('');
+  // V11.0 (SECTION 20BV, e): the two effects below read the latest props through this ref, so their dependency lists are complete (no lint suppression).
+  const latest = useRef({ props: p, input });
+  latest.current = { props: p, input };
+  const dockOpenAsked = p.uiState.v115DockOpen === true;
   // Docked, one window at a time: a flag left up (a screen widened while two windows were open) is lowered.
   useEffect(() => {
     if (mode !== 'docked') return;
-    const open = v115OpenWindows(p.uiState);
+    const open = V115_WINDOWS.filter((_, i) => flagKey.charAt(i) === '1'); // V11.0 (SECTION 20BV, e): the open windows, read from flagKey (the same flags v115OpenWindows reads)
     if (open.length < 2) return;
-    const keep = v115ActiveWindow(p.uiState);
+    const { props } = latest.current; // V11.0 (SECTION 20BV, e)
+    const keep = v115ActiveWindow(props.uiState); // V11.0 (SECTION 20BV, e): the latest props, from the ref
     const patch: V115DockUiState = {};
     open.forEach(w => { if (w !== keep) patch[w.flag] = false; });
-    p.updateUiState(patch);
-  }, [mode, flagKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    props.updateUiState(patch);
+  }, [mode, flagKey]); // V11.0 (SECTION 20BV, e): complete (was an eslint-disable-line)
   // The panel's own Find Anything result: open the tab last open (or the first that can open now).
   useEffect(() => {
-    if (mode === 'off' || p.uiState.v115DockOpen !== true) return;
-    const remembered = v115RememberedWindow(p.uiState);
-    const target = v115TabTarget(remembered.tab, p.uiState, input);
-    const fallback = target.win ? null : V115_TABS.map(t => v115TabTarget(t.id, p.uiState, input).win).find((w): w is V115Window => Boolean(w)) || null;
+    if (mode === 'off' || !dockOpenAsked) return;
+    const { props, input: now } = latest.current; // V11.0 (SECTION 20BV, e): the latest props and availability
+    const remembered = v115RememberedWindow(props.uiState);
+    const target = v115TabTarget(remembered.tab, props.uiState, now);
+    const fallback = target.win ? null : V115_TABS.map(t => v115TabTarget(t.id, props.uiState, now).win).find((w): w is V115Window => Boolean(w)) || null;
     const win = target.win || fallback;
     const patch: V115DockUiState = win ? { ...v115OpenPatch(win), v115DockOpen: false } : { v115DockOpen: false };
-    if (!win) p.notify(target.reason || V115_NOT_YOUR_TURN);
-    p.updateUiState(patch);
-  }, [mode, p.uiState.v115DockOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!win) props.notify(target.reason || V115_NOT_YOUR_TURN);
+    props.updateUiState(patch);
+  }, [mode, dockOpenAsked]); // V11.0 (SECTION 20BV, e): complete (was an eslint-disable-line)
   const holder: V115Held[] = []; // filled while renderGame draws the six windows' slots, read when the panel is drawn after it (same render)
   const slot = (key: V115WindowKey, element: React.ReactElement): React.ReactNode => v115SlotFor(mode, holder, key, element);
   const open = (win: V115Window | null, reason: string) => {
@@ -224304,13 +224335,13 @@ export function runV115DockedPanelSelfTests(): V9SelfTestResult[] {
   };
 
   // ---- 1. The switch ------------------------------------------------------------------------------------------------------------------------
-  check('v115dp_01_switch_defaults_off', 'The side panel is off by default, only a real true turns it on, and it is read with === true', () => {
+  check('v115dp_01_switch_defaults_off', 'The side panel is on by default since UX-6 (it was off), only a real boolean changes it, and it is read with === true' /* V11.0 (SECTION 20BU): UX-6 */, () => {
     const d = defaults();
     const junk = sanitizeGameSettings({ ...d, dockedPanelEnabled: 'yes' });
     const one = sanitizeGameSettings({ ...d, dockedPanelEnabled: 1 });
     const yes = sanitizeGameSettings({ ...d, dockedPanelEnabled: true });
-    return (DEFAULT_GAME_SETTINGS.dockedPanelEnabled === false && d.dockedPanelEnabled === false && junk.dockedPanelEnabled === false && one.dockedPanelEnabled === false
-      && yes.dockedPanelEnabled === true && !v115DockOn(d) && !v115DockOn({ dockedPanelEnabled: 'true' }) && !v115DockOn(null) && v115DockOn({ dockedPanelEnabled: true })) || json({ junk: junk.dockedPanelEnabled, one: one.dockedPanelEnabled });
+    return (DEFAULT_GAME_SETTINGS.dockedPanelEnabled === true /* V11.0 (SECTION 20BU): UX-6 */ && d.dockedPanelEnabled === true && junk.dockedPanelEnabled === true && one.dockedPanelEnabled === true
+      && yes.dockedPanelEnabled === true && v115DockOn(d) && !v115DockOn({ ...d, dockedPanelEnabled: false }) && !v115DockOn({ dockedPanelEnabled: 'true' }) && !v115DockOn(null) && v115DockOn({ dockedPanelEnabled: true })) || json({ junk: junk.dockedPanelEnabled, one: one.dockedPanelEnabled });
   });
   check('v115dp_02_switch_is_a_profile_setting', 'It is a profile setting (remembered between visits, never written into or read back from a save), filed under Interface & Accessibility with no version in its title, in the Help, screen & sound group, and the catalog describes it', () => {
     const save: SaveGameData = JSON.parse(json(createV95SaveFixture()));
@@ -224320,7 +224351,7 @@ export function runV115DockedPanelSelfTests(): V9SelfTestResult[] {
     const catalog = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(row => row.key === 'dockedPanelEnabled');
     return (V95_PROFILE_SCOPED_SETTING_KEYS.includes('dockedPanelEnabled') && !inList(V95_MATCH_SCOPED_SETTING_KEYS, 'dockedPanelEnabled')
       && V99_PERSISTED_PROFILE_SETTING_KEYS.includes('dockedPanelEnabled') && !('dockedPanelEnabled' in restored) && sections.length === 1 && sections[0].id === V115_SECTION_ID
-      && sections[0].tab === 'interfaceAcc' && sections[0].title === V115_SECTION_TITLE && !/v\d|new in/i.test(sections[0].title) && Boolean(catalog) && catalog?.label === V115_LABEL && catalog?.defaultValue === false
+      && sections[0].tab === 'interfaceAcc' && sections[0].title === V115_SECTION_TITLE && !/v\d|new in/i.test(sections[0].title) && Boolean(catalog) && catalog?.label === V115_LABEL && catalog?.defaultValue === true /* V11.0 (SECTION 20BU): UX-6 */
       && isV115SettingKeyName('dockedPanelEnabled') && v113HomeOf('dockedPanelEnabled') === V115_SECTION_ID && v113GroupOfKey('dockedPanelEnabled') === 'help' && v113SettingLabel('dockedPanelEnabled') === V115_LABEL)
       || json({ restored: 'dockedPanelEnabled' in restored, sections: sections.map(s => s.id), catalog: Boolean(catalog), home: v113HomeOf('dockedPanelEnabled') });
   });
@@ -224338,14 +224369,15 @@ export function runV115DockedPanelSelfTests(): V9SelfTestResult[] {
     const flags = v99ShortcutOpenFlags(next);
     const { element } = fakeWindow(() => undefined);
     const held: V115Held[] = [];
-    const drawn = v115SlotFor(v115DockMode(defaults(), true, true), held, 'travel', element);
+    const off: GameSettingsState = { ...defaults(), dockedPanelEnabled: false }; // V11.0 (SECTION 20BU): off is an explicit false now (on by default)
+    const drawn = v115SlotFor(v115DockMode(off, true, true), held, 'travel', element);
     return (v115DockNormalize(prev, next, 'off') === next && v115SurfaceFlagTable(rows, false) === rows && v115SyncState(next, 'off') === next && v115ShortcutOpenFlags(flags, 'off') === flags
-      && json(v115RescuePatch('off')) === '{}' && v115IndexFor(base, defaults()) === base && drawn === element && held.length === 0 && v115RootStyle(false) === undefined)
+      && json(v115RescuePatch('off')) === '{}' && v115IndexFor(base, off) === base && drawn === element && held.length === 0 && v115RootStyle(false) === undefined) // V11.0 (SECTION 20BU): off is an explicit false
       || json({ normalize: v115DockNormalize(prev, next, 'off') === next, rescue: v115RescuePatch('off') });
   });
   check('v115dp_05_where_the_panel_is_used', 'The panel is used only with the switch on, in a match, on a screen at least 1024 px wide; narrower (or outside a match) the six open as windows, and off the game is as before', () => {
     const on = dockOn();
-    const modes = [v115DockMode(defaults(), true, true), v115DockMode(on, true, true), v115DockMode(on, true, false), v115DockMode(on, false, true), v115DockMode(null, true, true)];
+    const modes = [v115DockMode({ ...defaults(), dockedPanelEnabled: false } /* V11.0 (SECTION 20BU): UX-6 */, true, true), v115DockMode(on, true, true), v115DockMode(on, true, false), v115DockMode(on, false, true), v115DockMode(null, true, true)];
     const widths = [1023, 1024, 1280, 390, Number.NaN].map(v115WideEnough);
     return (json(modes) === json(['off', 'docked', 'windows', 'windows', 'off']) && json(widths) === json([false, true, true, false, false]) && V115_DOCK_MIN_WIDTH === 1024 && V115_WIDE_QUERY === '(min-width: 1024px)') || json({ modes, widths });
   });
@@ -224627,7 +224659,7 @@ export function runV115DockedPanelSelfTests(): V9SelfTestResult[] {
     if (entry) v110RunRoute(entry.route, routerFor(p => { patch = { ...patch, ...p }; }));
     const rival = entry ? v110FindAvailability(entry, { ...ctx, humanTurn: false }).available : true;
     return (Boolean(entry) && index.length === base.length + 1 && v115IndexFor(index, on) === index && entry?.surfaceId === V115_SURFACE_ID && hits.every(h => h[0] === V115_FIND_ID) && !offHits.includes(V115_FIND_ID) && offHits[0] === 'setting:dockedPanelEnabled'
-      && json(patch) === json({ v115DockOpen: true, showFindAnything: false }) && !rival && v115IndexFor(base, defaults()) === base) || json({ entry: Boolean(entry), hits, patch, rival });
+      && json(patch) === json({ v115DockOpen: true, showFindAnything: false }) && !rival && v115IndexFor(base, { ...defaults(), dockedPanelEnabled: false } /* V11.0 (SECTION 20BU): UX-6 */) === base) || json({ entry: Boolean(entry), hits, patch, rival });
   });
   check('v115dp_32_switch_row_and_settings_section', 'The switch has its own row in Settings › Interface & Accessibility › 📑 Side panel (off by default), found by its key and its label, and its section is in the Help, screen & sound group', () => {
     const row = v113Tree(V115SettingsBody({ on: false, onToggle: () => undefined, onClassName: 'on', offClassName: 'off' }));
@@ -224660,13 +224692,13 @@ export function runV115DockedPanelSelfTests(): V9SelfTestResult[] {
       ...V115_WINDOWS.filter(w => !UI_SURFACE_REGISTRY[w.surfaceId] || !targets.has(w.surfaceId)).map(w => w.surfaceId),
       ...['c', 't', 'r', 'm', 'w'].filter(k => !Object.keys(KEYBOARD_SHORTCUTS).includes(k)),
     ];
-    return (json(counts) === json([61, 28, 87, 599, 17, 48, 101]) && registry.length === 61 + 28 + 1 + 1 && sectionIds.length === 87 + 2 + 1 + 1 && keys.length === 599 + 4 && targets.has(V115_SURFACE_ID) && lost.length === 0)
+    return (json(counts) === json([61, 28, 87, 599, 17, 48, 101]) && registry.length === 61 + 28 + 1 + 1 && sectionIds.length === 87 + 2 + 1 + 1 + 1 && keys.length === 599 + 5 /* V11.0 (SECTION 20BU): + the classic switch's section and key */ && targets.has(V115_SURFACE_ID) && lost.length === 0)
       || json({ counts, registry: registry.length, sections: sectionIds.length, keys: keys.length, lost: lost.slice(0, 10) });
   });
-  check('v115dp_34_labels_unique', 'The switch has its own label, and no two of the 603 settings share one', () => {
+  check('v115dp_34_labels_unique', 'The switch has its own label, and no two of the 604 settings share one' /* V11.0 (SECTION 20BU): UX-6 */, () => {
     const labels = keys.map(v113SettingLabel);
     const dup = labels.filter((l, i) => labels.indexOf(l) !== i);
-    return (dup.length === 0 && v113SettingLabel('dockedPanelEnabled') === V115_LABEL && labels.length === 603) || json({ dup: dup.slice(0, 6) });
+    return (dup.length === 0 && v113SettingLabel('dockedPanelEnabled') === V115_LABEL && labels.length === 604) || json({ dup: dup.slice(0, 6) }); // V11.0 (SECTION 20BU): 604 labels
   });
   check('v115dp_35_no_clock_no_random', 'The panel reads no clock and draws no random number: its functions name none, and building views, normalising and searching leave every random stream where it was', () => {
     const fns: Array<(...args: never[]) => unknown> = [v115DockNormalize, v115DockMode, v115WindowAvailability, v115TabTarget, v115BuildPanelView, v115NextIndex, v115DialogChildren, v115SurfaceFlagTable, v115SyncState, v115RescuePatch, v115ShortcutOpenFlags, v115IndexFor, v115FindEntry, V115DockedPanelView, V115DockedPanel, useV115DockedPanel, useV115WideScreen, v115InvestmentsWhere];
@@ -224727,6 +224759,913 @@ export function runV115DockedPanelSelfTests(): V9SelfTestResult[] {
     const [plain] = runV95ExistingSuite(spec([ok, ok]));
     return (withSkip.passed && /^1\/2 passed \(1 skipped\)/.test(withSkip.detail) && withSkip.actual === '1/2' && !withFail.passed && /failing: c/.test(withFail.detail) && !/failing: b/.test(withFail.detail)
       && !onlySkips.passed && plain.passed && plain.detail === '2/2 passed') || json({ withSkip: withSkip.detail, withFail: withFail.detail, onlySkips: onlySkips.passed, plain: plain.detail });
+  });
+  return results;
+}
+
+// ============================================================================
+// SECTION 20BT: V11.0 ONE LOOK FOR THE NEW SCREENS — SPACING, TYPE SIZES, BUTTONS AND FOCUS RINGS (UX-6)
+// ============================================================================
+// Package UX-6. One small set of shared styles for the V11.0 screens: Find Anything, ⭐ Essentials and the group bar, What's in the
+// game, and the side panel (and the switch-over's own notice and rows). Colours still come from the theme the game already resolves
+// (resolveThemeStyles), so these classes only set spacing, type sizes, button shapes, the selected-option mark and the keyboard
+// focus ring; they hold in the Dark, Light, Retro and System themes and in both visual modes.
+//   • Type sizes are rem-based (text-xs and up) or 11 px, the smallest size the Text size setting scales (SECTION 20BF), so every
+//     word on these screens grows with Text size up to 150%. Nothing here is smaller than 11 px.
+//   • The focus ring shows for keyboard focus only (focus-visible), as a 2 px sky-600 outline 2 px out: 4.1:1 against white and 3.6:1
+//     or better against the dark cards, above the 3:1 a focus mark needs. The selected option uses the same colour.
+//   • Motion: colour changes only, and none at all with Reduce Motion (motion-reduce).
+// The classic layout (SECTION 20BU) draws none of these screens, so V10.1's look is untouched.
+// ============================================================================
+
+/** The shared styles of the V11.0 screens (class strings; colours come from the theme). */
+export const V116_UI = {
+  /** A screen's heading (Find Anything, What's in the game, a Settings block). */
+  title: 'text-lg font-bold leading-tight',
+  /** A group's heading (a goal group of cards, the notice). */
+  heading: 'text-base font-bold leading-snug',
+  /** The name of a card, a result, a row or a choice. */
+  name: 'text-sm font-semibold leading-snug',
+  /** A sentence. */
+  body: 'text-sm leading-relaxed',
+  /** Where something is, a count, a hint (the colour or opacity comes with it). */
+  meta: 'text-xs leading-snug',
+  /** A small label above or beside a name (a result's kind, the panel's title). */
+  kicker: 'text-[11px] font-semibold uppercase tracking-wide',
+  /** The bands of a dialog or the panel: the head, the body and the foot. */
+  head: 'px-4 pt-3 pb-2',
+  band: 'px-4 py-2',
+  foot: 'px-4 py-2 text-[11px] opacity-80 border-t border-current border-opacity-10',
+  /** A card or a choice, and an option in a list. */
+  card: 'border rounded-xl p-3 space-y-2',
+  block: 'border rounded-xl p-4 space-y-4',
+  option: 'rounded-lg px-3 py-2',
+  /** Buttons: one shape in three sizes, a square icon button, a segment of a switch group, a status chip. */
+  button: 'inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold min-h-[2.25rem]',
+  buttonSmall: 'inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold min-h-[2rem]',
+  toggle: 'inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold min-w-[4.5rem] min-h-[2.25rem] shrink-0',
+  icon: 'inline-flex items-center justify-center rounded-lg w-8 h-8 text-sm font-bold leading-none shrink-0',
+  segment: 'inline-flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-semibold min-h-[2rem]',
+  tab: 'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 min-h-[2rem]',
+  chip: 'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold',
+  field: 'rounded-lg px-3 py-2 text-sm min-h-[2.25rem]',
+  /** The keyboard focus ring (focus-visible only). The game's own focus rule (SECTION 20P) sets its width and, with High-contrast focus rings on
+   *  (the default), its yellow ring and dark halo; in the normal mode this class wins over that rule's sky-400 (about 2:1 on white) with sky-600. */
+  focus: 'focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600 [[data-v94]_&]:focus-visible:outline-sky-600',
+  /** The option that is selected or asked for in a list (a Find Anything result, a card Find Anything opened). */
+  selected: 'ring-2 ring-sky-600 bg-sky-500/10',
+  disabled: 'disabled:opacity-50 disabled:cursor-not-allowed',
+  motion: 'transition-colors duration-150 motion-reduce:transition-none',
+} as const;
+export type V116UiToken = keyof typeof V116_UI;
+/** The colours the focus ring and the selected mark are drawn in (sky-600), and the card colours they are checked against. */
+export const V116_FOCUS_HEX = '#0284c7';
+export const V116_CARD_HEXES: Readonly<Record<string, string>> = { white: '#ffffff', 'gray-50': '#f9fafb', 'amber-50': '#fffbeb', 'gray-800': '#1f2937', 'gray-900': '#111827', 'slate-900': '#0f172a', 'slate-950': '#020617' };
+/** WCAG contrast of two #rrggbb colours (1 to 21). */
+export function v116Contrast(a: string, b: string): number {
+  const lum = (hex: string): number => {
+    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+    if (!m) return 0;
+    const ch = (s: string): number => { const c = parseInt(s, 16) / 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    return 0.2126 * ch(m[1]) + 0.7152 * ch(m[2]) + 0.0722 * ch(m[3]);
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100;
+}
+/** The ON state of a switch on the new screens: the theme's success colour with white text, darkened where white on it would read below
+ *  4.5:1 (the Dark theme's green-600 is 3.3:1 and the Light theme's green-500 2.3:1; green-700 is 5.0:1). Retro's emerald-700 (5.5:1) is kept. */
+export function v116OnClass(success: string): string {
+  return `${String(success || '').replace(/\bbg-green-(500|600)\b/g, 'bg-green-700')} text-white`;
+}
+/** The side panel's card, solid: the panel sits beside the map with no dimmed backdrop behind it, so a see-through card (Retro's
+ *  bg-amber-900/90; the Dark and Light cards are solid already) would let the play screen show through the old windows' text, which
+ *  then reads lower than in its own window. The colour is kept, only its see-through step is dropped; a solid card comes back as it is. */
+export function v116SolidCard(card: string): string {
+  return String(card || '').replace(/\b(bg-(?:[a-z]+-\d{2,3}|white|black))\/\d{1,3}(?![\w/-])/g, '$1');
+}
+
+// ============================================================================
+// SECTION 20BU: V11.0 SWITCH-OVER — THE NEW LAYOUT FOR EVERYONE, ONE MOVE FOR A RETURNING PLAYER, ONE CLASSIC SWITCH (UX-6)
+// ============================================================================
+// Package UX-6, the last of the round. The four layout switches of UX-2 to UX-5 (findAnythingEnabled, settingsLayersEnabled,
+// whatsInTheGameEnabled, dockedPanelEnabled) are ON by default: a new player starts with Find Anything, ⭐ Essentials and the five
+// goal groups, What's in the game and the side panel. No other default changes.
+//   • A returning player (this browser holds a first-run record or stored preferences from an earlier visit) is moved to the new
+//     layout ONCE: on the first visit after UX-6 the four switches are set on and the main menu shows a one-time notice that names
+//     the classic switch. A small record (V116_SWITCH_OVER_STORAGE_KEY) remembers the move and the notice, so neither happens again,
+//     and from then on the player's own choices stick (the profile store keeps an "off" now: it differs from the new default).
+//   • One classic switch, classicLayoutV101 (boolean, false, profile, remembered between visits, never in a save). While it is on the
+//     four predicates (v110FindAnythingOn, v113LayersOn, v114PageOn, v115DockOn) read false, so every V11.0 screen is off and the game
+//     looks and works as V10.1 did. The four switches' stored values are never touched, so turning it off brings back what the
+//     player had. It is on the main menu, in ⭐ Essentials, in Find Anything, and in Settings › Interface & Accessibility › 🕰️ Classic
+//     layout (where the classic view draws it beside the four switches' own rows).
+//   • With the classic switch off, the two pairs of twin titles in old sections read the shared label table (Travel Discipline
+//     Strength; Floating UI Conflict Control Options); with it on they keep their V10.1 titles (the user's decision: the twins only).
+// How a match plays does not change: the rules stamp stays 1010, nothing here is in a save, and no logic reads the clock or draws
+// from a random stream. Suite v116so (runV116SwitchOverSelfTests, SECTION 20BW).
+// ============================================================================
+
+// ---- The classic switch -------------------------------------------------------------------------------------------------------------------------
+//   classicLayoutV101  boolean, false  NEW (UX-6), profile setting: on = the four V11.0 layout switches read as off (their stored values
+//                                      are kept) and the game looks and works as V10.1 did. Off = each switch decides for itself.
+export type V116BooleanSettingKey = 'classicLayoutV101';
+export const V116_SETTING_KEYS: readonly V116BooleanSettingKey[] = ['classicLayoutV101'];
+export const V116_SECTION_ID = 'interface.classicLayout';
+export const V116_SECTION_TITLE = '🕰️ Classic layout';
+export const V116_CLASSIC_LABEL = 'Classic layout (V10.1)';
+export const V116_CLASSIC_DESCRIPTION = "On = the game looks and works as V10.1 did: no Find Anything, Settings opens on the Simple view and its 11 tabs, no What's in the game page and no side panel. Those four switches keep your choices and bring them back when you turn this off. Nothing about how a match plays changes.";
+export const V116_SUITE_IDS: readonly string[] = ['v116so'];
+
+/** True only while the classic layout is switched on (a real true; anything else, a missing value included, is off). */
+export function v116ClassicOn(settings: { readonly classicLayoutV101?: unknown } | null | undefined): boolean {
+  return settings?.classicLayoutV101 === true;
+}
+/** True for the classic switch's key. */
+export function isV116SettingKeyName(key: unknown): boolean {
+  return typeof key === 'string' && V116_SETTING_KEYS.some(k => k === key);
+}
+/** The classic switch's section fields (its hub index entry; the classic view's section reads them). */
+export function v116SectionFieldKeys(): (keyof GameSettingsState)[] {
+  return SETTINGS_HUB_SECTION_INDEX.find(s => s.id === V116_SECTION_ID)?.fieldKeys || ['classicLayoutV101'];
+}
+
+// ---- The four layout switches -------------------------------------------------------------------------------------------------------------------
+export type V116LayoutKey = 'findAnythingEnabled' | 'settingsLayersEnabled' | 'whatsInTheGameEnabled' | 'dockedPanelEnabled';
+export const V116_LAYOUT_KEYS: readonly V116LayoutKey[] = ['findAnythingEnabled', 'settingsLayersEnabled', 'whatsInTheGameEnabled', 'dockedPanelEnabled'];
+/** How each switch is named where the classic switch lists them. */
+export const V116_LAYOUT_TITLES: Readonly<Record<V116LayoutKey, string>> = {
+  findAnythingEnabled: '🔎 Find Anything', settingsLayersEnabled: '⭐ Essentials and goal groups', whatsInTheGameEnabled: "🧩 What's in the game", dockedPanelEnabled: '📑 Side panel',
+};
+/** What the switch-over reads from a settings object (the four switches and the classic switch). */
+export interface V116LayoutSource {
+  readonly findAnythingEnabled?: unknown; readonly settingsLayersEnabled?: unknown; readonly whatsInTheGameEnabled?: unknown; readonly dockedPanelEnabled?: unknown; readonly classicLayoutV101?: unknown;
+}
+/** One layout switch as the classic switch shows it: the player's own choice, whether its screens are on now, and whether the classic layout holds it off. */
+export interface V116LayoutReading { key: V116LayoutKey; title: string; stored: boolean; on: boolean; held: boolean }
+export function v116LayoutReadings(settings: V116LayoutSource | null | undefined): V116LayoutReading[] {
+  const live: Readonly<Record<V116LayoutKey, boolean>> = {
+    findAnythingEnabled: v110FindAnythingOn(settings), settingsLayersEnabled: v113LayersOn(settings), whatsInTheGameEnabled: v114PageOn(settings), dockedPanelEnabled: v115DockOn(settings),
+  };
+  const classic = v116ClassicOn(settings);
+  return V116_LAYOUT_KEYS.map(key => {
+    const stored = settings?.[key] === true;
+    return { key, title: V116_LAYOUT_TITLES[key], stored, on: live[key], held: classic && stored };
+  });
+}
+/** The move UX-6 makes once for a returning player: the four switches on. The same object when they all are already; nothing else changes. */
+export function v116WithNewLayout(settings: GameSettingsState): GameSettingsState {
+  if (V116_LAYOUT_KEYS.every(key => settings[key] === true)) return settings;
+  return { ...settings, findAnythingEnabled: true, settingsLayersEnabled: true, whatsInTheGameEnabled: true, dockedPanelEnabled: true };
+}
+/** The interface patch that goes with switching the classic layout: the V11.0 screens' own windows close (left up, they would reopen when it is turned off again). */
+export function v116ClassicTogglePatch(): { showFindAnything: false; showWhatsInTheGame: false; v115DockOpen: false } {
+  return { showFindAnything: false, showWhatsInTheGame: false, v115DockOpen: false };
+}
+/** What the game says after the classic switch changes (main menu, the notice, the classic Settings row). */
+export function v116ClassicToggleMessage(nextOn: boolean): string {
+  return nextOn
+    ? `🕰️ ${V116_CLASSIC_LABEL} is on: the game looks and works as V10.1 did. Turn it off on the main menu or in Settings › Interface & Accessibility › ${V116_SECTION_TITLE}.`
+    : '✨ The new layout is back, with your own choices for Find Anything, Essentials, What\'s in the game and the side panel.';
+}
+
+// ---- The one move and the one notice --------------------------------------------------------------------------------------------------------------
+export const V116_SWITCH_OVER_STORAGE_KEY = 'aussie.v110.layoutSwitchOver';
+export type V116SwitchOverStatus = 'new' | 'moved';
+/** The switch-over's record in this browser: 'new' (the player started in the new layout) or 'moved' (a returning player was moved once), and whether the notice was shown. */
+export interface V116SwitchOverRecord { version: 1; status: V116SwitchOverStatus; noticeSeen: boolean }
+export interface V116Storage { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
+function v116IsPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+/** The stored record, or null when there is none or it is unreadable, of another version or not a record (it then counts as none). */
+export function v116ReadSwitchOver(storage: V116Storage | null): V116SwitchOverRecord | null {
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(V116_SWITCH_OVER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!v116IsPlainRecord(parsed) || parsed.version !== 1) return null;
+    const status: V116SwitchOverStatus | null = parsed.status === 'new' ? 'new' : parsed.status === 'moved' ? 'moved' : null;
+    if (status === null) return null;
+    return { version: 1, status, noticeSeen: parsed.noticeSeen === true };
+  } catch { return null; }
+}
+/** Stores the record. False when storage is blocked or full (never throws). */
+export function v116WriteSwitchOver(storage: V116Storage | null, record: V116SwitchOverRecord): boolean {
+  if (!storage) return false;
+  try { storage.setItem(V116_SWITCH_OVER_STORAGE_KEY, JSON.stringify({ version: 1, status: record.status, noticeSeen: record.noticeSeen === true })); return true; } catch { return false; }
+}
+/** A returning player: this browser holds a first-run record (a finished, skipped or switched-off tour, or a loaded save) or stored preferences. A brand-new profile has neither. */
+export function v116IsReturningProfile(storage: V116Storage | null): boolean {
+  if (!storage) return false;
+  try { return readFirstRunRecord(storage) !== null || storage.getItem(PROFILE_SETTINGS_STORAGE_KEY) !== null; } catch { return false; }
+}
+/** What the session starts from after the switch-over: its settings, the record's status, whether the move happened now, and whether the notice is due. */
+export interface V116SwitchOverBoot { settings: GameSettingsState; status: V116SwitchOverStatus; moved: boolean; noticeDue: boolean }
+/**
+ * Runs once per session, on the settings bootProfileSettings produced (the defaults with the stored preferences over them).
+ *  - No record, a returning player: the four switches are set on (the one move), the record says 'moved' and the notice is due.
+ *  - No record, a new player: nothing moves (the defaults already are the new layout), the record says 'new' and there is no notice.
+ *  - A record: nothing moves again (the player's choices stick); the notice is due only while a moved player has not been shown it.
+ * Pure apart from reading and writing the one record (no clock, no counters, no random draws).
+ */
+export function v116BootSwitchOver(settings: GameSettingsState, storage: V116Storage | null, returning: boolean): V116SwitchOverBoot {
+  const record = v116ReadSwitchOver(storage);
+  if (record) return { settings, status: record.status, moved: false, noticeDue: record.status === 'moved' && !record.noticeSeen };
+  if (returning) {
+    v116WriteSwitchOver(storage, { version: 1, status: 'moved', noticeSeen: false });
+    return { settings: v116WithNewLayout(settings), status: 'moved', moved: true, noticeDue: true };
+  }
+  v116WriteSwitchOver(storage, { version: 1, status: 'new', noticeSeen: true });
+  return { settings, status: 'new', moved: false, noticeDue: false };
+}
+/** The notice has been shown (the main menu drew it): it never shows again. False when there was nothing to mark or storage refused. */
+export function v116MarkNoticeSeen(storage: V116Storage | null): boolean {
+  const record = v116ReadSwitchOver(storage);
+  if (!record || record.status !== 'moved' || record.noticeSeen) return false;
+  return v116WriteSwitchOver(storage, { version: 1, status: 'moved', noticeSeen: true });
+}
+
+export const V116_NOTICE_TITLE = '✨ The game has a new layout';
+export const V116_NOTICE_TEXT = "🔎 Find Anything (Ctrl/⌘+K) finds any action, screen or setting. Settings opens on ⭐ Essentials, with everything else in five goal groups. 🧩 What's in the game shows every optional feature with its switch. Market, Challenges, Travel, Workshop and Investments open in a side panel beside the map.";
+export const V116_NOTICE_CLASSIC = `Prefer how V10.1 looked? Turn on 🕰️ ${V116_CLASSIC_LABEL}: use the button here, the switch on this menu, Settings › ⭐ Essentials or Find Anything. Your settings, matches and saves are unchanged.`;
+/** The one-time notice on the main menu (not a window: a labelled region; either button, or Escape inside it, closes it). Plain elements only. */
+export function v116SwitchOverNotice(p: { isDark: boolean; onKeep: () => void; onClassic: () => void }): React.ReactElement {
+  const shade = p.isDark ? 'border-sky-500/50 bg-sky-950/60 text-gray-100' : 'border-sky-300 bg-sky-50 text-gray-900';
+  const second = p.isDark ? 'bg-gray-700 hover:bg-gray-600 text-gray-100 border border-gray-500' : 'bg-white hover:bg-gray-100 text-gray-800 border border-gray-300';
+  return (
+    <section role="region" aria-labelledby="v116-notice-title" data-testid="v116-switch-over-notice"
+      onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); p.onKeep(); } }}
+      className={`mb-6 text-left ${V116_UI.card} ${shade}`}>
+      <h2 id="v116-notice-title" className={V116_UI.heading}>{V116_NOTICE_TITLE}</h2>
+      <p className={V116_UI.body}>{V116_NOTICE_TEXT}</p>
+      <p className={V116_UI.body} data-testid="v116-notice-classic-text">{V116_NOTICE_CLASSIC}</p>
+      <div className="flex flex-wrap gap-2 pt-1">
+        <button type="button" onClick={p.onKeep} data-testid="v116-notice-keep" className={`${V116_UI.button} ${V116_UI.focus} ${V116_UI.motion} bg-sky-700 hover:bg-sky-600 text-white`}>Keep the new layout</button>
+        <button type="button" onClick={p.onClassic} data-testid="v116-notice-classic" className={`${V116_UI.button} ${V116_UI.focus} ${V116_UI.motion} ${second}`}>🕰️ Use the classic layout</button>
+      </div>
+    </section>
+  );
+}
+/** The main menu's classic switch (drawn in both layouts: with the classic layout on it is the way back). Plain elements only. */
+export function v116MenuClassicToggle(p: { on: boolean; isDark: boolean; onToggle: () => void }): React.ReactElement {
+  return (
+    <button type="button" aria-pressed={p.on} onClick={p.onToggle} data-testid="v116-menu-classic" title={V116_CLASSIC_DESCRIPTION}
+      className={`w-full py-3 rounded-xl font-semibold transition-all duration-300 motion-reduce:transition-none ${V116_UI.focus} ${p.isDark ? 'bg-gray-700/80 hover:bg-gray-600 text-gray-200 border border-gray-600' : 'bg-white/80 hover:bg-white text-gray-700 border border-gray-200 shadow-sm'}`}>
+      🕰️ {V116_CLASSIC_LABEL}: <span className="font-bold">{p.on ? 'On' : 'Off'}</span>
+    </button>
+  );
+}
+/**
+ * The classic switch's row: in Settings › Interface & Accessibility › 🕰️ Classic layout (where = 'hub') and in ⭐ Essentials
+ * (where = 'essentials'; the layered view, so the row is drawn in one place at a time). While it is on it lists the four switches it
+ * holds off, each with the player's own choice. Plain elements only.
+ */
+export function v116ClassicRow(p: { settings: V116LayoutSource; where: 'hub' | 'essentials'; onToggle: () => void; onClassName: string; offClassName: string }): React.ReactElement {
+  const on = v116ClassicOn(p.settings);
+  const readings = v116LayoutReadings(p.settings);
+  return (
+    <div className="space-y-2" data-testid={`v116-classic-${p.where}`}>
+      <div id="settings-field-classicLayoutV101" data-setting-key="classicLayoutV101" className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className={V116_UI.name}>🕰️ {V116_CLASSIC_LABEL}</div>
+          <div className={`${V116_UI.meta} opacity-80`}>{V116_CLASSIC_DESCRIPTION} (Off by default)</div>
+        </div>
+        <button type="button" id={`v116-setting-classicLayoutV101-${p.where}`} data-testid={`v116-setting-classicLayoutV101-${p.where}`} aria-pressed={on}
+          aria-label={`${V116_CLASSIC_LABEL}: ${on ? 'on' : 'off'}`} onClick={p.onToggle} className={`${V116_UI.toggle} ${V116_UI.focus} ${on ? p.onClassName : p.offClassName}`}>{on ? 'ON' : 'OFF'}</button>
+      </div>
+      {on ? (
+        <div role="note" className={`${V116_UI.meta} space-y-1`} data-testid="v116-classic-held">
+          <div className="font-semibold">Held off while this is on (your own choices come back when you turn it off):</div>
+          <ul className="space-y-0.5">
+            {readings.map(r => <li key={r.key} data-testid={`v116-held-${r.key}`}>{r.title}: {r.stored ? 'on (held off)' : 'off'}</li>)}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+/** The classic switch's row in ⭐ Essentials: it writes through the same setter the layered rows use, and closes the V11.0 windows with it. */
+export function v116EssentialsClassicRow(settings: GameSettingsState, w: V113Writers, cls: V113Classes): React.ReactElement {
+  return (
+    <div className={`${cls.border} ${V116_UI.card}`} data-testid="v116-essentials-classic">
+      {v116ClassicRow({
+        settings, where: 'essentials', onClassName: v116OnClass(cls.success), offClassName: cls.buttonSecondary,
+        onToggle: () => { w.set('classicLayoutV101', !v116ClassicOn(settings), V116_CLASSIC_LABEL, 'Essentials → Classic layout'); w.open(v116ClassicTogglePatch()); },
+      })}
+    </div>
+  );
+}
+
+// ---- Find Anything: the classic switch, and "dock" (clean-up c) ----------------------------------------------------------------------------------
+/** Words that mean the classic layout (the whole query): its setting comes first. */
+export const V116_CLASSIC_PHRASES: readonly string[] = ['classic', 'classic layout', 'old layout', 'previous layout', 'classic look', 'old look', 'v10 1', 'v10 1 layout', 'old settings', 'classic settings', 'old menus', 'go back to the old layout'];
+/** "dock" and its forms find the side panel too (clean-up c): the panel while its switch is on, else its switch. The Widget Dock stays in the list. */
+export const V116_DOCK_WORDS: readonly string[] = ['dock', 'docked', 'docking', 'dock panel', 'dock the windows'];
+export function v116SynonymTargets(text: string, index: readonly V110FindEntry[]): string[] {
+  const q = v110Normalize(text);
+  const out: string[] = [];
+  if (V116_CLASSIC_PHRASES.includes(q)) out.push(`setting:classicLayoutV101`);
+  if (V116_DOCK_WORDS.includes(q)) out.push(index.some(entry => entry.id === V115_FIND_ID) ? V115_FIND_ID : 'setting:dockedPanelEnabled');
+  return out;
+}
+
+// ---- Clean-up 4: the twins' titles in old sections --------------------------------------------------------------------------------------------------
+/** The V10.1 titles of the two pairs of twins (UX-4 gave each of the four a label of its own in the shared table). */
+export const V116_TWIN_V101_TITLES: Readonly<Record<string, string>> = {
+  teamBrainTravelDisciplineEnabled: 'Travel Discipline', teamBrainTravelDiscipline: 'Travel Discipline',
+  conflictControlEnabled: 'Floating UI Conflict Control', conflictControlSettings: 'Floating UI Conflict Control',
+};
+/** The title a twin's row (or its change label) shows: the shared label table with the classic layout off, V10.1's title with it on. Any other key: the label table. */
+export function v116TwinTitle(key: string, settings: { readonly classicLayoutV101?: unknown } | null | undefined): string {
+  const classic = V116_TWIN_V101_TITLES[key];
+  return classic !== undefined && v116ClassicOn(settings) ? classic : v113SettingLabel(key);
+}
+
+// ---- What's New ------------------------------------------------------------------------------------------------------------------------------------
+/** V11.0's entry for the whole round (UX-2 to UX-6); it leads What's New in place of UX-2's (V110_CHANGELOG, kept as it was). */
+export const V116_CHANGELOG: readonly string[] = [
+  `${GAME_VERSION_LABEL} - Everything easier to find`,
+  'A new layout, on for everyone. If you played before, the game moved you to it once and said so on the main menu; from then on your own choices stick.',
+  '🔎 Find Anything: one search box over every action, screen, setting, keyboard shortcut and LAB card. Press 🔎 Find or Ctrl/⌘+K, type a few letters and press Enter: the result opens through the same button you would have pressed, and a setting opens at its own row. Type a question and Ask answers it.',
+  '⭐ Essentials: Settings opens on the 12 choices most players want, with everything else filed under five goals (Match & rules, Your rival, Teams & automation, Help, screen & sound, Records & tools) instead of 11 tabs. Every setting has one home, and the search still finds every one.',
+  "🧩 What's in the game: one page with a card for every optional feature: what it does, whether it is on, its real switch, what it needs and where it lives in Settings.",
+  '📑 Side panel: Market (Sell and Buy), Challenges, Travel, Workshop and Investments open as tabs beside the map on screens at least 1024 px wide, so the map and End Turn stay in reach. Floating buttons and the classic quick bar make room for it.',
+  `🕰️ ${V116_CLASSIC_LABEL}: prefer how V10.1 looked? One switch (main menu, ⭐ Essentials, Find Anything, or Settings › Interface & Accessibility) brings the V10.1 layout back, and your choices for the four new screens come back when you turn it off.`,
+  'Small fixes: Negotiations lists each of its options once; "dock" finds the side panel; "Travel Discipline Strength" and "Floating UI Conflict Control Options" are named apart from their switches (the classic layout keeps the old titles).',
+  'Every window has an id of its own, so Escape and the window stack follow the right window, and the LAB shows a skipped check as skipped, never as a pass.',
+  'Nothing about how a match plays has changed: matches, saves and replays from V10.1 and older play move for move.',
+];
+
+// ============================================================================
+// SECTION 20BV: V11.0 CLEAN-UPS CARRIED FROM UX-3 TO UX-5 — NEGOTIATIONS ONCE, ROOM FOR THE PANEL, THE EXACT ROW (UX-6)
+// ============================================================================
+// a. Negotiations & Cash Transfers (layered view): the "more negotiation options" block UX-3 moved there from Win Condition repeated
+//    three of the section's own options (auto-accept, counter-offer suggestions, confirm expensive proposals). In the layered view the
+//    block now draws only its own three (auto-complete ready tasks, confirm before cancelling, proposal expiry): six options, each once.
+//    Both lists always wrote the same negotiationOptions fields; the classic view draws both blocks exactly as V10.1 did.
+// b. While the side panel is open, the floating widgets anchored on the right (the Ask and Guardian buttons, the Widget Dock, the
+//    notification lane) move to its left, and the classic layout's floating quick bar and turn pill centre on the page beside it. The
+//    rules ride in the panel's own style element, so nothing changes while the panel is closed or the classic layout is on; a widget
+//    the player dragged, or Floating UI Conflict Control placed, keeps its place.
+// c. "dock" finds the side panel as well as the Widget Dock (v116SynonymTargets, SECTION 20BU).
+// d. A setting opened from Find Anything or the settings search lands on its row, not on its section's top: the row is the element
+//    around one of the setting's titles that holds a control (v116FindRow), or the ⭐ Essentials choice that holds it. Only with the
+//    classic layout off; the classic layout keeps V10.1's landing.
+// e. The side panel's two effects (useV115DockedPanel) read the latest props through a ref, so their dependency lists are complete
+//    and the two lint suppressions are gone.
+// ============================================================================
+
+// ---- a. Negotiations: each option once -------------------------------------------------------------------------------------------------------------
+/** The negotiationOptions fields Negotiations & Cash Transfers draws itself (the moved block leaves them out there). */
+export const V116_NEGOTIATION_SECTION_FIELDS: readonly string[] = ['autoAcceptCashUnder', 'suggestCounterOffers', 'confirmExpensiveTasks'];
+/** The moved block's own fields (drawn in both views). */
+export const V116_NEGOTIATION_BLOCK_FIELDS: readonly string[] = ['autoCompleteReadyTasks', 'confirmCancelProposal', 'proposalExpirationTurns'];
+/** True when the moved block leaves a field out: it is drawn in its layered home, Negotiations & Cash Transfers, which draws that field itself. */
+export function v116NegotiationRepeat(field: string, settings: { readonly settingsLayersEnabled?: unknown; readonly classicLayoutV101?: unknown } | null | undefined): boolean {
+  return v113LayersOn(settings) && V116_NEGOTIATION_SECTION_FIELDS.includes(field);
+}
+
+// ---- b. Room for the side panel ---------------------------------------------------------------------------------------------------------------------
+/** The rules appended to the panel's style element (w = the panel's width). Each targets one widget, by the attribute only it carries. */
+export function v116BesidePanelCss(w: string): string {
+  const notPlaced = ':not([style*="left:"])'; // a widget with a left of its own was dragged there or placed by conflict control
+  const centre = `left:calc((100vw - ${w}) / 2) !important`;
+  return [
+    `button.fixed[aria-label="Guardian AI Safety Controls"]${notPlaced}{right:calc(${w} + 13rem) !important}`,
+    `div.fixed:has(> button[aria-label="Ask the Game AI Assistant"])${notPlaced}{right:calc(${w} + 1.5rem) !important}`,
+    `[data-testid="floating-widget-dock"][class~="right-4"]${notPlaced}{right:calc(${w} + 1rem) !important}`,
+    `[data-testid="floating-widget-dock"][class~="left-1/2"]${notPlaced}{${centre}}`,
+    `[data-testid="notification-lane-manager"][class*="right-"]{right:calc(${w} + 1rem) !important}`,
+    `[data-testid="notification-lane-manager"][class~="left-1/2"]{${centre}}`,
+    `div.fixed[class~="z-40"][class~="-translate-x-1/2"][class*="bottom-"]{${centre}}`,
+    `[data-testid="v96-turn-indicator"].fixed{${centre}}`,
+  ].join('');
+}
+/** The widgets those rules move, as the self-tests and the browser checks name them. */
+export const V116_BESIDE_PANEL_TARGETS: readonly string[] = ['Guardian AI Safety Controls', 'Ask the Game AI Assistant', 'floating-widget-dock', 'notification-lane-manager', 'classic floating quick bar', 'v96-turn-indicator'];
+
+// ---- d. The exact row --------------------------------------------------------------------------------------------------------------------------------
+/** What the row finder reads from a page element (a DOM element in the game; a plain object in the self-tests). */
+export interface V116RowAccess<N> { children(node: N): readonly N[]; ownText(node: N): string; isControl(node: N): boolean }
+/** The titles a setting's row can carry, normalised, the longest (most specific) first: the label table, the game's other labels, the twin's V10.1
+ *  title, and the key in words (many rows are titled that way: earlyRepaymentEnabled, "Early Repayment"). */
+export function v116RowTitles(key: string): string[] {
+  const out: string[] = [];
+  const add = (text: unknown) => { const t = typeof text === 'string' ? v110Normalize(text) : ''; if (t.length >= 3 && !out.includes(t)) out.push(t); };
+  v110SettingLabels(key).forEach(add);
+  add(V116_TWIN_V101_TITLES[key]);
+  add(v110KeyWords(key).replace(/ enabled$/, '').replace(/^v\d+ /, ''));
+  return out.sort((a, b) => b.length - a.length);
+}
+/** A short value after a title ("Travel Discipline: 1.00x", "… under $250") or a version tag ("Match shape (V9.6)"). */
+const V116_TITLE_TAIL = /^(\d[\d ]*[a-z%]*|v\d+( \d+)?)$/;
+/** True when an element's own words are the title: exactly, with a short value or version after it, after ON / OFF (a checkbox row) or after "Enable".
+ *  Loose (a second pass, tried only after every title failed the strict one): the same words but one fewer, or up to two more (2 to 8 words). */
+export function v116TitleMatches(text: string, title: string, loose: boolean = false): boolean {
+  if (!text || !title) return false;
+  if (text === title || text === `on ${title}` || text === `off ${title}` || text === `enable ${title}`) return true;
+  if (text.startsWith(`${title} `) && V116_TITLE_TAIL.test(text.slice(title.length + 1))) return true;
+  if (!loose) return false;
+  const tw = title.split(' ');
+  const ew = text.split(' ');
+  if (ew.length < 2 || ew.length > 8) return false;
+  const textInTitle = ew.every(w => tw.includes(w));
+  const titleInText = tw.every(w => ew.includes(w));
+  return (textInTitle && tw.length - ew.length <= 1) || (titleInText && ew.length - tw.length <= 2);
+}
+/** The row of `key` inside `root`: the nearest element around one of its titles that holds a control (never the root). Null when no title matches. */
+export function v116FindRow<N>(root: N, key: string, a: V116RowAccess<N>): N | null {
+  const titles = v116RowTitles(key);
+  if (titles.length === 0) return null;
+  const memo = new Map<N, boolean>();
+  const holds = (node: N): boolean => {
+    const known = memo.get(node);
+    if (known !== undefined) return known;
+    const value = a.isControl(node) || a.children(node).some(holds);
+    memo.set(node, value);
+    return value;
+  };
+  const rowAbove = (node: N, ancestors: readonly N[]): N | null => {
+    if (holds(node)) return node;
+    for (let i = ancestors.length - 1; i >= 1; i -= 1) if (holds(ancestors[i])) return ancestors[i];
+    return null;
+  };
+  const search = (title: string, node: N, ancestors: N[], loose: boolean): N | null => {
+    if (ancestors.length > 0 && v116TitleMatches(v110Normalize(a.ownText(node)), title, loose)) {
+      const row = rowAbove(node, ancestors);
+      if (row !== null) return row;
+    }
+    ancestors.push(node);
+    for (const child of a.children(node)) {
+      const hit = search(title, child, ancestors, loose);
+      if (hit !== null) { ancestors.pop(); return hit; }
+    }
+    ancestors.pop();
+    return null;
+  };
+  for (const loose of [false, true]) { // every title strictly first; only then the loose pass
+    for (const title of titles) {
+      const hit = search(title, root, [], loose);
+      if (hit !== null) return hit;
+    }
+  }
+  return null;
+}
+/** The page's elements, for v116FindRow. */
+export const V116_DOM_ROWS: V116RowAccess<Element> = {
+  children: el => Array.from(el.children),
+  ownText: el => Array.from(el.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent || '').join(' '),
+  isControl: el => { const tag = el.tagName; const role = el.getAttribute('role'); return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON' || role === 'switch' || role === 'slider'; },
+};
+/** Where a setting opened from Find Anything or the settings search lands: its ⭐ Essentials choice, else its row in the section, or the Teams gate card
+ *  when the gate holds the setting back. Null = keep the section. */
+export function v116LocateRowInPage(fieldKey: string, sectionId: string | undefined): HTMLElement | null {
+  if (typeof document === 'undefined') return null;
+  try {
+    const choice = V113_ESSENTIALS.find(e => e.keys.includes(fieldKey));
+    const essential = choice ? document.getElementById(`v113-essential-${choice.id}`) : null;
+    if (essential) return essential;
+    const root = sectionId ? document.getElementById(sectionId) : null;
+    // A team setting the Teams gate holds back (a solo match, Competitive AI off): the gate card, which says why and has the switch.
+    if (!root) return v113GroupOfKey(fieldKey) === 'teams' ? document.getElementById('v113.teamsGate') : null;
+    const row = v116FindRow<Element>(root, fieldKey, V116_DOM_ROWS);
+    return row instanceof HTMLElement ? row : null;
+  } catch { return null; }
+}
+
+// ============================================================================
+// SECTION 20BW: V11.0 SWITCH-OVER — A REAL V10.1 SAVE, THE MAP WALK IN BOTH LAYOUTS AND SUITE v116so (UX-6)
+// ============================================================================
+// Suite v116so (runV116SwitchOverSelfTests): the four defaults on and nothing else changed; the classic switch (scope, home, label,
+// catalog); classic on = every V11.0 screen off and V10.1's very objects, its stored switches kept; the switch-over (a new player, a
+// returning player moved once, the notice once, choices that stick, hostile and blocked storage); the notice, the main menu's switch,
+// the Essentials and Settings rows; Find Anything's result and phrases; the twins; the shared look on the four screens and its
+// contrast; the clean-ups (Negotiations once, room for the panel, "dock", the exact row, the panel's effects); the map walk in the new
+// layout and in classic; What's New; no clock and no random draw; rules stamp 1010; real V9.7, V9.8, V10.0 and V10.1 saves play the
+// same three days as the V10.1 build itself, with the classic switch on and off.
+// ============================================================================
+
+/**
+ * A real V10.1 save: written by the V10.1 build's own Save (Ctrl+S) in Chromium after three days of an AI match (the guided tour
+ * skipped, "Do It" and End Turn), day 4, rules stamp 1010. Shrunk to the keys whose loss changes neither the match's canonical state
+ * nor three more days of play in that build (the validator refills the rest).
+ */
+export const V116_REAL_V101_SAVE = String.raw`{"metadata":{"timestamp":1795210737484,"gameVersion":"10.1.0","saveDescription":"Manual Save Day 4","schemaVersion":"7.1","versionConstants":{"GAME_VERSION":"10.1.0","SCHEMA_VERSION":"7.1","SAVE_SCHEMA_VERSION":"7.1","SETTINGS_SCHEMA_VERSION":"7.1","REPLAY_SCHEMA_VERSION":"4.0","RNG_SCHEMA_VERSION":"1.0","CHECKPOINT_SCHEMA_VERSION":"1.0","LEDGER_SCHEMA_VERSION":"1.0","DIAGNOSTIC_SCHEMA_VERSION":"1.0","BALANCE_LAB_SCHEMA_VERSION":"1.0","ACTION_PIPELINE_SCHEMA_VERSION":"1.0"}},"player":{"money":4981,"currentRegion":"VIC","inventory":["Dairy"],"visitedRegions":["NSW","VIC"],"challengesCompleted":["Tour the Blue Mountains","Make a rock carving","Surf at Bondi Beach","Visit Sydney Opera House","Wine tasting tour","Explore Grampians National Park","Visit Melbourne Museum"],"level":2,"xp":130,"stats":{"strength":4,"charisma":6,"luck":5,"intelligence":4},"consecutiveWins":1,"overrideFatigue":0.023750000000000004,"completedThisSeason":["Tour the Blue Mountains","Make a rock carving","Surf at Bondi Beach","Visit Sydney Opera House","Wine tasting tour","Explore Grampians National Park","Visit Melbourne Museum"],"challengeMastery":{"Tour the Blue Mountains":1,"Make a rock carving":1,"Surf at Bondi Beach":1,"Visit Sydney Opera House":1,"Wine tasting tour":1,"Explore Grampians National Park":1,"Visit Melbourne Museum":1},"overrideActionsGranted":0},"aiPlayer":{"id":"ai","displayName":"Scientist AI","teamId":"team_opponent","kind":"ai","money":2892,"currentRegion":"WA","inventory":["Aboriginal Art","Iron Ore"],"visitedRegions":["QLD","NT","WA"],"challengesCompleted":["Surf at Gold Coast","Tour Great Barrier Reef","Feed kangaroos","Explore Daintree Rainforest","Visit the pink Lake Hillier"],"character":{"name":"Scientist","ability":"Learning Bonus","description":"Gains experience faster","startingMoney":1100,"avatar":"🔬","perk":"Gets detailed information about challenge success rates","startingStats":{"strength":2,"charisma":2,"luck":2,"intelligence":9},"specialAbility":{"name":"Calculate Odds","description":"Guarantee success on next challenge under difficulty 2","usesLeft":1},"aiStrategy":"balanced","craftingBonus":{"description":"Higher success rate and quality when crafting","effect":{"successBonus":0.15,"qualityBonus":0.1}},"masteryTree":{"Quick Study":{"unlockLevel":3,"effect":"Gain 50% more XP from all sources"},"Efficiency Expert":{"unlockLevel":5,"effect":"Actions have a 30% chance to not consume time"},"Mastermind":{"unlockLevel":7,"effect":"All stats increased by 2 permanently"}}},"level":2,"xp":80,"stats":{"strength":3,"charisma":3,"luck":3,"intelligence":10},"consecutiveWins":1,"name":"Scientist AI","overrideFatigue":0.018750000000000003,"completedThisSeason":["Surf at Gold Coast","Tour Great Barrier Reef","Feed kangaroos","Explore Daintree Rainforest","Visit the pink Lake Hillier"],"challengeMastery":{"Surf at Gold Coast":1,"Tour Great Barrier Reef":1,"Feed kangaroos":1,"Explore Daintree Rainforest":1,"Visit the pink Lake Hillier":1},"isHuman":false},"gameState":{"day":4,"resourcePrices":{"Aboriginal Art":152,"Coal":136,"Coral":176,"Crocodile Leather":173,"Dairy":125,"Education":150,"Gold":179,"Government Grants":142,"Hydropower":138,"Iron Ore":135,"Natural Gas":118,"Opals":146,"Research Funds":113,"Seafood":110,"Sugar Cane":114,"Timber":133,"Tropical Fruit":93,"Uranium":155,"Wheat":97,"Wine":153,"Wool":97},"priceHistory":[{"day":1,"prices":{"Coral":150,"Tropical Fruit":100,"Sugar Cane":100,"Opals":150,"Wine":150,"Coal":120,"Dairy":100,"Wool":100,"Wheat":100,"Timber":120,"Seafood":100,"Hydropower":120,"Uranium":120,"Iron Ore":120,"Gold":150,"Natural Gas":120,"Crocodile Leather":150,"Aboriginal Art":150,"Government Grants":130,"Research Funds":130,"Education":130,"Norfolk Pine":120,"Island Coffee":100,"Deep Sea Fish":100,"Phosphate Ore":120,"Red Crab Silk":150,"Tropical Bio-Tech":130,"Coconut Oil":100,"Lagoon Pearls":150,"Solar Power Grid":120,"Deep Sea Minerals":120,"Unspoiled Coral":150,"Offshore Wind Data":120,"Timor Sea Energy":120,"Rare Marine Flora":150,"Hydrocarbon Reserves":120,"Sub-Ice Core Minerals":120,"Polar Ice Data":130,"Extreme Climate Research":130,"Volcanic Basalt":120,"Sub-Antarctic Krill":100,"Southern Ocean Geothermal":120}},{"day":2,"prices":{"Aboriginal Art":142,"Coal":128,"Coral":156,"Crocodile Leather":153,"Dairy":98,"Education":131,"Gold":153,"Government Grants":130,"Hydropower":127,"Iron Ore":128,"Natural Gas":118,"Opals":147,"Research Funds":129,"Seafood":94,"Sugar Cane":103,"Timber":112,"Tropical Fruit":100,"Uranium":128,"Wheat":94,"Wine":145,"Wool":104}},{"day":3,"prices":{"Aboriginal Art":147,"Coal":118,"Coral":166,"Crocodile Leather":150,"Dairy":103,"Education":128,"Gold":162,"Government Grants":135,"Hydropower":119,"Iron Ore":119,"Natural Gas":120,"Opals":155,"Research Funds":120,"Seafood":89,"Sugar Cane":104,"Timber":108,"Tropical Fruit":93,"Uranium":132,"Wheat":95,"Wine":154,"Wool":104}}],"activeEvents":[{"id":"dyn_event_2_QLD_2","name":"Cultural Festival","region":"QLD","duration":4,"remainingDays":2,"effect":{"travelCost":1,"challengeBonus":{"social":0.15,"educational":0.1},"resourcePriceMultiplier":1.15,"investmentYieldMultiplier":1.1},"description":"Cultural festival in QLD attracts tourists and boosts social challenges."},{"id":"dyn_event_3_QLD_3","name":"Resource Shortage","region":"QLD","duration":2,"remainingDays":1,"effect":{"travelCost":1.1,"challengeBonus":{"wildlife":0.05},"resourcePriceMultiplier":1.3,"investmentYieldMultiplier":1.15},"description":"Resource supply constraints in QLD drive up commodity prices."}],"marketTrend":"rising","gameMode":"game","selectedMode":"ai","turnCounter":6,"aiDifficulty":"easy","aiMood":"desperate","netWorthHistory":[{"day":1,"playerWorth":2419,"aiWorth":2975},{"day":2,"playerWorth":3473,"aiWorth":3108},{"day":3,"playerWorth":5084,"aiWorth":3158}],"playerDominanceDays":1,"challengeCompletions":[{"id":"chal_comp:corr:7","playerId":"player","challengeName":"Tour the Blue Mountains","region":"NSW","turn":1,"timestamp":1795210678976},{"id":"chal_comp:corr:11","playerId":"player","challengeName":"Make a rock carving","region":"NSW","turn":1,"timestamp":1795210681026},{"id":"chal_comp:corr:14","playerId":"player","challengeName":"Surf at Bondi Beach","region":"NSW","turn":1,"timestamp":1795210683426},{"id":"chal_comp:corr:21","playerId":"ai","challengeName":"Surf at Gold Coast","region":"QLD","turn":1,"timestamp":1795210688179},{"id":"chal_comp:corr:23","playerId":"ai","challengeName":"Tour Great Barrier Reef","region":"QLD","turn":1,"timestamp":1795210689881},{"id":"chal_comp:corr:25","playerId":"ai","challengeName":"Feed kangaroos","region":"QLD","turn":1,"timestamp":1795210692222},{"id":"chal_comp:corr:33","playerId":"player","challengeName":"Visit Sydney Opera House","region":"NSW","turn":2,"timestamp":1795210696353},{"id":"chal_comp:corr:42","playerId":"player","challengeName":"Wine tasting tour","region":"VIC","turn":2,"timestamp":1795210702157},{"id":"chal_comp:corr:50","playerId":"ai","challengeName":"Explore Daintree Rainforest","region":"QLD","turn":2,"timestamp":1795210709301},{"id":"chal_comp:corr:59","playerId":"player","challengeName":"Explore Grampians National Park","region":"VIC","turn":3,"timestamp":1795210715526},{"id":"chal_comp:corr:68","playerId":"player","challengeName":"Visit Melbourne Museum","region":"VIC","turn":3,"timestamp":1795210720975},{"id":"chal_comp:corr:74","playerId":"ai","challengeName":"Visit the pink Lake Hillier","region":"WA","turn":3,"timestamp":1795210732668}],"standingPerActor":{"player":{"QLD":0,"NSW":0,"VIC":0,"TAS":0,"SA":0,"WA":0,"NT":0,"ACT":0},"ai":{"QLD":0,"NSW":0,"VIC":0,"TAS":0,"SA":0,"WA":0,"NT":0,"ACT":0}},"customScenarioBuilder":{"draftConfig":{"id":"","title":"New Custom Scenario","description":"","author":"Player","createdAt":"2026-11-20T21:37:56.739Z","updatedAt":"2026-11-20T21:37:56.739Z","version":1,"difficulty":"Medium","startingMoney":5000,"startingRegions":["NSW"],"startingItems":[],"startingLoans":[],"startingStanding":{},"customSettings":{},"objectives":[],"modifiers":[],"winCondition":"money","maxDays":30,"isCustom":true},"currentStep":"basic_info","validationErrors":[],"validationWarnings":[],"savedScenarios":[],"activeDraftId":null,"isDirty":false},"campaignState":{"campaignId":"federation_in_crisis","currentChapterId":"ch_1_outback_awakening","chapterIndex":0,"completedChapterIds":[],"chapterOutcomes":{},"accumulatedRewards":[],"storyDecisionHistory":{},"campaignVariables":{},"isCampaignCompleted":false,"totalCampaignScore":0,"startedAt":"2026-11-20T21:37:56.739Z","lastSavedAt":"2026-11-20T21:37:56.739Z"},"infrastructureProjects":{"infra_hsr_nsw_vic":{"id":"infra_hsr_nsw_vic","projectType":"high_speed_rail","title":"Sydney-Melbourne High-Speed Rail Corridor","description":"Reduces inter-state travel cost between NSW & VIC by 50%, boosts regional trade income by +15%.","regionId":"NSW","stateCode":"NSW","requiredDevTier":2,"totalCost":150000,"laborTurnsRequired":4,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"travel_cost_reduction","magnitude":0.5,"targetScope":"state"},{"type":"income_boost","magnitude":0.15,"targetScope":"region"}],"maintenanceCostPerTurn":2000},"infra_inland_rail_qld":{"id":"infra_inland_rail_qld","projectType":"inland_rail_hub","title":"Inland Rail Freight Hub","description":"Resource delivery yields increased by +25% across QLD & NSW.","regionId":"QLD","stateCode":"QLD","requiredDevTier":1,"totalCost":85000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"resource_yield","magnitude":0.25,"targetScope":"state"}],"maintenanceCostPerTurn":1000},"infra_desal_sa":{"id":"infra_desal_sa","projectType":"desalination_plant","title":"Adelaide Sea-Water Desalination Plant","description":"Safeguards agricultural production against climate events; +10% steady income in SA.","regionId":"SA","stateCode":"SA","requiredDevTier":1,"totalCost":70000,"laborTurnsRequired":2,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"income_boost","magnitude":0.1,"targetScope":"region"}],"maintenanceCostPerTurn":800},"infra_hydrogen_wa":{"id":"infra_hydrogen_wa","projectType":"green_hydrogen_terminal","title":"Pilbara Green Hydrogen Export Terminal","description":"Grants $12,000 passive revenue per turn; boosts WA regional standing decay protection.","regionId":"WA","stateCode":"WA","requiredDevTier":3,"totalCost":220000,"laborTurnsRequired":5,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"income_boost","magnitude":0.12,"targetScope":"region"}],"maintenanceCostPerTurn":2500},"infra_subsea_nt":{"id":"infra_subsea_nt","projectType":"subsea_cable_hub","title":"Darwin Northern Territory Subsea Cable Hub","description":"Tech & AI action costs reduced by 20% nationwide; +15 Standing in NT.","regionId":"NT","stateCode":"NT","requiredDevTier":2,"totalCost":95000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"trade_discount","magnitude":0.2,"targetScope":"national"}],"maintenanceCostPerTurn":1200},"infra_wind_tas":{"id":"infra_wind_tas","projectType":"offshore_wind_farm","title":"Bass Strait Offshore Wind Farm","description":"Clean power grid reduces maintenance costs for all TAS investments by 30%.","regionId":"TAS","stateCode":"TAS","requiredDevTier":1,"totalCost":60000,"laborTurnsRequired":2,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"trade_discount","magnitude":0.3,"targetScope":"region"}],"maintenanceCostPerTurn":600},"infra_snowy_nsw":{"id":"infra_snowy_nsw","projectType":"hydro_expansion","title":"Snowy Hydro 2.0 Energy Storage Expansion","description":"Increases national energy buffer; provides +1 extra action point per 3 turns to owner.","regionId":"NSW","stateCode":"NSW","requiredDevTier":2,"totalCost":130000,"laborTurnsRequired":4,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"income_boost","magnitude":0.15,"targetScope":"national"}],"maintenanceCostPerTurn":1500},"infra_tech_park_act":{"id":"infra_tech_park_act","projectType":"tech_innovation_park","title":"Canberra Tech & Innovation Park","description":"Generates +10 Victory Points per turn; boosts contract payout multiplier by +20%.","regionId":"ACT","stateCode":"ACT","requiredDevTier":3,"totalCost":180000,"laborTurnsRequired":4,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"standing_multiplier","magnitude":0.2,"targetScope":"national"}],"maintenanceCostPerTurn":2000},"infra_v93_vic_manufacturing":{"id":"infra_v93_vic_manufacturing","projectType":"advanced_manufacturing","title":"Advanced Manufacturing Precinct","description":"Retools Victorian industry: +8% investment income. Competes with the data centre for grid capacity.","regionId":"VIC","stateCode":"VIC","requiredDevTier":1,"totalCost":90000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"income_boost","magnitude":0.08,"targetScope":"region"}],"maintenanceCostPerTurn":900},"infra_v93_vic_data_center":{"id":"infra_v93_vic_data_center","projectType":"data_center","title":"Melbourne Hyperscale Data Centre","description":"Technology anchor: +12% standing gains in VIC and +3% investment income. Heavy power draw — competes with manufacturing.","regionId":"VIC","stateCode":"VIC","requiredDevTier":1,"totalCost":95000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"standing_multiplier","magnitude":0.12,"targetScope":"region"},{"type":"income_boost","magnitude":0.03,"targetScope":"region"}],"maintenanceCostPerTurn":1100},"infra_v93_qld_port_automated":{"id":"infra_v93_qld_port_automated","projectType":"automated_port","title":"Automated Port Expansion (QLD)","description":"High-productivity automated berths: 20% trade discount in QLD. Labour groups oppose. Same site as the partnership expansion.","regionId":"QLD","stateCode":"QLD","requiredDevTier":1,"totalCost":110000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"trade_discount","magnitude":0.2,"targetScope":"region"}],"maintenanceCostPerTurn":900},"infra_v93_qld_port_partnership":{"id":"infra_v93_qld_port_partnership","projectType":"port_expansion","title":"Labour Partnership Port Expansion (QLD)","description":"Slower, costlier expansion with the unions: 12% trade discount and +8% standing gains in QLD. Same site as the automated option.","regionId":"QLD","stateCode":"QLD","requiredDevTier":1,"totalCost":120000,"laborTurnsRequired":4,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"trade_discount","magnitude":0.12,"targetScope":"region"},{"type":"standing_multiplier","magnitude":0.08,"targetScope":"region"}],"maintenanceCostPerTurn":800},"infra_v93_qld_renewable_grid":{"id":"infra_v93_qld_renewable_grid","projectType":"renewable_grid","title":"North Queensland Renewable Grid","description":"Diversifies QLD away from coal exports: +6% investment income.","regionId":"QLD","stateCode":"QLD","requiredDevTier":1,"totalCost":80000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"income_boost","magnitude":0.06,"targetScope":"region"}],"maintenanceCostPerTurn":700},"infra_v93_wa_remote_logistics":{"id":"infra_v93_wa_remote_logistics","projectType":"remote_logistics_base","title":"Pilbara Remote Logistics Base","description":"Cuts remote travel costs by 20%. Competes with the hydrogen terminal for capital and crews.","regionId":"WA","stateCode":"WA","requiredDevTier":1,"totalCost":75000,"laborTurnsRequired":2,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"travel_cost_reduction","magnitude":0.2,"targetScope":"region"}],"maintenanceCostPerTurn":600},"infra_v93_wa_freight_rail":{"id":"infra_v93_wa_freight_rail","projectType":"freight_rail_upgrade","title":"Pilbara Freight Rail Upgrade","description":"Heavy-haul rail capacity: 15% trade discount in WA.","regionId":"WA","stateCode":"WA","requiredDevTier":1,"totalCost":105000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"trade_discount","magnitude":0.15,"targetScope":"region"}],"maintenanceCostPerTurn":900},"infra_v93_sa_water_pipeline":{"id":"infra_v93_sa_water_pipeline","projectType":"water_pipeline","title":"Murray Water Pipeline","description":"Pipes river water inland: +6% investment income. Alternative to the desalination plant (one water solution per site).","regionId":"SA","stateCode":"SA","requiredDevTier":1,"totalCost":85000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"income_boost","magnitude":0.06,"targetScope":"region"}],"maintenanceCostPerTurn":700},"infra_v93_sa_renewable_grid":{"id":"infra_v93_sa_renewable_grid","projectType":"renewable_grid","title":"SA Renewable Grid Firming","description":"Batteries and interconnectors: +7% investment income.","regionId":"SA","stateCode":"SA","requiredDevTier":1,"totalCost":100000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"income_boost","magnitude":0.07,"targetScope":"region"}],"maintenanceCostPerTurn":800},"infra_v93_nsw_port":{"id":"infra_v93_nsw_port","projectType":"port_expansion","title":"Port Botany Expansion","description":"East-coast trade gateway: 15% trade discount in NSW.","regionId":"NSW","stateCode":"NSW","requiredDevTier":1,"totalCost":95000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"trade_discount","magnitude":0.15,"targetScope":"region"}],"maintenanceCostPerTurn":800},"infra_v93_tas_tourism_precinct":{"id":"infra_v93_tas_tourism_precinct","projectType":"tourism_precinct","title":"Tasmanian Tourism Precinct","description":"Visitor economy: +12% standing gains in TAS. Environmental stakeholders prefer it to industrial projects.","regionId":"TAS","stateCode":"TAS","requiredDevTier":1,"totalCost":55000,"laborTurnsRequired":2,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"standing_multiplier","magnitude":0.12,"targetScope":"region"}],"maintenanceCostPerTurn":500},"infra_v93_nt_gateway":{"id":"infra_v93_nt_gateway","projectType":"remote_logistics_base","title":"Darwin Northern Gateway","description":"Frontier logistics hub: travel costs −25% in NT.","regionId":"NT","stateCode":"NT","requiredDevTier":1,"totalCost":70000,"laborTurnsRequired":2,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"travel_cost_reduction","magnitude":0.25,"targetScope":"region"}],"maintenanceCostPerTurn":600},"infra_v93_act_research_campus":{"id":"infra_v93_act_research_campus","projectType":"research_campus","title":"National Research Campus","description":"Institutional research: +10% standing gains nationally. Competes with the tech park for the same research budget.","regionId":"ACT","stateCode":"ACT","requiredDevTier":1,"totalCost":150000,"laborTurnsRequired":4,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"standing_multiplier","magnitude":0.1,"targetScope":"national"}],"maintenanceCostPerTurn":1200},"infra_v102_nsw_interstate_rail":{"id":"infra_v102_nsw_interstate_rail","projectType":"freight_rail_upgrade","title":"NSW Interstate Freight Rail","description":"Doubles interstate rail paths through NSW: 10% trade discount in NSW. Links Queensland and Victorian freight.","regionId":"NSW","stateCode":"NSW","requiredDevTier":1,"totalCost":100000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"trade_discount","magnitude":0.1,"targetScope":"region"}],"maintenanceCostPerTurn":800},"infra_v102_sa_freight_corridor":{"id":"infra_v102_sa_freight_corridor","projectType":"freight_rail_upgrade","title":"Adelaide Freight Corridor","description":"Heavy freight through Adelaide: 8% trade discount in SA. Connects Western Australia to the east and offers an alternative to NSW routes.","regionId":"SA","stateCode":"SA","requiredDevTier":1,"totalCost":95000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"trade_discount","magnitude":0.08,"targetScope":"region"}],"maintenanceCostPerTurn":750},"infra_v102_vic_freight_terminal":{"id":"infra_v102_vic_freight_terminal","projectType":"inland_rail_hub","title":"Melbourne Intermodal Freight Terminal","description":"Rail-to-road freight terminal: 8% trade discount in VIC. Gives Victorian industry direct freight-network access.","regionId":"VIC","stateCode":"VIC","requiredDevTier":1,"totalCost":90000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"unlocked","assignedWorkers":[],"providedBonuses":[{"type":"trade_discount","magnitude":0.08,"targetScope":"region"}],"maintenanceCostPerTurn":700},"infra_v103_hsr_brisbane_extension":{"id":"infra_v103_hsr_brisbane_extension","projectType":"high_speed_rail","title":"Brisbane High-Speed Rail Extension","description":"Carries fast passenger services north: travel costs −15% and +6% standing gains in QLD.","regionId":"QLD","stateCode":"QLD","requiredDevTier":2,"totalCost":170000,"laborTurnsRequired":4,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"locked","assignedWorkers":[],"providedBonuses":[{"type":"travel_cost_reduction","magnitude":0.15,"targetScope":"region"},{"type":"standing_multiplier","magnitude":0.06,"targetScope":"region"}],"maintenanceCostPerTurn":1400,"lockedReason":"Opens with the national program: National High-Speed Rail (stage 3)"},"infra_v103_murray_water_grid":{"id":"infra_v103_murray_water_grid","projectType":"water_pipeline","title":"Murray–Darling Water Grid","description":"Inter-state water transfers: +5% investment income in NSW.","regionId":"NSW","stateCode":"NSW","requiredDevTier":2,"totalCost":160000,"laborTurnsRequired":4,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"locked","assignedWorkers":[],"providedBonuses":[{"type":"income_boost","magnitude":0.05,"targetScope":"region"}],"maintenanceCostPerTurn":1300,"lockedReason":"Opens with the national program: National Water Security Program (stage 3)"},"infra_v103_sovereign_compute":{"id":"infra_v103_sovereign_compute","projectType":"data_center","title":"Sovereign Compute Facility","description":"National AI compute: +8% standing gains in ACT and +3% investment income.","regionId":"ACT","stateCode":"ACT","requiredDevTier":2,"totalCost":190000,"laborTurnsRequired":4,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"locked","assignedWorkers":[],"providedBonuses":[{"type":"standing_multiplier","magnitude":0.08,"targetScope":"region"},{"type":"income_boost","magnitude":0.03,"targetScope":"region"}],"maintenanceCostPerTurn":1600,"lockedReason":"Opens with the national program: Australian AI Compute Network (stage 3)"},"infra_v103_darwin_export_port":{"id":"infra_v103_darwin_export_port","projectType":"port_expansion","title":"Darwin Deep-Water Export Port","description":"Northern export gateway: 12% trade discount in NT.","regionId":"NT","stateCode":"NT","requiredDevTier":2,"totalCost":150000,"laborTurnsRequired":4,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"locked","assignedWorkers":[],"providedBonuses":[{"type":"trade_discount","magnitude":0.12,"targetScope":"region"}],"maintenanceCostPerTurn":1200,"lockedReason":"Opens with the national program: Northern Export Corridor (stage 3)"},"infra_v103_gladstone_hydrogen_hub":{"id":"infra_v103_gladstone_hydrogen_hub","projectType":"green_hydrogen_terminal","title":"Gladstone Hydrogen Export Hub","description":"Hydrogen exports from Queensland: +6% investment income in QLD.","regionId":"QLD","stateCode":"QLD","requiredDevTier":2,"totalCost":200000,"laborTurnsRequired":4,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"locked","assignedWorkers":[],"providedBonuses":[{"type":"income_boost","magnitude":0.06,"targetScope":"region"}],"maintenanceCostPerTurn":1500,"lockedReason":"Opens with the national program: Green Hydrogen Export Network (stage 3)"},"infra_v103_eastern_cable_landing":{"id":"infra_v103_eastern_cable_landing","projectType":"subsea_cable_hub","title":"East-Coast Cable Landing","description":"A second international cable landing: +6% standing gains in NSW.","regionId":"NSW","stateCode":"NSW","requiredDevTier":2,"totalCost":140000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"locked","assignedWorkers":[],"providedBonuses":[{"type":"standing_multiplier","magnitude":0.06,"targetScope":"region"}],"maintenanceCostPerTurn":1100,"lockedReason":"Opens with the national program: Continental Digital Backbone (stage 3)"},"infra_v103_parkes_freight_hub":{"id":"infra_v103_parkes_freight_hub","projectType":"inland_rail_hub","title":"Parkes National Freight Hub","description":"National freight control: 10% trade discount in NSW.","regionId":"NSW","stateCode":"NSW","requiredDevTier":2,"totalCost":130000,"laborTurnsRequired":3,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"locked","assignedWorkers":[],"providedBonuses":[{"type":"trade_discount","magnitude":0.1,"targetScope":"region"}],"maintenanceCostPerTurn":1000,"lockedReason":"Opens with the national program: National Freight Modernisation (stage 3)"},"infra_v93_national_grid":{"id":"infra_v93_national_grid","projectType":"renewable_grid","title":"National Grid Interconnector","description":"A historic national project: +10% investment income nationally. Only opens when a historic infrastructure opportunity arises.","regionId":"ACT","stateCode":"ACT","requiredDevTier":2,"totalCost":240000,"laborTurnsRequired":5,"currentLaborTurnsCompleted":0,"totalInvestedMoney":0,"status":"locked","assignedWorkers":[],"providedBonuses":[{"type":"income_boost","magnitude":0.1,"targetScope":"national"}],"maintenanceCostPerTurn":1500}},"aiMemoriesByActor":{"ai":{"ownerActorId":"ai","events":[],"relationships":{},"opponentModels":{},"adaptivePlan":null,"seenKeys":[],"lastDecayTurn":5}},"persistentMemorySnapshot":{"matchId":"match_1jtnc5d","identityByActor":{},"priorsByActor":{},"importedProfileIds":[],"frozenAt":0},"backgroundAI":{"version":1,"enabled":true,"mode":"advisor","lastEvaluationTurn":6,"lastEvaluationEvent":"Turn 5 → 6","lastMeaningfulHash":"1xjecd5","domainHashes":{"economy":"1dcyzth","regions":"j6zrxm","team":"1c6lasb","strategy":"zzarib","actions":"8i5d4b","history":"is9hjy","world":"1inqnaw"},"observation":{"turn":6,"day":4,"cash":4981,"debt":0,"apRemaining":3,"held":[],"threatened":[],"depositsTotal":0,"projectInvested":0,"contracts":{"ag_logistics_nsw":"available","green_energy_sa":"available","mining_tech_wa":"available","maritime_hub_qld":"available","eco_trail_tas":"available","ai_center_act":"available"},"rivalDeposits":{},"market":{"Aboriginal Art":152,"Coal":136,"Coral":176,"Crocodile Leather":173,"Dairy":125,"Education":150,"Gold":179,"Government Grants":142,"Hydropower":138,"Iron Ore":135,"Natural Gas":118,"Opals":146,"Research Funds":113,"Seafood":110,"Sugar Cane":114,"Timber":133,"Tropical Fruit":93,"Uranium":155,"Wheat":97,"Wine":153,"Wool":97},"gi3Revision":null,"teamRevision":null,"sessionStatus":null,"lastLedgerId":null},"cashHistory":[{"turn":0,"cash":2419},{"turn":1,"cash":2419},{"turn":2,"cash":3375},{"turn":3,"cash":3375},{"turn":4,"cash":4981},{"turn":5,"cash":4981},{"turn":6,"cash":4981}],"strategicAssessment":{"overallPosition":"Strong","economy":"Growing","liquidity":"Adequate","regions":"No regions held","objectives":"Goal: Finish with the most money (0/1)","resources":"Inventory worth about $125","projects":"None in progress","contracts":"None active","team":"Solo","rivals":"You lead on Most Money (4981 vs 2892)","ap":"3 available","nextDeadline":null,"risk":"No active threat","opportunity":"NSW (cheap expansion)","momentum":"improving","primaryProblem":null,"primaryOpportunity":"New South Wales can be taken for about $300 plus $220 travel","planHealth":"Provisional plan viable","confidence":"high","evidence":[{"label":"Cash","value":"$4,981"},{"label":"Reserve","value":"$250 (Co-Pilot minimum cash reserve)"},{"label":"Regions held","value":"0"},{"label":"Debt","value":"$0"}]},"activeGoals":["Goal: Finish with the most money","Expand into New South Wales"],"currentPhase":"Goal: Finish with the most money","attentionQueue":[{"id":"att_wr_win_sell_player_Dairy","domain":"economy","subject":"Dairy opportunity","importance":"high","urgency":"now","confidence":"moderate","reversibility":"reversible","deadline":5,"trend":"new","reason":"Dairy sells 25% above normal and you hold 1. Window until day 5; no outcome is guaranteed.","evidence":["Dairy sells 25% above normal and you hold 1. Window until day 5; no outcome is guaranteed."],"lastUpdated":6,"status":"active"},{"id":"att_bgo_region_NSW","domain":"regions","subject":"NSW opportunity","importance":"low","urgency":"soon","confidence":"high","reversibility":"reversible","deadline":null,"trend":"stable","reason":"New South Wales can be taken for about $300 plus $220 travel","evidence":["New South Wales can be taken for about $300 plus $220 travel"],"lastUpdated":6,"status":"active"},{"id":"att_bgo_region_QLD","domain":"regions","subject":"QLD opportunity","importance":"low","urgency":"soon","confidence":"high","reversibility":"reversible","deadline":null,"trend":"stable","reason":"Queensland can be taken for about $300 plus $605 travel","evidence":["Queensland can be taken for about $300 plus $605 travel"],"lastUpdated":6,"status":"active"},{"id":"att_lr_opp_SA_cheap_entry","domain":"regions","subject":"SA opportunity","importance":"watching","urgency":"soon","confidence":"moderate","reversibility":"reversible","deadline":null,"trend":"falling","reason":"South Australia: Nobody controls the region yet.","evidence":["South Australia: Nobody controls the region yet."],"lastUpdated":6,"status":"decaying"}],"shadowPlan":{"source":"background","label":"Background AI plan (provisional — not chosen by you)","strategySummary":"Goal: Finish with the most money → Expand into New South Wales","primaryGoal":"Goal: Finish with the most money","secondaryGoals":["Expand into New South Wales"],"currentPhase":"Goal: Finish with the most money","nextMove":{"actionId":"candidate_cat5_take_vic_tour_great_ocean_road_t6","label":"Take Tour Great Ocean Road — wager $500","actionType":"challenge","reason":"advances your objective; adds cash now (the same move as the Recommended action on Play)","targetId":"VIC_TOUR_GREAT_OCEAN_ROAD"},"followingMoves":["Expand into New South Wales"],"conditions":[{"when":"cash falls below $250","then":"pause spending moves until it recovers"}],"fallbacks":["Sell inventory (about $125)","Ask Co-Pilot to take a turn (only if you choose to)"],"resourceAssumptions":["cash $4,981","reserve $250 (Co-Pilot minimum cash reserve)","preserve at least $250 until threats are secure"],"timeHorizon":"next 2 turns","confidence":"high","reason":"No serious threat; building toward your objective and win condition.","lastReplannedTurn":6,"revision":17,"adaptation":null,"focusRegion":null},"recommendedNextMove":{"actionId":"candidate_cat5_take_vic_tour_great_ocean_road_t6","label":"Take Tour Great Ocean Road — wager $500","actionType":"challenge","reason":"advances your objective; adds cash now (the same move as the Recommended action on Play)","targetId":"VIC_TOUR_GREAT_OCEAN_ROAD"},"alternativeMoves":[{"actionId":"candidate_cat4_work_t6","label":"Work for Wages","actionType":"work","targetId":null,"reason":"advances your objective; adds cash now","moveClass":"best_immediate"},{"actionId":"candidate_cat4_trade_t6","label":"Sell Dairy ($112)","actionType":"sell","targetId":null,"reason":"lowest risk while respecting your constraints","moveClass":"safest"}],"moveEvaluations":[{"actionId":"candidate_cat4_work_t6","label":"Work for Wages","actionType":"work","targetId":null,"legal":true,"dimensions":{"strategicAlignment":0,"immediateValue":1,"futureValue":0,"risk":0,"resourceCost":0,"apCost":-1,"reversibility":0,"urgency":0,"objectiveProgress":8,"constraintCompliance":0,"teamImpact":0},"total":8,"reason":"advances your objective; adds cash now"},{"actionId":"candidate_cat4_trade_t6","label":"Sell Dairy ($112)","actionType":"sell","targetId":null,"legal":true,"dimensions":{"strategicAlignment":0,"immediateValue":1,"futureValue":0,"risk":-2,"resourceCost":0,"apCost":0,"reversibility":-1,"urgency":0,"objectiveProgress":8,"constraintCompliance":0,"teamImpact":0},"total":6,"reason":"advances your objective; adds cash now"},{"actionId":"candidate_cat5_take_vic_tour_great_ocean_road_t6","label":"Take Tour Great Ocean Road — wager $500","actionType":"challenge","targetId":"VIC_TOUR_GREAT_OCEAN_ROAD","legal":true,"dimensions":{"strategicAlignment":0,"immediateValue":2,"futureValue":0,"risk":-9,"resourceCost":-2,"apCost":-1,"reversibility":0,"urgency":0,"objectiveProgress":8,"constraintCompliance":0,"teamImpact":0},"total":-2,"reason":"advances your objective; adds cash now"},{"actionId":"candidate_cat1_travel_t6","label":"Relocate to SA","actionType":"travel","targetId":"SA","legal":true,"dimensions":{"strategicAlignment":0,"immediateValue":-1,"futureValue":0,"risk":-2,"resourceCost":-1,"apCost":-1,"reversibility":0,"urgency":0,"objectiveProgress":0,"constraintCompliance":0,"teamImpact":0},"total":-5,"reason":"a legal move with no strong strategic effect"}],"threats":[],"opportunities":[{"id":"bgo_region_NSW","type":"cheap_expansion","subject":"NSW","value":null,"urgency":"soon","confidence":"high","expiresTurn":null,"strategicAlignment":"neutral","resourceRequirement":300,"reason":"New South Wales can be taken for about $300 plus $220 travel","actionIds":[]},{"id":"bgo_region_QLD","type":"cheap_expansion","subject":"QLD","value":null,"urgency":"soon","confidence":"high","expiresTurn":null,"strategicAlignment":"neutral","resourceRequirement":300,"reason":"Queensland can be taken for about $300 plus $605 travel","actionIds":[]},{"id":"wr_win_sell_player_Dairy","type":"strategic_window","subject":"Dairy","value":null,"urgency":"now","confidence":"moderate","expiresTurn":5,"strategicAlignment":"neutral","resourceRequirement":0,"reason":"Dairy sells 25% above normal and you hold 1. Window until day 5; no outcome is guaranteed.","actionIds":[]},{"id":"lr_opp_SA_cheap_entry","type":"cheap_expansion","subject":"SA","value":null,"urgency":"soon","confidence":"moderate","expiresTurn":null,"strategicAlignment":"neutral","resourceRequirement":0,"reason":"South Australia: Nobody controls the region yet.","actionIds":[]},{"id":"lr_opp_TAS_cheap_entry","type":"cheap_expansion","subject":"TAS","value":null,"urgency":"soon","confidence":"moderate","expiresTurn":null,"strategicAlignment":"neutral","resourceRequirement":0,"reason":"Tasmania: Nobody controls the region yet.","actionIds":[]},{"id":"lr_opp_QLD_cheap_entry","type":"cheap_expansion","subject":"QLD","value":null,"urgency":"soon","confidence":"moderate","expiresTurn":null,"strategicAlignment":"neutral","resourceRequirement":0,"reason":"Queensland: Nobody controls the region yet.","actionIds":[]}],"predictions":[],"resolvedPredictions":[],"calibration":{"supported":0,"contradicted":0,"unresolved":0},"hypotheses":[{"id":"bgh_economy","question":"Why is my cash falling?","explanation":"Your cash is falling, but no single spending category explains it from visible evidence.","factors":[],"confidence":"low","supportingEvidence":[],"contradictingEvidence":["cash is no longer falling ($4,981)","cash is no longer falling ($4,275)","cash is no longer falling ($4,775)","cash is no longer falling ($3,375)"],"status":"weakened","lastUpdated":6}],"diagnoses":[{"domain":"economy","status":"Growing","primaryCause":null,"secondaryCause":null,"risk":null,"bestResponse":null,"evidence":["Cash: $4,981","Reserve: $250 (Co-Pilot minimum cash reserve)","Regions held: 0","Debt: $0"]},{"domain":"regions","status":"No regions held","primaryCause":null,"secondaryCause":null,"risk":null,"bestResponse":null,"evidence":[]},{"domain":"objectives","status":"Goal: Finish with the most money (0/1)","primaryCause":null,"secondaryCause":null,"risk":null,"bestResponse":"Take a challenge here","evidence":["0/1 requirements"]}],"preparedSimulations":[{"actionId":"candidate_cat4_work_t6","label":"Work for Wages","stateHash":"1dcyzth:j6zrxm:8i5d4b","horizon":"this action","outcomeSummary":"+$50 → $5,031","benefits":["+$50 cash"],"risks":[],"goalImpact":"neutral for the plan","confidence":"high","createdTurn":6,"cashAfter":5031},{"actionId":"candidate_cat4_trade_t6","label":"Sell Dairy ($112)","stateHash":"1dcyzth:j6zrxm:8i5d4b","horizon":"this action","outcomeSummary":"+$112 → $5,093 (estimated)","benefits":["+$112 cash"],"risks":[],"goalImpact":"neutral for the plan","confidence":"moderate","createdTurn":6,"cashAfter":5093}],"explicitPlayerConstraints":["reserve $250 (Co-Pilot minimum cash reserve)"],"planDivergence":null,"interventionRecommendation":{"score":0.17,"level":"silent","reason":"New South Wales can be taken for about $300 plus $220 travel","message":"Opportunity: NSW — New South Wales can be taken for about $300 plus $220 travel.","cooldownKey":"opportunity:bgo_region_NSW","actionContext":{"actionId":null,"query":"What opportunities do you see?"},"confidence":"high","subjectKind":"opportunity","surfacedTurn":6},"cooldowns":[],"recentImpactAssessment":null,"coPilotHandoffPackage":{"status":"ready","strategySummary":"Background AI plan: Goal: Finish with the most money → Expand into New South Wales","currentPhase":"Goal: Finish with the most money","activeGoals":["Goal: Finish with the most money","Expand into New South Wales"],"constraints":["keep $250 (Co-Pilot minimum cash reserve)"],"reserve":250,"avoidDebt":false,"currentObjective":"Goal: Finish with the most money","recommendedSequence":[{"actionId":"candidate_cat5_take_vic_tour_great_ocean_road_t6","label":"Take Tour Great Ocean Road — wager $500","actionType":"challenge","reason":"advances your objective; adds cash now (the same move as the Recommended action on Play)","targetId":"VIC_TOUR_GREAT_OCEAN_ROAD"},{"actionId":"candidate_cat4_work_t6","label":"Work for Wages","actionType":"work","targetId":null,"reason":"advances your objective; adds cash now"},{"actionId":"candidate_cat4_trade_t6","label":"Sell Dairy ($112)","actionType":"sell","targetId":null,"reason":"lowest risk while respecting your constraints"}],"focusRegion":null,"threats":[],"opportunities":["NSW: New South Wales can be taken for about $300 plus $220 travel","QLD: Queensland can be taken for about $300 plus $605 travel"],"resourceStatus":"cash $4,981, reserve $250, debt $0","teamResponsibilities":[],"preparedSimulations":["Work for Wages: +$50 → $5,031","Sell Dairy ($112): +$112 → $5,093 (estimated)"],"fallbacks":["Sell inventory (about $125)","Ask Co-Pilot to take a turn (only if you choose to)"],"recentPlayerDecisions":[],"confidence":"high","sourceStateHash":"1dcyzth:j6zrxm:8i5d4b","preparedTurn":6,"deliveredTurn":null,"sessionId":null},"coPilotReturn":null,"overrides":[],"teamInsights":[],"playerModel":{"dismissals":{},"explanationRequests":0,"followed":9,"ignored":0,"avoidsDebt":false,"protectsRegions":false},"status":"opportunity","confidence":"high","history":[{"turn":0,"kind":"plan_changed","summary":"Shadow Plan rev 3: Goal: Finish with the most money"},{"turn":0,"kind":"plan_changed","summary":"Shadow Plan rev 6: Goal: Finish with the most money"},{"turn":2,"kind":"plan_changed","summary":"Shadow Plan rev 8: Goal: Finish with the most money"},{"turn":2,"kind":"plan_changed","summary":"Shadow Plan rev 10: Goal: Finish with the most money"}],"diagnostics":{"significance":"trivial","events":[],"recomputed":["assessment","threats","opportunities","predictions","hypotheses","diagnoses","shadowPlan","moves","simulations","teamInsights"],"skipped":false}},"diplomacyState":{"version":1,"revision":4,"deals":[],"history":[],"inbox":[],"tracks":{},"events":[],"lastProcessedTurn":4,"recentCompletions":[]},"worldReaction":{"version":1,"revision":25,"bands":{"region:QLD":{"band":"uncontrolled","value":0,"turn":1},"region:NSW":{"band":"uncontrolled","value":0,"turn":1},"region:VIC":{"band":"uncontrolled","value":0,"turn":1},"region:TAS":{"band":"uncontrolled","value":0,"turn":1},"region:SA":{"band":"uncontrolled","value":0,"turn":1},"region:WA":{"band":"uncontrolled","value":0,"turn":1},"region:NT":{"band":"uncontrolled","value":0,"turn":1},"region:ACT":{"band":"uncontrolled","value":0,"turn":1},"cash:player":{"band":"ok","value":4981,"turn":3},"cash:ai":{"band":"ok","value":2892,"turn":3},"project:infra_hsr_nsw_vic":{"band":"unlocked","value":0,"turn":1},"project:infra_inland_rail_qld":{"band":"unlocked","value":0,"turn":1},"project:infra_desal_sa":{"band":"unlocked","value":0,"turn":1},"project:infra_hydrogen_wa":{"band":"unlocked","value":0,"turn":1},"project:infra_subsea_nt":{"band":"unlocked","value":0,"turn":1},"project:infra_wind_tas":{"band":"unlocked","value":0,"turn":1},"project:infra_snowy_nsw":{"band":"unlocked","value":0,"turn":1},"project:infra_tech_park_act":{"band":"unlocked","value":0,"turn":1},"project:infra_v93_vic_manufacturing":{"band":"unlocked","value":0,"turn":1},"project:infra_v93_vic_data_center":{"band":"unlocked","value":0,"turn":1},"project:infra_v93_qld_port_automated":{"band":"unlocked","value":0,"turn":1},"project:infra_v93_qld_port_partnership":{"band":"unlocked","value":0,"turn":1},"project:infra_v93_qld_renewable_grid":{"band":"unlocked","value":0,"turn":1},"project:infra_v93_wa_remote_logistics":{"band":"unlocked","value":0,"turn":1},"project:infra_v93_wa_freight_rail":{"band":"unlocked","value":0,"turn":1},"project:infra_v93_sa_water_pipeline":{"band":"unlocked","value":0,"turn":1},"project:infra_v93_sa_renewable_grid":{"band":"unlocked","value":0,"turn":1},"project:infra_v93_nsw_port":{"band":"unlocked","value":0,"turn":1},"project:infra_v93_tas_tourism_precinct":{"band":"unlocked","value":0,"turn":1},"project:infra_v93_nt_gateway":{"band":"unlocked","value":0,"turn":1},"project:infra_v93_act_research_campus":{"band":"unlocked","value":0,"turn":1},"project:infra_v102_nsw_interstate_rail":{"band":"unlocked","value":0,"turn":1},"project:infra_v102_sa_freight_corridor":{"band":"unlocked","value":0,"turn":1},"project:infra_v102_vic_freight_terminal":{"band":"unlocked","value":0,"turn":1},"project:infra_v103_hsr_brisbane_extension":{"band":"locked","value":0,"turn":1},"project:infra_v103_murray_water_grid":{"band":"locked","value":0,"turn":1},"project:infra_v103_sovereign_compute":{"band":"locked","value":0,"turn":1},"project:infra_v103_darwin_export_port":{"band":"locked","value":0,"turn":1},"project:infra_v103_gladstone_hydrogen_hub":{"band":"locked","value":0,"turn":1},"project:infra_v103_eastern_cable_landing":{"band":"locked","value":0,"turn":1},"project:infra_v103_parkes_freight_hub":{"band":"locked","value":0,"turn":1},"project:infra_v93_national_grid":{"band":"locked","value":0,"turn":1},"price:Coral":{"band":"normal","value":176,"turn":4},"price:Tropical Fruit":{"band":"normal","value":93,"turn":4},"price:Sugar Cane":{"band":"normal","value":114,"turn":4},"price:Opals":{"band":"normal","value":146,"turn":4},"price:Wine":{"band":"normal","value":153,"turn":4},"price:Coal":{"band":"normal","value":136,"turn":4},"price:Dairy":{"band":"high","value":125,"turn":4},"price:Wool":{"band":"normal","value":97,"turn":4},"price:Wheat":{"band":"normal","value":97,"turn":4},"price:Timber":{"band":"normal","value":133,"turn":4},"price:Seafood":{"band":"normal","value":110,"turn":4},"price:Hydropower":{"band":"normal","value":138,"turn":4},"price:Uranium":{"band":"high","value":155,"turn":4},"price:Iron Ore":{"band":"normal","value":135,"turn":4},"price:Gold":{"band":"normal","value":179,"turn":4},"price:Natural Gas":{"band":"normal","value":118,"turn":4},"price:Crocodile Leather":{"band":"normal","value":173,"turn":4},"price:Aboriginal Art":{"band":"normal","value":152,"turn":4},"price:Government Grants":{"band":"normal","value":142,"turn":4},"price:Research Funds":{"band":"normal","value":113,"turn":4},"price:Education":{"band":"normal","value":150,"turn":4},"price:Norfolk Pine":{"band":"normal","value":120,"turn":1},"price:Island Coffee":{"band":"normal","value":100,"turn":1},"price:Deep Sea Fish":{"band":"normal","value":100,"turn":1},"price:Phosphate Ore":{"band":"normal","value":120,"turn":1},"price:Red Crab Silk":{"band":"normal","value":150,"turn":1},"price:Tropical Bio-Tech":{"band":"normal","value":130,"turn":1},"price:Coconut Oil":{"band":"normal","value":100,"turn":1},"price:Lagoon Pearls":{"band":"normal","value":150,"turn":1},"price:Solar Power Grid":{"band":"normal","value":120,"turn":1},"price:Deep Sea Minerals":{"band":"normal","value":120,"turn":1},"price:Unspoiled Coral":{"band":"normal","value":150,"turn":1},"price:Offshore Wind Data":{"band":"normal","value":120,"turn":1},"price:Timor Sea Energy":{"band":"normal","value":120,"turn":1},"price:Rare Marine Flora":{"band":"normal","value":150,"turn":1},"price:Hydrocarbon Reserves":{"band":"normal","value":120,"turn":1},"price:Sub-Ice Core Minerals":{"band":"normal","value":120,"turn":1},"price:Polar Ice Data":{"band":"normal","value":130,"turn":1},"price:Extreme Climate Research":{"band":"normal","value":130,"turn":1},"price:Volcanic Basalt":{"band":"normal","value":120,"turn":1},"price:Sub-Antarctic Krill":{"band":"normal","value":100,"turn":1},"price:Southern Ocean Geothermal":{"band":"normal","value":120,"turn":1},"debt:player":{"band":"none","value":0,"turn":3},"debt:ai":{"band":"none","value":0,"turn":3}},"events":[{"id":"swe_1_14x2n30","turn":1,"day":1,"sourceSystem":"state_delta","sourceEventId":null,"actorId":"player","teamId":"team_player","kind":"liquidity_improved","subjectType":"actor","subjectId":"player","magnitude":523,"significance":"minor","visibility":"public","observers":["player","ai"],"evidence":["cash $1,896 → $2,419"],"before":{"cash":1896,"band":"low"},"after":{"cash":2419,"band":"ok"},"delta":{"cash":523},"strategicMeaning":"Your free cash rose to a workable level.","affectedDomains":["economy"],"tags":[],"layer":"strategic","confidence":"high","claimKind":"calculated","causedByEventId":null,"contributingCauses":[],"rootEventId":"swe_1_14x2n30","reactionDepth":0,"expiresTurn":null,"dedupeKey":"cashband:player:ok:1"},{"id":"swe_1_vy8ovh","turn":1,"day":1,"sourceSystem":"canonical_action","sourceEventId":"solo-1-ai-challenge-","actorId":"ai","teamId":"team_opponent","kind":"liquidity_improved","subjectType":"actor","subjectId":"ai","magnitude":795,"significance":"minor","visibility":"public","observers":["player","ai"],"evidence":["cash $1,586 → $2,381"],"before":{"cash":1586,"band":"low"},"after":{"cash":2381,"band":"ok"},"delta":{"cash":795},"strategicMeaning":"Scientist AI's free cash rose to a workable level.","affectedDomains":["economy"],"tags":[],"layer":"strategic","confidence":"high","claimKind":"calculated","causedByEventId":null,"contributingCauses":[],"rootEventId":"swe_1_vy8ovh","reactionDepth":0,"expiresTurn":null,"dedupeKey":"cashband:ai:ok:1"},{"id":"rfe_2_1bl363l","turn":2,"day":2,"sourceSystem":"factions","sourceEventId":null,"actorId":null,"teamId":null,"kind":"faction_coalition_formed","subjectType":"region","subjectId":"TAS","magnitude":0,"significance":"major","visibility":"public","observers":["player","ai"],"evidence":["Deliver Tasmanian Eco-Tourism Network"],"before":{},"after":{},"delta":{},"strategicMeaning":"National Tourism Council and Tasmanian Wilderness Trust formed a coalition: Deliver Tasmanian Eco-Tourism Network.","affectedDomains":["regions","diplomacy"],"tags":["factions","faction:national_tourism_council","region:TAS"],"layer":"world","confidence":"high","claimKind":"calculated","causedByEventId":null,"contributingCauses":[],"rootEventId":"rfe_2_1bl363l","reactionDepth":0,"expiresTurn":5,"dedupeKey":"rf:faction_coalition_formed:national_tourism_council:TAS::2"},{"id":"swe_4_1zkok","turn":4,"day":4,"sourceSystem":"state_delta","sourceEventId":null,"actorId":null,"teamId":null,"kind":"market_shift_major","subjectType":"market","subjectId":"Uranium","magnitude":23,"significance":"meaningful","visibility":"public","observers":["player","ai"],"evidence":["Uranium $132 → $155 (base $120)"],"before":{"price":132,"band":"normal"},"after":{"price":155,"band":"high"},"delta":{"price":23},"strategicMeaning":"Uranium prices are unusually high.","affectedDomains":["market"],"tags":[],"layer":"strategic","confidence":"high","claimKind":"fact","causedByEventId":null,"contributingCauses":[],"rootEventId":"swe_4_1zkok","reactionDepth":0,"expiresTurn":null,"dedupeKey":"price:Uranium:high:4"},{"id":"swe_4_qtg4l9","turn":4,"day":4,"sourceSystem":"state_delta","sourceEventId":null,"actorId":null,"teamId":null,"kind":"market_shift_major","subjectType":"market","subjectId":"Dairy","magnitude":22,"significance":"meaningful","visibility":"public","observers":["player","ai"],"evidence":["Dairy $103 → $125 (base $100)"],"before":{"price":103,"band":"normal"},"after":{"price":125,"band":"high"},"delta":{"price":22},"strategicMeaning":"Dairy prices are unusually high.","affectedDomains":["market"],"tags":[],"layer":"strategic","confidence":"high","claimKind":"fact","causedByEventId":null,"contributingCauses":[],"rootEventId":"swe_4_qtg4l9","reactionDepth":0,"expiresTurn":null,"dedupeKey":"price:Dairy:high:4"},{"id":"lre_4_1y3qq1m","turn":4,"day":4,"sourceSystem":"living_regions","sourceEventId":null,"actorId":null,"teamId":null,"kind":"regional_growth_accelerated","subjectType":"region","subjectId":"SA","magnitude":0,"significance":"meaningful","visibility":"public","observers":["player","ai"],"evidence":["South Australia: Stable → Growing.","Uranium prices rose"],"before":{},"after":{},"delta":{},"strategicMeaning":"South Australia moved from stable to growing.","affectedDomains":["regions","economy"],"tags":["living_regions","region:SA"],"layer":"world","confidence":"high","claimKind":"calculated","causedByEventId":null,"contributingCauses":[],"rootEventId":"lre_4_1y3qq1m","reactionDepth":0,"expiresTurn":7,"dedupeKey":"lr:regional_growth_accelerated:SA:4"},{"id":"lre_4_lf5gi8","turn":4,"day":4,"sourceSystem":"living_regions","sourceEventId":null,"actorId":null,"teamId":null,"kind":"regional_growth_accelerated","subjectType":"region","subjectId":"NT","magnitude":0,"significance":"meaningful","visibility":"public","observers":["player","ai"],"evidence":["Northern Territory: Stable → Growing.","Uranium prices rose"],"before":{},"after":{},"delta":{},"strategicMeaning":"Northern Territory moved from stable to growing.","affectedDomains":["regions","economy"],"tags":["living_regions","region:NT"],"layer":"world","confidence":"high","claimKind":"calculated","causedByEventId":null,"contributingCauses":[],"rootEventId":"lre_4_lf5gi8","reactionDepth":0,"expiresTurn":7,"dedupeKey":"lr:regional_growth_accelerated:NT:4"}],"intents":[{"id":"swi_9jthl","sourceEventId":"rfe_2_1bl363l","rootEventId":"rfe_2_1bl363l","targetSystem":"team_os","targetActorId":null,"targetTeamId":"team_player","priority":31,"reason":"National Tourism Council and Tasmanian Wilderness Trust formed a coalition: Deliver Tasmanian Eco-Tourism Network.","requestedEvaluation":"reassess_task_priority","subjectId":"TAS","context":{"kind":"faction_coalition_formed","significance":"major","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":5,"dedupeKey":"team_os:team_player:reassess_task_priority:TAS","depth":0,"status":"delivered","turn":2,"note":null},{"id":"swi_cn11cp","sourceEventId":"rfe_2_1bl363l","rootEventId":"rfe_2_1bl363l","targetSystem":"team_os","targetActorId":null,"targetTeamId":"team_opponent","priority":31,"reason":"National Tourism Council and Tasmanian Wilderness Trust formed a coalition: Deliver Tasmanian Eco-Tourism Network.","requestedEvaluation":"reassess_task_priority","subjectId":"TAS","context":{"kind":"faction_coalition_formed","significance":"major","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":5,"dedupeKey":"team_os:team_opponent:reassess_task_priority:TAS","depth":0,"status":"delivered","turn":2,"note":null},{"id":"swi_1dcv0ui","sourceEventId":"rfe_2_1bl363l","rootEventId":"rfe_2_1bl363l","targetSystem":"background_ai","targetActorId":"player","targetTeamId":"team_player","priority":31,"reason":"National Tourism Council and Tasmanian Wilderness Trust formed a coalition: Deliver Tasmanian Eco-Tourism Network.","requestedEvaluation":"update_attention","subjectId":"TAS","context":{"kind":"faction_coalition_formed","significance":"major","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":5,"dedupeKey":"background_ai:player:update_attention:TAS","depth":0,"status":"delivered","turn":2,"note":null},{"id":"swi_1yzzd3w","sourceEventId":"rfe_2_1bl363l","rootEventId":"rfe_2_1bl363l","targetSystem":"diplomacy","targetActorId":null,"targetTeamId":null,"priority":31,"reason":"National Tourism Council and Tasmanian Wilderness Trust formed a coalition: Deliver Tasmanian Eco-Tourism Network.","requestedEvaluation":"reassess_leverage","subjectId":"TAS","context":{"kind":"faction_coalition_formed","significance":"major","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":5,"dedupeKey":"diplomacy:*:reassess_leverage:TAS","depth":0,"status":"delivered","turn":2,"note":null},{"id":"swi_i1qpb4","sourceEventId":"swe_4_1zkok","rootEventId":"swe_4_1zkok","targetSystem":"contextual_actions","targetActorId":"player","targetTeamId":"team_player","priority":21,"reason":"Uranium prices are unusually high.","requestedEvaluation":"relevance_update","subjectId":"Uranium","context":{"kind":"market_shift_major","significance":"meaningful","actorId":null,"subjectType":"market"},"timing":"immediate","expiresTurn":7,"dedupeKey":"contextual_actions:player:relevance_update:Uranium","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_1ig50pj","sourceEventId":"swe_4_1zkok","rootEventId":"swe_4_1zkok","targetSystem":"living_regions","targetActorId":null,"targetTeamId":null,"priority":21,"reason":"Uranium prices are unusually high.","requestedEvaluation":"update_region","subjectId":"Uranium","context":{"kind":"market_shift_major","significance":"meaningful","actorId":null,"subjectType":"market"},"timing":"immediate","expiresTurn":7,"dedupeKey":"living_regions:*:update_region:Uranium","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_ki6ylo","sourceEventId":"swe_4_1zkok","rootEventId":"swe_4_1zkok","targetSystem":"factions","targetActorId":null,"targetTeamId":null,"priority":21,"reason":"Uranium prices are unusually high.","requestedEvaluation":"update_factions","subjectId":"Uranium","context":{"kind":"market_shift_major","significance":"meaningful","actorId":null,"subjectType":"market"},"timing":"immediate","expiresTurn":7,"dedupeKey":"factions:*:update_factions:Uranium","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_houp2b","sourceEventId":"swe_4_qtg4l9","rootEventId":"swe_4_qtg4l9","targetSystem":"contextual_actions","targetActorId":"player","targetTeamId":"team_player","priority":21,"reason":"Dairy prices are unusually high.","requestedEvaluation":"relevance_update","subjectId":"Dairy","context":{"kind":"market_shift_major","significance":"meaningful","actorId":null,"subjectType":"market"},"timing":"immediate","expiresTurn":7,"dedupeKey":"contextual_actions:player:relevance_update:Dairy","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_1wqn3g8","sourceEventId":"swe_4_qtg4l9","rootEventId":"swe_4_qtg4l9","targetSystem":"living_regions","targetActorId":null,"targetTeamId":null,"priority":21,"reason":"Dairy prices are unusually high.","requestedEvaluation":"update_region","subjectId":"Dairy","context":{"kind":"market_shift_major","significance":"meaningful","actorId":null,"subjectType":"market"},"timing":"immediate","expiresTurn":7,"dedupeKey":"living_regions:*:update_region:Dairy","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_i9iqaj","sourceEventId":"swe_4_qtg4l9","rootEventId":"swe_4_qtg4l9","targetSystem":"factions","targetActorId":null,"targetTeamId":null,"priority":21,"reason":"Dairy prices are unusually high.","requestedEvaluation":"update_factions","subjectId":"Dairy","context":{"kind":"market_shift_major","significance":"meaningful","actorId":null,"subjectType":"market"},"timing":"immediate","expiresTurn":7,"dedupeKey":"factions:*:update_factions:Dairy","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_1qi22pm","sourceEventId":"swe_4_1zkok","rootEventId":"swe_4_1zkok","targetSystem":"crisis","targetActorId":null,"targetTeamId":null,"priority":20,"reason":"Uranium prices are unusually high.","requestedEvaluation":"crisis_context","subjectId":"Uranium","context":{"kind":"market_shift_major","significance":"meaningful","actorId":null,"subjectType":"market"},"timing":"day_end","expiresTurn":7,"dedupeKey":"crisis:*:crisis_context:Uranium","depth":0,"status":"delivered","turn":4,"note":"released at day end"},{"id":"swi_14c9vz7","sourceEventId":"swe_4_qtg4l9","rootEventId":"swe_4_qtg4l9","targetSystem":"crisis","targetActorId":null,"targetTeamId":null,"priority":20,"reason":"Dairy prices are unusually high.","requestedEvaluation":"crisis_context","subjectId":"Dairy","context":{"kind":"market_shift_major","significance":"meaningful","actorId":null,"subjectType":"market"},"timing":"day_end","expiresTurn":7,"dedupeKey":"crisis:*:crisis_context:Dairy","depth":0,"status":"delivered","turn":4,"note":"released at day end"},{"id":"swi_16junnx","sourceEventId":"lre_4_1y3qq1m","rootEventId":"lre_4_1y3qq1m","targetSystem":"rival_strategy","targetActorId":"ai","targetTeamId":"team_opponent","priority":21,"reason":"South Australia moved from stable to growing.","requestedEvaluation":"reconsider_region_target","subjectId":"SA","context":{"kind":"regional_growth_accelerated","significance":"meaningful","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":7,"dedupeKey":"rival_strategy:ai:reconsider_region_target:SA","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_1dj7pw9","sourceEventId":"lre_4_1y3qq1m","rootEventId":"lre_4_1y3qq1m","targetSystem":"team_os","targetActorId":null,"targetTeamId":"team_player","priority":21,"reason":"South Australia moved from stable to growing.","requestedEvaluation":"reassess_task_priority","subjectId":"SA","context":{"kind":"regional_growth_accelerated","significance":"meaningful","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":7,"dedupeKey":"team_os:team_player:reassess_task_priority:SA","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_gh10vd","sourceEventId":"lre_4_1y3qq1m","rootEventId":"lre_4_1y3qq1m","targetSystem":"team_os","targetActorId":null,"targetTeamId":"team_opponent","priority":21,"reason":"South Australia moved from stable to growing.","requestedEvaluation":"reassess_task_priority","subjectId":"SA","context":{"kind":"regional_growth_accelerated","significance":"meaningful","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":7,"dedupeKey":"team_os:team_opponent:reassess_task_priority:SA","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_16sko7g","sourceEventId":"lre_4_1y3qq1m","rootEventId":"lre_4_1y3qq1m","targetSystem":"diplomacy","targetActorId":null,"targetTeamId":null,"priority":21,"reason":"South Australia moved from stable to growing.","requestedEvaluation":"reassess_leverage","subjectId":"SA","context":{"kind":"regional_growth_accelerated","significance":"meaningful","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":7,"dedupeKey":"diplomacy:*:reassess_leverage:SA","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_19dbe6e","sourceEventId":"lre_4_1y3qq1m","rootEventId":"lre_4_1y3qq1m","targetSystem":"contracts","targetActorId":null,"targetTeamId":null,"priority":21,"reason":"South Australia moved from stable to growing.","requestedEvaluation":"contract_relevance","subjectId":"SA","context":{"kind":"regional_growth_accelerated","significance":"meaningful","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":7,"dedupeKey":"contracts:*:contract_relevance:SA","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_112ij3j","sourceEventId":"lre_4_1y3qq1m","rootEventId":"lre_4_1y3qq1m","targetSystem":"factions","targetActorId":null,"targetTeamId":null,"priority":21,"reason":"South Australia moved from stable to growing.","requestedEvaluation":"update_factions","subjectId":"SA","context":{"kind":"regional_growth_accelerated","significance":"meaningful","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":7,"dedupeKey":"factions:*:update_factions:SA","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_lbuozr","sourceEventId":"lre_4_lf5gi8","rootEventId":"lre_4_lf5gi8","targetSystem":"rival_strategy","targetActorId":"ai","targetTeamId":"team_opponent","priority":21,"reason":"Northern Territory moved from stable to growing.","requestedEvaluation":"reconsider_region_target","subjectId":"NT","context":{"kind":"regional_growth_accelerated","significance":"meaningful","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":7,"dedupeKey":"rival_strategy:ai:reconsider_region_target:NT","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_13nowk3","sourceEventId":"lre_4_lf5gi8","rootEventId":"lre_4_lf5gi8","targetSystem":"team_os","targetActorId":null,"targetTeamId":"team_player","priority":21,"reason":"Northern Territory moved from stable to growing.","requestedEvaluation":"reassess_task_priority","subjectId":"NT","context":{"kind":"regional_growth_accelerated","significance":"meaningful","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":7,"dedupeKey":"team_os:team_player:reassess_task_priority:NT","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_1xt2sgn","sourceEventId":"lre_4_lf5gi8","rootEventId":"lre_4_lf5gi8","targetSystem":"team_os","targetActorId":null,"targetTeamId":"team_opponent","priority":21,"reason":"Northern Territory moved from stable to growing.","requestedEvaluation":"reassess_task_priority","subjectId":"NT","context":{"kind":"regional_growth_accelerated","significance":"meaningful","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":7,"dedupeKey":"team_os:team_opponent:reassess_task_priority:NT","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_1vmwfma","sourceEventId":"lre_4_lf5gi8","rootEventId":"lre_4_lf5gi8","targetSystem":"diplomacy","targetActorId":null,"targetTeamId":null,"priority":21,"reason":"Northern Territory moved from stable to growing.","requestedEvaluation":"reassess_leverage","subjectId":"NT","context":{"kind":"regional_growth_accelerated","significance":"meaningful","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":7,"dedupeKey":"diplomacy:*:reassess_leverage:NT","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_a6gtj0","sourceEventId":"lre_4_lf5gi8","rootEventId":"lre_4_lf5gi8","targetSystem":"contracts","targetActorId":null,"targetTeamId":null,"priority":21,"reason":"Northern Territory moved from stable to growing.","requestedEvaluation":"contract_relevance","subjectId":"NT","context":{"kind":"regional_growth_accelerated","significance":"meaningful","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":7,"dedupeKey":"contracts:*:contract_relevance:NT","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_jc37h5","sourceEventId":"lre_4_lf5gi8","rootEventId":"lre_4_lf5gi8","targetSystem":"factions","targetActorId":null,"targetTeamId":null,"priority":21,"reason":"Northern Territory moved from stable to growing.","requestedEvaluation":"update_factions","subjectId":"NT","context":{"kind":"regional_growth_accelerated","significance":"meaningful","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":7,"dedupeKey":"factions:*:update_factions:NT","depth":0,"status":"delivered","turn":4,"note":null},{"id":"swi_16nd8xb","sourceEventId":"lre_4_1y3qq1m","rootEventId":"lre_4_1y3qq1m","targetSystem":"contextual_actions","targetActorId":"player","targetTeamId":"team_player","priority":21,"reason":"South Australia moved from stable to growing.","requestedEvaluation":"relevance_update","subjectId":"SA","context":{"kind":"regional_growth_accelerated","significance":"meaningful","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":7,"dedupeKey":"contextual_actions:player:relevance_update:SA","depth":0,"status":"suppressed","turn":4,"note":"reaction budget 5 exhausted"},{"id":"swi_1xmehlh","sourceEventId":"lre_4_lf5gi8","rootEventId":"lre_4_lf5gi8","targetSystem":"contextual_actions","targetActorId":"player","targetTeamId":"team_player","priority":21,"reason":"Northern Territory moved from stable to growing.","requestedEvaluation":"relevance_update","subjectId":"NT","context":{"kind":"regional_growth_accelerated","significance":"meaningful","actorId":null,"subjectType":"region"},"timing":"immediate","expiresTurn":7,"dedupeKey":"contextual_actions:player:relevance_update:NT","depth":0,"status":"suppressed","turn":4,"note":"reaction budget 5 exhausted"}],"deferred":[],"windows":[{"id":"win_vuln_ai","type":"rival_vulnerability","subject":"ai","ownerActorId":"player","openedTurn":1,"expiresTurn":2,"confidence":"moderate","reason":"Scientist AI is short on cash — contesting their regions or offering cash deals has extra leverage right now.","sourceEvents":[],"status":"closed","observers":["player"]},{"id":"win_sell_player_Dairy","type":"commodity_sell","subject":"Dairy","ownerActorId":"player","openedTurn":4,"expiresTurn":5,"confidence":"moderate","reason":"Dairy sells 25% above normal and you hold 1.","sourceEvents":["swe_4_qtg4l9"],"status":"open","observers":["player"]}],"signals":[],"cooldowns":{"crisis:*:crisis_context:Uranium":4,"contextual_actions:player:relevance_update:Uranium":4,"living_regions:*:update_region:Uranium":4,"factions:*:update_factions:Uranium":4,"crisis:*:crisis_context:Dairy":4,"contextual_actions:player:relevance_update:Dairy":4,"living_regions:*:update_region:Dairy":4,"factions:*:update_factions:Dairy":4,"rival_strategy:ai:reconsider_region_target:SA":4,"team_os:team_player:reassess_task_priority:SA":4,"team_os:team_opponent:reassess_task_priority:SA":4,"diplomacy:*:reassess_leverage:SA":4,"contracts:*:contract_relevance:SA":4,"factions:*:update_factions:SA":4,"rival_strategy:ai:reconsider_region_target:NT":4,"team_os:team_player:reassess_task_priority:NT":4,"team_os:team_opponent:reassess_task_priority:NT":4,"diplomacy:*:reassess_leverage:NT":4,"contracts:*:contract_relevance:NT":4,"factions:*:update_factions:NT":4,"team_os:team_player:reassess_task_priority:TAS":2,"team_os:team_opponent:reassess_task_priority:TAS":2,"background_ai:player:update_attention:TAS":2,"diplomacy:*:reassess_leverage:TAS":2},"patterns":{},"history":[{"turn":1,"eventId":"swe_1_14x2n30","intentId":null,"text":"Your free cash rose to a workable level.","kind":"event"},{"turn":1,"eventId":"swe_1_vy8ovh","intentId":null,"text":"Scientist AI's free cash rose to a workable level.","kind":"event"},{"turn":2,"eventId":"rfe_2_1bl363l","intentId":null,"text":"National Tourism Council and Tasmanian Wilderness Trust formed a coalition: Deliver Tasmanian Eco-Tourism Network.","kind":"event"},{"turn":2,"eventId":"rfe_2_1bl363l","intentId":"swi_9jthl","text":"Team Intelligence (Team OS) → reassess task priority","kind":"intent"},{"turn":2,"eventId":"rfe_2_1bl363l","intentId":"swi_cn11cp","text":"Team Intelligence (Team OS) → reassess task priority","kind":"intent"},{"turn":2,"eventId":"rfe_2_1bl363l","intentId":"swi_1dcv0ui","text":"Background AI → update attention","kind":"intent"},{"turn":2,"eventId":"rfe_2_1bl363l","intentId":"swi_1yzzd3w","text":"Diplomacy → reassess leverage","kind":"intent"},{"turn":4,"eventId":"swe_4_1zkok","intentId":null,"text":"Uranium prices are unusually high.","kind":"event"},{"turn":4,"eventId":"swe_4_1zkok","intentId":"swi_1qi22pm","text":"Crisis chains → crisis context (day end)","kind":"intent"},{"turn":4,"eventId":"swe_4_1zkok","intentId":"swi_i1qpb4","text":"Contextual Actions → relevance update","kind":"intent"},{"turn":4,"eventId":"swe_4_1zkok","intentId":"swi_1ig50pj","text":"Living Regions → update region","kind":"intent"},{"turn":4,"eventId":"swe_4_1zkok","intentId":"swi_ki6ylo","text":"Regional Factions → update factions","kind":"intent"},{"turn":4,"eventId":"swe_4_qtg4l9","intentId":null,"text":"Dairy prices are unusually high.","kind":"event"},{"turn":4,"eventId":"swe_4_qtg4l9","intentId":"swi_14c9vz7","text":"Crisis chains → crisis context (day end)","kind":"intent"},{"turn":4,"eventId":"swe_4_qtg4l9","intentId":"swi_houp2b","text":"Contextual Actions → relevance update","kind":"intent"},{"turn":4,"eventId":"swe_4_qtg4l9","intentId":"swi_1wqn3g8","text":"Living Regions → update region","kind":"intent"},{"turn":4,"eventId":"swe_4_qtg4l9","intentId":"swi_i9iqaj","text":"Regional Factions → update factions","kind":"intent"},{"turn":4,"eventId":"lre_4_1y3qq1m","intentId":null,"text":"South Australia moved from stable to growing.","kind":"event"},{"turn":4,"eventId":"lre_4_1y3qq1m","intentId":"swi_16junnx","text":"Rival AI strategy → reconsider region target","kind":"intent"},{"turn":4,"eventId":"lre_4_1y3qq1m","intentId":"swi_1dj7pw9","text":"Team Intelligence (Team OS) → reassess task priority","kind":"intent"},{"turn":4,"eventId":"lre_4_1y3qq1m","intentId":"swi_gh10vd","text":"Team Intelligence (Team OS) → reassess task priority","kind":"intent"},{"turn":4,"eventId":"lre_4_1y3qq1m","intentId":"swi_16sko7g","text":"Diplomacy → reassess leverage","kind":"intent"},{"turn":4,"eventId":"lre_4_1y3qq1m","intentId":"swi_19dbe6e","text":"Contracts → contract relevance","kind":"intent"},{"turn":4,"eventId":"lre_4_1y3qq1m","intentId":"swi_112ij3j","text":"Regional Factions → update factions","kind":"intent"},{"turn":4,"eventId":"lre_4_lf5gi8","intentId":null,"text":"Northern Territory moved from stable to growing.","kind":"event"},{"turn":4,"eventId":"lre_4_lf5gi8","intentId":"swi_lbuozr","text":"Rival AI strategy → reconsider region target","kind":"intent"},{"turn":4,"eventId":"lre_4_lf5gi8","intentId":"swi_13nowk3","text":"Team Intelligence (Team OS) → reassess task priority","kind":"intent"},{"turn":4,"eventId":"lre_4_lf5gi8","intentId":"swi_1xt2sgn","text":"Team Intelligence (Team OS) → reassess task priority","kind":"intent"},{"turn":4,"eventId":"lre_4_lf5gi8","intentId":"swi_1vmwfma","text":"Diplomacy → reassess leverage","kind":"intent"},{"turn":4,"eventId":"lre_4_lf5gi8","intentId":"swi_a6gtj0","text":"Contracts → contract relevance","kind":"intent"},{"turn":4,"eventId":"lre_4_lf5gi8","intentId":"swi_jc37h5","text":"Regional Factions → update factions","kind":"intent"}],"diagnostics":{"detected":7,"ignored":26,"deduped":0,"routed":24,"suppressed":2,"cyclesBlocked":0,"maxDepth":0,"evaluations":23,"lastMs":3.9,"budgetExhausted":2,"lastChangedDomains":["market","diplomacy"],"lastSuppressions":["reaction budget 5 exhausted","reaction budget 5 exhausted"]},"lastProcessedSignature":null},"livingRegions":{"version":1,"revision":5,"initializedTurn":1,"lastRound":4,"regions":{"QLD":{"regionId":"QLD","name":"Queensland","development":{"score":12,"tier":"emerging","structural":12,"canonicalTier":0},"economy":{"score":39,"band":"weak","lastRoundScore":39},"momentum":{"value":0.1,"band":"stable","history":[0.04,0.03,0.1]},"stability":{"value":null,"band":"unknown"},"infrastructure":{"quality":15,"band":"poor","capacity":{"transport":15,"energy":15,"water":20,"technology":10,"trade":15},"active":[],"building":[],"damaged":[]},"sectors":{"tourism":8,"agriculture":16},"specializations":{"primary":null,"secondary":null,"emerging":null,"established":[],"pending":null},"needs":[],"opportunities":[{"id":"opp_QLD_cheap_entry","kind":"cheap_entry","label":"Cheap regional entry","reason":"Nobody controls the region yet.","strength":"high","sinceTurn":1}],"risks":[],"conditions":[],"history":[],"identity":{"label":"Untapped Frontier","since":1,"candidate":null,"candidateSince":null},"investment":{"band":"low","recent":[0,0,0,0],"highStreak":0},"trajectory":"stable","strategicValue":{"score":32,"band":"low","inputs":{"economy":39,"development":13,"specialization":16,"infrastructure":15,"resources":64,"contracts":25,"momentum":55,"control":40}},"core":{"ownerKey":null,"since":null,"controller":null,"controlSince":null},"evidence":[],"lastMeaningfulTurn":0,"revision":1},"NSW":{"regionId":"NSW","name":"New South Wales","development":{"score":14,"tier":"emerging","structural":14,"canonicalTier":0},"economy":{"score":37,"band":"weak","lastRoundScore":37},"momentum":{"value":0.04,"band":"stable","history":[0,0,0.04]},"stability":{"value":null,"band":"unknown"},"infrastructure":{"quality":15,"band":"poor","capacity":{"transport":15,"energy":15,"water":20,"technology":10,"trade":15},"active":[],"building":[],"damaged":[]},"sectors":{"mining":16,"agriculture":8,"tourism":4,"energy":4},"specializations":{"primary":null,"secondary":null,"emerging":null,"established":[],"pending":null},"needs":[],"opportunities":[{"id":"opp_NSW_cheap_entry","kind":"cheap_entry","label":"Cheap regional entry","reason":"Nobody controls the region yet.","strength":"high","sinceTurn":1}],"risks":[],"conditions":[],"history":[],"identity":{"label":"Untapped Frontier","since":1,"candidate":null,"candidateSince":null},"investment":{"band":"low","recent":[0,0,0,0],"highStreak":0},"trajectory":"stable","strategicValue":{"score":31,"band":"low","inputs":{"economy":37,"development":15,"specialization":16,"infrastructure":15,"resources":57,"contracts":25,"momentum":52,"control":40}},"core":{"ownerKey":null,"since":null,"controller":null,"controlSince":null},"evidence":[],"lastMeaningfulTurn":0,"revision":1},"VIC":{"regionId":"VIC","name":"Victoria","development":{"score":10,"tier":"underdeveloped","structural":10,"canonicalTier":0},"economy":{"score":39,"band":"weak","lastRoundScore":39},"momentum":{"value":0.18,"band":"stable","history":[0,0,0.18]},"stability":{"value":null,"band":"unknown"},"infrastructure":{"quality":15,"band":"poor","capacity":{"transport":15,"energy":15,"water":20,"technology":10,"trade":15},"active":[],"building":[],"damaged":[]},"sectors":{"agriculture":24},"specializations":{"primary":null,"secondary":"agriculture","emerging":null,"established":[],"pending":null},"needs":[],"opportunities":[{"id":"opp_VIC_commodity_boom","kind":"commodity_boom","label":"Dairy boom","reason":"Dairy trades 25% above normal and Victoria has a agricultural base.","strength":"high","sinceTurn":4},{"id":"opp_VIC_cheap_entry","kind":"cheap_entry","label":"Cheap regional entry","reason":"Nobody controls the region yet.","strength":"high","sinceTurn":1}],"risks":[],"conditions":[{"id":"cond_VIC_commodity_boom","kind":"commodity_boom","label":"Commodity Boom","source":"living_regions","sourceEventId":null,"startTurn":4,"expiresTurn":6,"severity":"moderate","effects":["resource contract relevance ↑","economy ↑ (exposure)"]}],"history":[],"identity":{"label":"Emerging Agricultural Economy","since":1,"candidate":null,"candidateSince":null},"investment":{"band":"low","recent":[0,0,0,0],"highStreak":0},"trajectory":"stable","strategicValue":{"score":30,"band":"low","inputs":{"economy":39,"development":11,"specialization":24,"infrastructure":15,"resources":61,"contracts":0,"momentum":59,"control":40}},"core":{"ownerKey":null,"since":null,"controller":null,"controlSince":null},"evidence":[{"turn":4,"text":"Dairy prices rose","effect":"market:agriculture","sourceEventId":"swe_4_qtg4l9"}],"lastMeaningfulTurn":0,"revision":2},"TAS":{"regionId":"TAS","name":"Tasmania","development":{"score":24,"tier":"emerging","structural":12,"canonicalTier":1},"economy":{"score":40,"band":"moderate","lastRoundScore":40},"momentum":{"value":0.17,"band":"stable","history":[0,-0.04,0.17]},"stability":{"value":null,"band":"unknown"},"infrastructure":{"quality":21,"band":"poor","capacity":{"transport":21,"energy":21,"water":25,"technology":16,"trade":21},"active":[],"building":[],"damaged":[]},"sectors":{"agriculture":16,"renewables":8},"specializations":{"primary":null,"secondary":null,"emerging":null,"established":[],"pending":null},"needs":[],"opportunities":[{"id":"opp_TAS_cheap_entry","kind":"cheap_entry","label":"Cheap regional entry","reason":"Nobody controls the region yet.","strength":"high","sinceTurn":1}],"risks":[],"conditions":[],"history":[],"identity":{"label":"Untapped Frontier","since":1,"candidate":null,"candidateSince":null},"investment":{"band":"low","recent":[0,0,0,0],"highStreak":0},"trajectory":"stable","strategicValue":{"score":36,"band":"moderate","inputs":{"economy":40,"development":26,"specialization":16,"infrastructure":21,"resources":70,"contracts":25,"momentum":59,"control":40}},"core":{"ownerKey":null,"since":null,"controller":null,"controlSince":null},"evidence":[],"lastMeaningfulTurn":0,"revision":1},"SA":{"regionId":"SA","name":"South Australia","development":{"score":24,"tier":"emerging","structural":12,"canonicalTier":1},"economy":{"score":43,"band":"moderate","lastRoundScore":43},"momentum":{"value":0.3,"band":"growing","history":[0.04,0.11,0.3]},"stability":{"value":null,"band":"unknown"},"infrastructure":{"quality":21,"band":"poor","capacity":{"transport":21,"energy":21,"water":25,"technology":16,"trade":21},"active":[],"building":[],"damaged":[]},"sectors":{"mining":16,"energy":4,"agriculture":8,"tourism":4},"specializations":{"primary":null,"secondary":null,"emerging":null,"established":[],"pending":null},"needs":[{"id":"need_SA_capital","category":"capital","severity":"moderate","score":42,"trend":"rising","reason":"Growth is outpacing the capital invested in the region","sourceEvents":[],"openedTurn":4,"lastUpdatedTurn":4,"status":"open"}],"opportunities":[{"id":"opp_SA_cheap_entry","kind":"cheap_entry","label":"Cheap regional entry","reason":"Nobody controls the region yet.","strength":"high","sinceTurn":1}],"risks":[],"conditions":[],"history":[{"turn":4,"kind":"momentum","text":"South Australia's economy entered growing.","sourceEventId":null,"significance":"meaningful"}],"identity":{"label":"Untapped Frontier","since":1,"candidate":null,"candidateSince":null},"investment":{"band":"low","recent":[0,0,0,0],"highStreak":0},"trajectory":"stable","strategicValue":{"score":37,"band":"moderate","inputs":{"economy":43,"development":26,"specialization":16,"infrastructure":21,"resources":66,"contracts":25,"momentum":65,"control":40}},"core":{"ownerKey":null,"since":null,"controller":null,"controlSince":null},"evidence":[{"turn":4,"text":"Uranium prices rose","effect":"market:mining","sourceEventId":"swe_4_1zkok"}],"lastMeaningfulTurn":4,"revision":2},"WA":{"regionId":"WA","name":"Western Australia","development":{"score":12,"tier":"emerging","structural":12,"canonicalTier":0},"economy":{"score":39,"band":"weak","lastRoundScore":39},"momentum":{"value":0.1,"band":"stable","history":[0.04,0.03,0.1]},"stability":{"value":null,"band":"unknown"},"infrastructure":{"quality":15,"band":"poor","capacity":{"transport":15,"energy":15,"water":20,"technology":10,"trade":15},"active":[],"building":[],"damaged":[]},"sectors":{"mining":16,"finance":4,"energy":8},"specializations":{"primary":null,"secondary":null,"emerging":null,"established":[],"pending":null},"needs":[],"opportunities":[{"id":"opp_WA_cheap_entry","kind":"cheap_entry","label":"Cheap regional entry","reason":"Nobody controls the region yet.","strength":"high","sinceTurn":1}],"risks":[],"conditions":[],"history":[],"identity":{"label":"Untapped Frontier","since":1,"candidate":null,"candidateSince":null},"investment":{"band":"low","recent":[0,0,0,0],"highStreak":0},"trajectory":"stable","strategicValue":{"score":32,"band":"low","inputs":{"economy":39,"development":13,"specialization":16,"infrastructure":15,"resources":67,"contracts":25,"momentum":55,"control":40}},"core":{"ownerKey":null,"since":null,"controller":null,"controlSince":null},"evidence":[],"lastMeaningfulTurn":0,"revision":1},"NT":{"regionId":"NT","name":"Northern Territory","development":{"score":12,"tier":"emerging","structural":12,"canonicalTier":0},"economy":{"score":42,"band":"moderate","lastRoundScore":42},"momentum":{"value":0.28,"band":"growing","history":[0,0.04,0.28]},"stability":{"value":null,"band":"unknown"},"infrastructure":{"quality":15,"band":"poor","capacity":{"transport":15,"energy":15,"water":20,"technology":10,"trade":15},"active":[],"building":[],"damaged":[]},"sectors":{"trade":8,"tourism":8,"mining":8,"energy":4},"specializations":{"primary":null,"secondary":null,"emerging":null,"established":[],"pending":null},"needs":[{"id":"need_NT_capital","category":"capital","severity":"moderate","score":41,"trend":"rising","reason":"Growth is outpacing the capital invested in the region","sourceEvents":[],"openedTurn":4,"lastUpdatedTurn":4,"status":"open"}],"opportunities":[{"id":"opp_NT_cheap_entry","kind":"cheap_entry","label":"Cheap regional entry","reason":"Nobody controls the region yet.","strength":"high","sinceTurn":1}],"risks":[],"conditions":[],"history":[{"turn":4,"kind":"momentum","text":"Northern Territory's economy entered growing.","sourceEventId":null,"significance":"meaningful"}],"identity":{"label":"Untapped Frontier","since":1,"candidate":null,"candidateSince":null},"investment":{"band":"low","recent":[0,0,0,0],"highStreak":0},"trajectory":"stable","strategicValue":{"score":31,"band":"low","inputs":{"economy":42,"development":13,"specialization":8,"infrastructure":15,"resources":75,"contracts":0,"momentum":64,"control":40}},"core":{"ownerKey":null,"since":null,"controller":null,"controlSince":null},"evidence":[{"turn":4,"text":"Uranium prices rose","effect":"market:mining","sourceEventId":"swe_4_1zkok"}],"lastMeaningfulTurn":4,"revision":2},"ACT":{"regionId":"ACT","name":"Australian Capital Territory","development":{"score":12,"tier":"emerging","structural":12,"canonicalTier":0},"economy":{"score":37,"band":"weak","lastRoundScore":37},"momentum":{"value":0.04,"band":"stable","history":[0,0,0.04]},"stability":{"value":null,"band":"unknown"},"infrastructure":{"quality":15,"band":"poor","capacity":{"transport":15,"energy":15,"water":20,"technology":10,"trade":15},"active":[],"building":[],"damaged":[]},"sectors":{"finance":8,"research":16},"specializations":{"primary":null,"secondary":null,"emerging":null,"established":[],"pending":null},"needs":[],"opportunities":[{"id":"opp_ACT_cheap_entry","kind":"cheap_entry","label":"Cheap regional entry","reason":"Nobody controls the region yet.","strength":"high","sinceTurn":1}],"risks":[],"conditions":[],"history":[],"identity":{"label":"Untapped Frontier","since":1,"candidate":null,"candidateSince":null},"investment":{"band":"low","recent":[0,0,0,0],"highStreak":0},"trajectory":"stable","strategicValue":{"score":30,"band":"low","inputs":{"economy":37,"development":13,"specialization":16,"infrastructure":15,"resources":56,"contracts":25,"momentum":52,"control":40}},"core":{"ownerKey":null,"since":null,"controller":null,"controlSince":null},"evidence":[],"lastMeaningfulTurn":0,"revision":1}},"derived":[{"id":"lre_4_lf5gi8","turn":4,"kind":"regional_growth_accelerated","regionId":"NT","text":"Northern Territory moved from stable to growing.","significance":"meaningful","causedByEventId":null,"rootEventId":null,"reactionDepth":0,"actorKey":null,"evidence":["Northern Territory: Stable → Growing.","Uranium prices rose"]},{"id":"lre_4_1y3qq1m","turn":4,"kind":"regional_growth_accelerated","regionId":"SA","text":"South Australia moved from stable to growing.","significance":"meaningful","causedByEventId":null,"rootEventId":null,"reactionDepth":0,"actorKey":null,"evidence":["South Australia: Stable → Growing.","Uranium prices rose"]}],"milestones":[],"hashes":{"QLD":"1e3fw4i","NSW":"61ldoz","VIC":"1crdwjb","TAS":"gs038y","SA":"1cpb5xf","WA":"16lku4k","NT":"1a10b16","ACT":"5d7xd0"},"diagnostics":{"eventsApplied":2,"eventsIgnored":0,"roundsAdvanced":3,"syncs":2,"derivedEmitted":2,"lastMs":3.3,"lastRegions":["VIC"]}},"contentState":{"version":1,"seed":1337,"profile":{"scenarioId":null,"themes":["renewables","energy"],"themeWeights":{"mining":1,"agriculture":1,"energy":1.8,"renewables":1.8,"technology":1,"research":1,"trade":1,"logistics":1,"finance":1,"tourism":1,"water":1,"manufacturing":1,"governance":1,"environment":1,"exploration":1},"regionWeights":{"NSW":1.45,"VIC":1.15,"QLD":1,"WA":1.45,"SA":1.15,"TAS":1,"NT":1,"ACT":1},"budgets":{"crises":2,"dilemmas":4,"rare":1,"exceptional":1,"nationalEvents":3,"concurrentOffers":3,"totalOffers":13},"contractRotation":"normal","crisisIntensity":"normal","rareFrequency":"normal","startingPackage":"standard","regionalOpening":"southern_transition","rivalProfile":"infrastructure","totalDays":30,"recentRare":[]},"initializedDay":1,"history":[{"key":"tas_conservation_growth@TAS","templateId":"tas_conservation_growth","kind":"dilemma","regionId":"TAS","day":2,"outcome":"opened","detail":"Tasmanian Wilderness Trust influence 34"}],"cooldowns":{},"used":{"crises":0,"dilemmas":1,"rare":0,"exceptional":0,"nationalEvents":0,"offers":0},"offers":[],"activeDilemma":{"id":"v93d_tas_conservation_growth_TAS_d2","templateId":"tas_conservation_growth","regionId":"TAS","openedDay":2,"expiresDay":5,"title":"Conservation or Growth","prompt":"Tasmania is growing. The Wilderness Trust wants limits; developers want room.","evidence":["Tasmanian Wilderness Trust influence 34","Tasmania is emerging"],"choices":[{"id":"protect","label":"Protect the wilderness","pros":["Trust relationship","Tourism standing"],"cons":["Slower development"],"scores":{"economy":-1,"control":1,"stability":1,"longTerm":1},"effects":[{"k":"standing","delta":6},{"k":"flag","key":"tas_path","value":"conservation"},{"k":"offer_contract","templateId":"tas_eco_expansion"}],"factions":{"winners":["tas_wilderness_trust"],"losers":[]}},{"id":"develop","label":"Open for development","pros":["Faster growth","Hydro partnership"],"cons":["Trust opposition","Standing risk"],"scores":{"economy":2,"control":-1,"stability":-1,"longTerm":1},"effects":[{"k":"standing","delta":-4},{"k":"flag","key":"tas_path","value":"development"},{"k":"offer_contract","templateId":"tas_hydro_partnership"}],"factions":{"winners":["tas_innovation_network"],"losers":["tas_wilderness_trust"]}},{"id":"eco_tourism","label":"Eco-tourism compromise","pros":["Moderate growth with support"],"cons":["Costs capital up front"],"scores":{"economy":1,"control":0,"stability":1,"longTerm":0},"effects":[{"k":"cash","amount":-1500},{"k":"flag","key":"tas_path","value":"eco_tourism"}],"nav":"infrastructure"}]},"resolved":[],"opportunities":[],"flags":{},"regionLastDilemma":{"TAS":2},"lastCrisisCategory":null,"lastEval":{"day":4,"eligible":[{"key":"unexpected_regional_boom@SA","kind":"rare","score":0.345,"reasons":["South Australia momentum is growing","South Australia economy is moderate"]},{"key":"unexpected_regional_boom@NT","kind":"rare","score":0.3,"reasons":["Northern Territory momentum is growing","Northern Territory economy is moderate"]},{"key":"stakeholder_coalition@QLD","kind":"rare","score":0.3,"reasons":["Regional Labor Coalition influence 38"]},{"key":"stakeholder_coalition@WA","kind":"rare","score":0.435,"reasons":["Regional Labor Coalition influence 38"]},{"key":"stakeholder_coalition@SA","kind":"rare","score":0.345,"reasons":["Regional Labor Coalition influence 38"]},{"key":"stakeholder_coalition@TAS","kind":"rare","score":0.3,"reasons":["Regional Labor Coalition influence 38"]},{"key":"export_surge@WA","kind":"event","score":1.667,"reasons":["Western Australia mining activity 16"]},{"key":"technology_demand@ACT","kind":"event","score":1.15,"reasons":["Australian Capital Territory research activity 16"]},{"key":"agricultural_disruption@NSW","kind":"event","score":1.667,"reasons":["New South Wales agriculture activity 8"]},{"key":"agricultural_disruption@VIC","kind":"event","score":1.15,"reasons":["Victoria agriculture activity 24"]},{"key":"agricultural_disruption@SA","kind":"event","score":1.322,"reasons":["South Australia agriculture activity 8"]},{"key":"tourism_boom@QLD","kind":"event","score":1.15,"reasons":["Queensland tourism activity 8"]},{"key":"tourism_boom@NT","kind":"event","score":1.15,"reasons":["Northern Territory tourism activity 8"]},{"key":"energy_price_spike@WA","kind":"event","score":3.001,"reasons":["Western Australia energy activity 8"]},{"key":"energy_price_spike@TAS","kind":"event","score":1.8,"reasons":["Tasmania renewables activity 8"]},{"key":"commodity_softening@WA","kind":"event","score":1.667,"reasons":["Iron Ore trades at 113% of base"]},{"key":"commodity_softening@NSW","kind":"event","score":1.45,"reasons":["Iron Ore trades at 113% of base"]},{"key":"research_grant_round@ACT","kind":"event","score":1.438,"reasons":["day 3"]},{"key":"wine_wool_trade_deal@VIC","kind":"event","score":1.322,"reasons":["Victoria agriculture activity 24"]},{"key":"wine_wool_trade_deal@SA","kind":"event","score":1.322,"reasons":["South Australia agriculture activity 8"]},{"key":"mining_labor_shortage@WA","kind":"event","score":1.667,"reasons":["Western Australia mining activity 16"]},{"key":"renewables_auction@TAS","kind":"event","score":2.38,"reasons":["Tasmania renewables activity 8"]}],"suppressed":[{"key":"contract:*","kind":"contract","reason":"regional contracts are off"},{"key":"crisis:*","kind":"crisis","reason":"dynamic crisis chains are off"},{"key":"major_mineral_discovery@NT","kind":"rare","reason":"too early (day 3 < 5)"},{"key":"major_mineral_discovery@WA","kind":"rare","reason":"too early (day 3 < 5)"},{"key":"major_mineral_discovery@SA","kind":"rare","reason":"too early (day 3 < 5)"},{"key":"technology_breakthrough@VIC","kind":"rare","reason":"Victoria technology activity 0 < 18 / Victoria research activity 0 < 18"},{"key":"technology_breakthrough@ACT","kind":"rare","reason":"Australian Capital Territory technology activity 0 < 18 / Australian Capital Territory research activity 16 < 18"},{"key":"national_emergency_declared@ACT","kind":"rare","reason":"no matching active crisis"},{"key":"unexpected_regional_boom@TAS","kind":"rare","reason":"Tasmania momentum below growing"},{"key":"unexpected_regional_boom@QLD","kind":"rare","reason":"Queensland momentum below growing"},{"key":"historic_infrastructure_opportunity@ACT","kind":"rare","reason":"too early (day 3 < 8)"},{"key":"iron_ore_collapse@WA","kind":"rare","reason":"Western Australia has no commodity boom / Iron Ore price 113% < 118% / requires earlier decision export surge"},{"key":"green_hydrogen_breakthrough@SA","kind":"rare","reason":"South Australia renewables activity 0 < 14"},{"key":"green_hydrogen_breakthrough@WA","kind":"rare","reason":"Western Australia renewables activity 0 < 14"},{"key":"stakeholder_coalition@SA","kind":"rare","reason":"eligible — rare roll not met (rare by design)"},{"key":"export_surge@QLD","kind":"event","reason":"Queensland trade activity 0 < 8 / Queensland mining activity 0 < 10"},{"key":"technology_demand@VIC","kind":"event","reason":"Victoria technology activity 0 < 8 / Victoria research activity 0 < 8"},{"key":"tourism_boom@TAS","kind":"event","reason":"Tasmania tourism activity 0 < 5"},{"key":"infrastructure_stimulus@ACT","kind":"event","reason":"too early (day 3 < 5)"},{"key":"energy_price_spike@SA","kind":"event","reason":"South Australia energy activity 4 < 6 / South Australia renewables activity 0 < 6"},{"key":"interest_rate_rise@NSW","kind":"event","reason":"too early (day 3 < 6)"},{"key":"freight_bottleneck@QLD","kind":"event","reason":"Queensland has no moderate+ transport need / Queensland has no infrastructure bottleneck"},{"key":"freight_bottleneck@NSW","kind":"event","reason":"New South Wales has no moderate+ transport need / New South Wales has no infrastructure bottleneck"},{"key":"freight_bottleneck@WA","kind":"event","reason":"Western Australia has no moderate+ transport need / Western Australia has no infrastructure bottleneck"},{"key":"mining_labor_shortage@QLD","kind":"event","reason":"Queensland mining activity 0 < 10"},{"key":"water_restrictions@SA","kind":"event","reason":"South Australia has no moderate+ water need / no matching active crisis in South Australia"},{"key":"water_restrictions@NSW","kind":"event","reason":"New South Wales has no moderate+ water need / no matching active crisis in New South Wales"},{"key":"renewables_auction@SA","kind":"event","reason":"South Australia renewables activity 0 < 6"},{"key":"renewables_auction@QLD","kind":"event","reason":"Queensland renewables activity 0 < 6"},{"key":"energy_price_spike@WA","kind":"event","reason":"eligible — not triggered today (seeded chance)"},{"key":"dilemma:*","kind":"dilemma","reason":"a decision is already waiting"}],"evaluated":48,"cached":41,"ms":0.3},"lastPlannedDay":4,"startApplied":true,"seenKinds":[],"revision":4},"regionalFactions":{"version":1,"revision":3,"initializedTurn":1,"lastRound":4,"factions":{"nsw_farmers_coop":{"id":"nsw_farmers_coop","status":"active","activeRegions":["NSW"],"influenceByRegion":{"NSW":34.9},"relationshipsByActor":{},"priorities":[{"id":"pri_nsw_farmers_coop_ag_logistics_nsw","label":"See \"Agricultural Logistics Supply Network\" delivered","goalType":"support_contract","regionId":"NSW","targetId":"ag_logistics_nsw","score":45,"cause":"New South Wales has an open agricultural logistics contract"}],"concerns":[],"currentGoals":[{"id":"goal_nsw_farmers_coop_ag_logistics_nsw","type":"support_contract","regionId":"NSW","targetId":"ag_logistics_nsw","label":"See \"Agricultural Logistics Supply Network\" delivered","sinceTurn":1,"status":"active"}],"coalitionIds":[],"contractsCompletedByRegion":{},"lastRequestTurn":null,"recentHistory":[],"revision":0},"sa_clean_energy_council":{"id":"sa_clean_energy_council","status":"active","activeRegions":["SA"],"influenceByRegion":{"SA":32.9},"relationshipsByActor":{},"priorities":[{"id":"pri_sa_clean_energy_council_green_energy_sa","label":"See \"Renewable Energy Grid Expansion\" delivered","goalType":"support_contract","regionId":"SA","targetId":"green_energy_sa","score":45,"cause":"South Australia has an open renewable energy grid contract"}],"concerns":[],"currentGoals":[{"id":"goal_sa_clean_energy_council_green_energy_sa","type":"support_contract","regionId":"SA","targetId":"green_energy_sa","label":"See \"Renewable Energy Grid Expansion\" delivered","sinceTurn":1,"status":"active"}],"coalitionIds":[],"contractsCompletedByRegion":{},"lastRequestTurn":null,"recentHistory":[],"revision":0},"pilbara_mining_consortium":{"id":"pilbara_mining_consortium","status":"active","activeRegions":["WA"],"influenceByRegion":{"WA":39},"relationshipsByActor":{},"priorities":[{"id":"pri_pilbara_mining_consortium_mining_tech_wa","label":"See \"Pilbara Automated Mining Technology\" delivered","goalType":"support_contract","regionId":"WA","targetId":"mining_tech_wa","score":45,"cause":"Western Australia has an open mining tech initiative contract"},{"id":"pri_pilbara_mining_consortium_spec_WA","label":"Grow mining in Western Australia","goalType":"increase_specialization","regionId":"WA","targetId":"mining","score":24,"cause":"mining is emerging but not yet established"}],"concerns":[],"currentGoals":[{"id":"goal_pilbara_mining_consortium_mining_tech_wa","type":"support_contract","regionId":"WA","targetId":"mining_tech_wa","label":"See \"Pilbara Automated Mining Technology\" delivered","sinceTurn":1,"status":"active"},{"id":"goal_pilbara_mining_consortium_spec_WA","type":"increase_specialization","regionId":"WA","targetId":"mining","label":"Grow mining in Western Australia","sinceTurn":1,"status":"active"}],"coalitionIds":[],"contractsCompletedByRegion":{},"lastRequestTurn":null,"recentHistory":[],"revision":0},"qld_port_authority":{"id":"qld_port_authority","status":"active","activeRegions":["QLD"],"influenceByRegion":{"QLD":31},"relationshipsByActor":{},"priorities":[{"id":"pri_qld_port_authority_maritime_hub_qld","label":"See \"Maritime Freight Export Hub\" delivered","goalType":"support_contract","regionId":"QLD","targetId":"maritime_hub_qld","score":44,"cause":"Queensland has an open maritime export hub contract"}],"concerns":[],"currentGoals":[{"id":"goal_qld_port_authority_maritime_hub_qld","type":"support_contract","regionId":"QLD","targetId":"maritime_hub_qld","label":"See \"Maritime Freight Export Hub\" delivered","sinceTurn":1,"status":"active"}],"coalitionIds":[],"contractsCompletedByRegion":{},"lastRequestTurn":null,"recentHistory":[],"revision":0},"tas_wilderness_trust":{"id":"tas_wilderness_trust","status":"active","activeRegions":["TAS"],"influenceByRegion":{"TAS":37.7},"relationshipsByActor":{},"priorities":[{"id":"pri_tas_wilderness_trust_eco_trail_tas","label":"See \"Tasmanian Eco-Tourism Network\" delivered","goalType":"support_contract","regionId":"TAS","targetId":"eco_trail_tas","score":45,"cause":"Tasmania has an open eco tourism network contract"}],"concerns":[],"currentGoals":[{"id":"goal_tas_wilderness_trust_eco_trail_tas","type":"support_contract","regionId":"TAS","targetId":"eco_trail_tas","label":"See \"Tasmanian Eco-Tourism Network\" delivered","sinceTurn":1,"status":"active"}],"coalitionIds":["coal_lw5o2a"],"contractsCompletedByRegion":{},"lastRequestTurn":null,"recentHistory":[],"revision":0},"csiro_ai_directorate":{"id":"csiro_ai_directorate","status":"active","activeRegions":["ACT"],"influenceByRegion":{"ACT":36.8},"relationshipsByActor":{},"priorities":[{"id":"pri_csiro_ai_directorate_div_ACT","label":"Cut costs and diversify in Australian Capital Territory","goalType":"reduce_regional_risk","regionId":"ACT","targetId":null,"score":60,"cause":"Research Funds price collapse"},{"id":"pri_csiro_ai_directorate_ai_center_act","label":"See \"Canberra AI Research Initiative\" delivered","goalType":"support_contract","regionId":"ACT","targetId":"ai_center_act","score":45,"cause":"Australian Capital Territory has an open ai research center contract"},{"id":"pri_csiro_ai_directorate_spec_ACT","label":"Grow research in Australian Capital Territory","goalType":"increase_specialization","regionId":"ACT","targetId":"research","score":24,"cause":"research is emerging but not yet established"}],"concerns":[{"id":"con_csiro_ai_directorate_price_ACT","label":"Profitability","severity":"high","regionId":"ACT","cause":"Research Funds prices are well below normal"}],"currentGoals":[{"id":"goal_csiro_ai_directorate_div_ACT","type":"reduce_regional_risk","regionId":"ACT","targetId":null,"label":"Cut costs and diversify in Australian Capital Territory","sinceTurn":4,"status":"active"},{"id":"goal_csiro_ai_directorate_ai_center_act","type":"support_contract","regionId":"ACT","targetId":"ai_center_act","label":"See \"Canberra AI Research Initiative\" delivered","sinceTurn":1,"status":"active"},{"id":"goal_csiro_ai_directorate_spec_ACT","type":"increase_specialization","regionId":"ACT","targetId":"research","label":"Grow research in Australian Capital Territory","sinceTurn":1,"status":"abandoned"}],"coalitionIds":[],"contractsCompletedByRegion":{},"lastRequestTurn":null,"recentHistory":[],"revision":0},"vic_technology_council":{"id":"vic_technology_council","status":"active","activeRegions":["VIC"],"influenceByRegion":{"VIC":31},"relationshipsByActor":{},"priorities":[],"concerns":[],"currentGoals":[],"coalitionIds":[],"contractsCompletedByRegion":{},"lastRequestTurn":null,"recentHistory":[],"revision":0},"regional_labor_coalition":{"id":"regional_labor_coalition","status":"active","activeRegions":["QLD","WA"],"influenceByRegion":{"QLD":38.1,"WA":31},"relationshipsByActor":{},"priorities":[{"id":"pri_regional_labor_coalition_spec_QLD","label":"Grow agriculture in Queensland","goalType":"increase_specialization","regionId":"QLD","targetId":"agriculture","score":24,"cause":"agriculture is emerging but not yet established"}],"concerns":[],"currentGoals":[{"id":"goal_regional_labor_coalition_spec_QLD","type":"increase_specialization","regionId":"QLD","targetId":"agriculture","label":"Grow agriculture in Queensland","sinceTurn":1,"status":"active"}],"coalitionIds":[],"contractsCompletedByRegion":{},"lastRequestTurn":null,"recentHistory":[],"revision":0},"national_tourism_council":{"id":"national_tourism_council","status":"active","activeRegions":["QLD","TAS"],"influenceByRegion":{"QLD":36.5,"TAS":33.9},"relationshipsByActor":{},"priorities":[{"id":"pri_national_tourism_council_eco_trail_tas","label":"See \"Tasmanian Eco-Tourism Network\" delivered","goalType":"support_contract","regionId":"TAS","targetId":"eco_trail_tas","score":33,"cause":"Tasmania has an open eco tourism network contract"}],"concerns":[],"currentGoals":[{"id":"goal_national_tourism_council_eco_trail_tas","type":"support_contract","regionId":"TAS","targetId":"eco_trail_tas","label":"See \"Tasmanian Eco-Tourism Network\" delivered","sinceTurn":1,"status":"active"}],"coalitionIds":["coal_lw5o2a"],"contractsCompletedByRegion":{},"lastRequestTurn":null,"recentHistory":[],"revision":0},"nt_community_council":{"id":"nt_community_council","status":"active","activeRegions":["NT"],"influenceByRegion":{"NT":35.2},"relationshipsByActor":{},"priorities":[],"concerns":[],"currentGoals":[],"coalitionIds":[],"contractsCompletedByRegion":{},"lastRequestTurn":null,"recentHistory":[],"revision":0},"federal_infrastructure_office":{"id":"federal_infrastructure_office","status":"active","activeRegions":["ACT"],"influenceByRegion":{"ACT":31.8},"relationshipsByActor":{},"priorities":[],"concerns":[],"currentGoals":[],"coalitionIds":[],"contractsCompletedByRegion":{},"lastRequestTurn":null,"recentHistory":[],"revision":0},"tas_innovation_network":{"id":"tas_innovation_network","status":"dormant","activeRegions":[],"influenceByRegion":{},"relationshipsByActor":{},"priorities":[],"concerns":[],"currentGoals":[],"coalitionIds":[],"contractsCompletedByRegion":{},"lastRequestTurn":null,"recentHistory":[],"revision":0}},"requests":[],"commitments":[],"coalitions":[{"id":"coal_lw5o2a","memberIds":["national_tourism_council","tas_wilderness_trust"],"regionId":"TAS","kind":"support","targetId":"eco_trail_tas","goal":"Deliver Tasmanian Eco-Tourism Network","formedTurn":2,"status":"active","dissolvedTurn":null,"reason":null,"misalignedRounds":0}],"conflictByRegion":{"ACT":"low","NSW":"low","NT":"low","QLD":"low","SA":"low","TAS":"low","VIC":"low","WA":"low"},"preferences":{"focus":[],"avoid":[]},"decisions":[],"derived":[{"id":"rfe_2_1bl363l","turn":2,"kind":"faction_coalition_formed","regionId":"TAS","factionId":"national_tourism_council","actorId":null,"text":"National Tourism Council and Tasmanian Wilderness Trust formed a coalition: Deliver Tasmanian Eco-Tourism Network.","significance":"major","causedByEventId":null,"rootEventId":null,"reactionDepth":0,"public":true,"evidence":["Deliver Tasmanian Eco-Tourism Network"]}],"diagnostics":{"eventsApplied":0,"eventsIgnored":2,"rounds":3,"requestsIssued":0,"requestsFulfilled":0,"requestsExpired":0,"coalitionsFormed":1,"coalitionsDissolved":0,"derivedEmitted":1,"lastMs":3.6}},"matchSeed":1337,"rulesVersion":1010,"firstRun":{"version":1,"active":false,"unlocked":["travel","challenge","sell","trade","crafting","shop","loans","sabotage","diplomacy","teams"],"unlockLog":[],"lastUnlockDay":null,"startChallenges":0,"outcome":"skipped","finishedDay":1},"regionalDevLevels":{"NSW":{"regionId":"NSW","tier":0,"tierName":"Untapped","currentExp":0,"expToNextTier":500,"totalInvestedCapital":0,"localEconomicMultiplier":1,"standingBonusModifier":1,"travelCostReductionPercent":0,"unlockedInfrastructureIds":[],"activeRegionalBonuses":[]},"VIC":{"regionId":"VIC","tier":0,"tierName":"Untapped","currentExp":0,"expToNextTier":500,"totalInvestedCapital":0,"localEconomicMultiplier":1,"standingBonusModifier":1,"travelCostReductionPercent":0,"unlockedInfrastructureIds":[],"activeRegionalBonuses":[]},"QLD":{"regionId":"QLD","tier":0,"tierName":"Untapped","currentExp":0,"expToNextTier":500,"totalInvestedCapital":0,"localEconomicMultiplier":1,"standingBonusModifier":1,"travelCostReductionPercent":0,"unlockedInfrastructureIds":[],"activeRegionalBonuses":[]},"WA":{"regionId":"WA","tier":0,"tierName":"Untapped","currentExp":0,"expToNextTier":500,"totalInvestedCapital":0,"localEconomicMultiplier":1,"standingBonusModifier":1,"travelCostReductionPercent":0,"unlockedInfrastructureIds":[],"activeRegionalBonuses":[]},"SA":{"regionId":"SA","tier":1,"tierName":"Untapped","currentExp":0,"expToNextTier":500,"totalInvestedCapital":0,"localEconomicMultiplier":1,"standingBonusModifier":1,"travelCostReductionPercent":0,"unlockedInfrastructureIds":[],"activeRegionalBonuses":[]},"TAS":{"regionId":"TAS","tier":1,"tierName":"Untapped","currentExp":0,"expToNextTier":500,"totalInvestedCapital":0,"localEconomicMultiplier":1,"standingBonusModifier":1,"travelCostReductionPercent":0,"unlockedInfrastructureIds":[],"activeRegionalBonuses":[]},"NT":{"regionId":"NT","tier":0,"tierName":"Untapped","currentExp":0,"expToNextTier":500,"totalInvestedCapital":0,"localEconomicMultiplier":1,"standingBonusModifier":1,"travelCostReductionPercent":0,"unlockedInfrastructureIds":[],"activeRegionalBonuses":[]},"ACT":{"regionId":"ACT","tier":0,"tierName":"Untapped","currentExp":0,"expToNextTier":500,"totalInvestedCapital":0,"localEconomicMultiplier":1,"standingBonusModifier":1,"travelCostReductionPercent":0,"unlockedInfrastructureIds":[],"activeRegionalBonuses":[]}},"activeDynamicEvent":{"id":"dyn_event_3_QLD_3","name":"Resource Shortage","region":"QLD","duration":2,"remainingDays":2,"effect":{"travelCost":1.1,"challengeBonus":{"wildlife":0.05},"resourcePriceMultiplier":1.3,"investmentYieldMultiplier":1.15},"description":"Resource supply constraints in QLD drive up commodity prices."},"rejectedProposalSignatures":{},"approvalRevisionCountMap":{},"gameActivityLedger":{"matchId":"match:corr:1","events":[],"collections":[],"archivedEvents":[],"nextSequenceId":1,"lastEventHash":"00000000","totalEventsRecorded":0,"paused":false}},"gameSettings":{"guidedLearning":{"version":1,"welcome":"started","basicsStep":null,"skipGuidance":false,"concepts":{"current_focus":{"status":"introduced","firstRelevantTurn":1,"firstSeenTurn":1,"firstUsedTurn":null,"successfulUses":0,"mistakeCount":0,"lastHintTurn":1,"dismissed":false,"masteryEvidence":[],"helpLevel":0},"action_points":{"status":"mastered","firstRelevantTurn":null,"firstSeenTurn":null,"firstUsedTurn":1,"successfulUses":8,"mistakeCount":0,"lastHintTurn":null,"dismissed":false,"masteryEvidence":["used 1 action(s) (turn 2)","used 1 action(s) (turn 2)","used 1 action(s) (turn 3)","used 1 action(s) (turn 3)"],"helpLevel":0},"end_turn":{"status":"understood","firstRelevantTurn":null,"firstSeenTurn":null,"firstUsedTurn":1,"successfulUses":3,"mistakeCount":0,"lastHintTurn":null,"dismissed":false,"masteryEvidence":["ended the turn (turn 1)","ended the turn (turn 2)","ended the turn (turn 3)"],"helpLevel":0},"travel":{"status":"practiced","firstRelevantTurn":null,"firstSeenTurn":null,"firstUsedTurn":2,"successfulUses":1,"mistakeCount":0,"lastHintTurn":null,"dismissed":false,"masteryEvidence":["travelled NSW→VIC (turn 2)"],"helpLevel":0},"win_condition":{"status":"introduced","firstRelevantTurn":2,"firstSeenTurn":2,"firstUsedTurn":null,"successfulUses":0,"mistakeCount":0,"lastHintTurn":2,"dismissed":false,"masteryEvidence":[],"helpLevel":0},"save_safety":{"status":"introduced","firstRelevantTurn":3,"firstSeenTurn":3,"firstUsedTurn":null,"successfulUses":0,"mistakeCount":0,"lastHintTurn":3,"dismissed":false,"masteryEvidence":[],"helpLevel":0}},"activeLessonId":"save_safety","completedLessons":[],"dismissedClasses":[],"recentHints":[{"id":"current_focus","turn":1,"surface":"card"},{"id":"win_condition","turn":2,"surface":"card"},{"id":"save_safety","turn":3,"surface":"card"}],"lastHintTurn":3,"sessionHintsShown":3,"totalHintsShown":3,"matchesStarted":1,"forcedLessonId":null,"events":[{"turn":0,"kind":"welcome","conceptId":null,"detail":"welcome basics"},{"turn":1,"kind":"match_start","conceptId":null,"detail":"match start"},{"turn":1,"kind":"basics_step","conceptId":null,"detail":"basics null"},{"turn":1,"kind":"shown","conceptId":"current_focus","detail":"always relevant on your turn; teaches what matters right now"},{"turn":1,"kind":"used","conceptId":"action_points","detail":"used 1 action(s)"},{"turn":1,"kind":"used","conceptId":"action_points","detail":"used 1 action(s)"},{"turn":1,"kind":"used","conceptId":"action_points","detail":"used 1 action(s)"},{"turn":1,"kind":"used","conceptId":"end_turn","detail":"ended the turn"},{"turn":2,"kind":"used","conceptId":"action_points","detail":"used 1 action(s)"},{"turn":2,"kind":"used","conceptId":"travel","detail":"travelled NSW→VIC"},{"turn":2,"kind":"used","conceptId":"action_points","detail":"used 1 action(s)"},{"turn":2,"kind":"used","conceptId":"action_points","detail":"used 1 action(s)"},{"turn":2,"kind":"shown","conceptId":"win_condition","detail":"turn 2: the win condition shapes every choice"},{"turn":2,"kind":"used","conceptId":"end_turn","detail":"ended the turn"},{"turn":3,"kind":"shown","conceptId":"save_safety","detail":"matches are not saved automatically and Autosave & Resume is off"},{"turn":3,"kind":"used","conceptId":"action_points","detail":"used 1 action(s)"},{"turn":3,"kind":"used","conceptId":"action_points","detail":"used 1 action(s)"},{"turn":3,"kind":"used","conceptId":"end_turn","detail":"ended the turn"}],"revision":18},"guidedFirstRunEnabled":false,"coPilotMode":"off","advancedLoansEnabled":false,"stateInfrastructureEnabled":false,"experienceMode":"explorer"},"dontAskAgain":{"travel":false,"sell":false,"challenge":false,"endDay":false},"uiPreferences":{"theme":"dark"},"aiRuntime":{"queue":[],"currentAction":null,"rngState":1337,"worldRngState":1337},"rngRegistryState":{"World":{"domain":"World","streamSeed":4001202649,"drawCount":0,"rollingHash":0,"currentState":4001202649,"state":4001202649,"xoshiroState":[4001202649,1883961440,3778197831,3595935593]},"world":{"domain":"World","streamSeed":4001202649,"drawCount":0,"rollingHash":0,"currentState":4001202649,"state":4001202649,"xoshiroState":[4001202649,1883961440,3778197831,3595935593]},"AIReasoning":{"domain":"AIReasoning","streamSeed":4116127997,"drawCount":47,"rollingHash":3793399754,"currentState":5407992,"state":5407992,"xoshiroState":[3832964478,471760754,2974519253,1988117487]},"aireasoning":{"domain":"AIReasoning","streamSeed":4116127997,"drawCount":47,"rollingHash":3793399754,"currentState":5407992,"state":5407992,"xoshiroState":[3832964478,471760754,2974519253,1988117487]},"AICandidates":{"domain":"AICandidates","streamSeed":911336785,"drawCount":0,"rollingHash":0,"currentState":911336785,"state":911336785,"xoshiroState":[911336785,2825297128,2481636559,2607823457]},"aicandidates":{"domain":"AICandidates","streamSeed":911336785,"drawCount":0,"rollingHash":0,"currentState":911336785,"state":911336785,"xoshiroState":[911336785,2825297128,2481636559,2607823457]},"AITieBreaking":{"domain":"AITieBreaking","streamSeed":4108268882,"drawCount":0,"rollingHash":0,"currentState":4108268882,"state":4108268882,"xoshiroState":[4108268882,1793608939,2802283758,1121094258]},"aitiebreaking":{"domain":"AITieBreaking","streamSeed":4108268882,"drawCount":0,"rollingHash":0,"currentState":4108268882,"state":4108268882,"xoshiroState":[4108268882,1793608939,2802283758,1121094258]},"AIFallbacks":{"domain":"AIFallbacks","streamSeed":2614273968,"drawCount":0,"rollingHash":0,"currentState":2614273968,"state":2614273968,"xoshiroState":[2614273968,98950665,3733081680,1492984496]},"aifallbacks":{"domain":"AIFallbacks","streamSeed":2614273968,"drawCount":0,"rollingHash":0,"currentState":2614273968,"state":2614273968,"xoshiroState":[2614273968,98950665,3733081680,1492984496]},"Challenges":{"domain":"Challenges","streamSeed":888176265,"drawCount":0,"rollingHash":0,"currentState":888176265,"state":888176265,"xoshiroState":[888176265,2865170224,1763660439,2214094617]},"challenges":{"domain":"Challenges","streamSeed":888176265,"drawCount":0,"rollingHash":0,"currentState":888176265,"state":888176265,"xoshiroState":[888176265,2865170224,1763660439,2214094617]},"Markets":{"domain":"Markets","streamSeed":474080318,"drawCount":64,"rollingHash":275874824,"currentState":1730175358,"state":1730175358,"xoshiroState":[1177838662,4140582706,2009785191,3577674413]},"markets":{"domain":"Markets","streamSeed":474080318,"drawCount":64,"rollingHash":275874824,"currentState":1730175358,"state":1730175358,"xoshiroState":[1177838662,4140582706,2009785191,3577674413]},"RandomEvents":{"domain":"RandomEvents","streamSeed":2067537813,"drawCount":6,"rollingHash":1717761889,"currentState":172030803,"state":172030803,"xoshiroState":[1671557040,2962113590,58957599,2555669011]},"randomevents":{"domain":"RandomEvents","streamSeed":2067537813,"drawCount":6,"rollingHash":1717761889,"currentState":172030803,"state":172030803,"xoshiroState":[1671557040,2962113590,58957599,2555669011]},"Weather":{"domain":"Weather","streamSeed":858269819,"drawCount":0,"rollingHash":0,"currentState":858269819,"state":858269819,"xoshiroState":[858269819,2904510914,836560613,1705685035]},"weather":{"domain":"Weather","streamSeed":858269819,"drawCount":0,"rollingHash":0,"currentState":858269819,"state":858269819,"xoshiroState":[858269819,2904510914,836560613,1705685035]},"Sabotage":{"domain":"Sabotage","streamSeed":3224571391,"drawCount":0,"rollingHash":0,"currentState":3224571391,"state":3224571391,"xoshiroState":[3224571391,1577350214,1177465313,3278106095]},"sabotage":{"domain":"Sabotage","streamSeed":3224571391,"drawCount":0,"rollingHash":0,"currentState":3224571391,"state":3224571391,"xoshiroState":[3224571391,1577350214,1177465313,3278106095]},"Opponent":{"domain":"Opponent","streamSeed":1376584118,"drawCount":0,"rollingHash":0,"currentState":1376584118,"state":1376584118,"xoshiroState":[1376584118,3426383887,4019401994,1927093526]},"opponent":{"domain":"Opponent","streamSeed":1376584118,"drawCount":0,"rollingHash":0,"currentState":1376584118,"state":1376584118,"xoshiroState":[1376584118,3426383887,4019401994,1927093526]},"Team":{"domain":"Team","streamSeed":1237350198,"drawCount":0,"rollingHash":0,"currentState":1237350198,"state":1237350198,"xoshiroState":[1237350198,3623292559,3998117770,3855084182]},"team":{"domain":"Team","streamSeed":1237350198,"drawCount":0,"rollingHash":0,"currentState":1237350198,"state":1237350198,"xoshiroState":[1237350198,3623292559,3998117770,3855084182]},"Emergency":{"domain":"Emergency","streamSeed":2887430232,"drawCount":0,"rollingHash":0,"currentState":2887430232,"state":2887430232,"xoshiroState":[2887430232,841861601,3610991272,1841673688]},"emergency":{"domain":"Emergency","streamSeed":2887430232,"drawCount":0,"rollingHash":0,"currentState":2887430232,"state":2887430232,"xoshiroState":[2887430232,841861601,3610991272,1841673688]},"HumanAutomation":{"domain":"HumanAutomation","streamSeed":2425812907,"drawCount":0,"rollingHash":0,"currentState":2425812907,"state":2425812907,"xoshiroState":[2425812907,245468690,2185756085,2584113755]},"humanautomation":{"domain":"HumanAutomation","streamSeed":2425812907,"drawCount":0,"rollingHash":0,"currentState":2425812907,"state":2425812907,"xoshiroState":[2425812907,245468690,2185756085,2584113755]},"BalanceLab":{"domain":"BalanceLab","streamSeed":1725524778,"drawCount":0,"rollingHash":0,"currentState":1725524778,"state":1725524778,"xoshiroState":[1725524778,4176351891,1951660566,3564117450]},"balancelab":{"domain":"BalanceLab","streamSeed":1725524778,"drawCount":0,"rollingHash":0,"currentState":1725524778,"state":1725524778,"xoshiroState":[1725524778,4176351891,1951660566,3564117450]},"TeamDraft":{"domain":"TeamDraft","streamSeed":1057694731,"drawCount":3,"rollingHash":3917171297,"currentState":-2037542422,"state":-2037542422,"xoshiroState":[3820014567,3748867282,4123094114,3095079214]},"teamdraft":{"domain":"TeamDraft","streamSeed":1057694731,"drawCount":3,"rollingHash":3917171297,"currentState":-2037542422,"state":-2037542422,"xoshiroState":[3820014567,3748867282,4123094114,3095079214]},"Mastery":{"domain":"Mastery","streamSeed":475271902,"drawCount":0,"rollingHash":0,"currentState":475271902,"state":475271902,"xoshiroState":[475271902,2187553639,1848527074,3784655038]},"mastery":{"domain":"Mastery","streamSeed":475271902,"drawCount":0,"rollingHash":0,"currentState":475271902,"state":475271902,"xoshiroState":[475271902,2187553639,1848527074,3784655038]},"Mining":{"domain":"Mining","streamSeed":3486243561,"drawCount":1,"rollingHash":1162774190,"currentState":1022842078,"state":1022842078,"xoshiroState":[1388245184,3080256398,2697222366,2772775854]},"mining":{"domain":"Mining","streamSeed":3486243561,"drawCount":1,"rollingHash":1162774190,"currentState":1022842078,"state":1022842078,"xoshiroState":[1388245184,3080256398,2697222366,2772775854]},"Combat":{"domain":"Combat","streamSeed":3205456269,"drawCount":8,"rollingHash":3005392991,"currentState":678113589,"state":678113589,"xoshiroState":[2348924519,131139192,3897913554,1076244877]},"combat":{"domain":"Combat","streamSeed":3205456269,"drawCount":8,"rollingHash":3005392991,"currentState":678113589,"state":678113589,"xoshiroState":[2348924519,131139192,3897913554,1076244877]},"Crafting":{"domain":"Crafting","streamSeed":3275137563,"drawCount":0,"rollingHash":0,"currentState":3275137563,"state":3275137563,"xoshiroState":[3275137563,1560402850,2745016645,4137731019]},"crafting":{"domain":"Crafting","streamSeed":3275137563,"drawCount":0,"rollingHash":0,"currentState":3275137563,"state":3275137563,"xoshiroState":[3275137563,1560402850,2745016645,4137731019]},"RegionalStanding":{"domain":"RegionalStanding","streamSeed":1854017252,"drawCount":0,"rollingHash":0,"currentState":1854017252,"state":1854017252,"xoshiroState":[1854017252,4038424413,1639959964,1453522212]},"regionalstanding":{"domain":"RegionalStanding","streamSeed":1854017252,"drawCount":0,"rollingHash":0,"currentState":1854017252,"state":1854017252,"xoshiroState":[1854017252,4038424413,1639959964,1453522212]},"Expedition":{"domain":"Expedition","streamSeed":4165250842,"drawCount":0,"rollingHash":0,"currentState":4165250842,"state":4165250842,"xoshiroState":[4165250842,1718867619,273757222,2089787578]},"expedition":{"domain":"Expedition","streamSeed":4165250842,"drawCount":0,"rollingHash":0,"currentState":4165250842,"state":4165250842,"xoshiroState":[4165250842,1718867619,273757222,2089787578]},"Replay":{"domain":"Replay","streamSeed":3625757312,"drawCount":0,"rollingHash":0,"currentState":3625757312,"state":3625757312,"xoshiroState":[3625757312,1177277241,729326976,1508332160]},"replay":{"domain":"Replay","streamSeed":3625757312,"drawCount":0,"rollingHash":0,"currentState":3625757312,"state":3625757312,"xoshiroState":[3625757312,1177277241,729326976,1508332160]},"System":{"domain":"System","streamSeed":3672954056,"drawCount":0,"rollingHash":0,"currentState":3672954056,"state":3672954056,"xoshiroState":[3672954056,1155247473,2192426040,2310676808]},"system":{"domain":"System","streamSeed":3672954056,"drawCount":0,"rollingHash":0,"currentState":3672954056,"state":3672954056,"xoshiroState":[3672954056,1155247473,2192426040,2310676808]},"Guardian":{"domain":"Guardian","streamSeed":34593258,"drawCount":0,"rollingHash":0,"currentState":34593258,"state":34593258,"xoshiroState":[34593258,2620956755,1072390998,588085386]},"guardian":{"domain":"Guardian","streamSeed":34593258,"drawCount":0,"rollingHash":0,"currentState":34593258,"state":34593258,"xoshiroState":[34593258,2620956755,1072390998,588085386]},"map":{"domain":"World","streamSeed":4001202649,"drawCount":0,"rollingHash":0,"currentState":4001202649,"state":4001202649,"xoshiroState":[4001202649,1883961440,3778197831,3595935593]},"player":{"domain":"World","streamSeed":4001202649,"drawCount":0,"rollingHash":0,"currentState":4001202649,"state":4001202649,"xoshiroState":[4001202649,1883961440,3778197831,3595935593]},"ai":{"domain":"AIReasoning","streamSeed":4116127997,"drawCount":47,"rollingHash":3793399754,"currentState":5407992,"state":5407992,"xoshiroState":[3832964478,471760754,2974519253,1988117487]},"event":{"domain":"RandomEvents","streamSeed":2067537813,"drawCount":6,"rollingHash":1717761889,"currentState":172030803,"state":172030803,"xoshiroState":[1671557040,2962113590,58957599,2555669011]}},"deterministicCounters":{"actionAttempt":9,"replayActionsExecuted":0,"ledgerEvent":9,"replayEvent":0,"checkpoint":0,"branch":0,"approval":0,"treasuryRequest":0,"decision":0,"correlation":79},"teamsById":{"team_player":{"id":"team_player","name":"Player","actorIds":["player"],"messageLog":[],"activeReservations":[],"teamGoals":[],"scoreBreakdown":{"money":0,"netWorth":0,"controlledRegions":0,"challengeValue":0,"craftedValue":0,"investmentsValue":0,"strategicAdvantage":0,"total":0},"contributionByActor":{"player":{"moneyEarned":0,"regionsInvested":0,"challengesCompleted":0,"craftedValue":0,"supportGiven":0,"supportReceived":0,"cashTransferred":0,"resourcesTransferred":0,"actionsLent":0,"actionsReceived":0,"comboBonusValue":0}},"recentPerformanceByActor":{"player":[]},"realizedPerformanceByActor":{"player":[]},"supportLedger":{"cashByActor":{},"resourcesByActor":{},"lowCashTurnsByActor":{},"underfundedTurnsByActor":{},"carryingTurnsByActor":{},"lastCashTransferTurnByPair":{},"lastResourceTransferTurnByPair":{},"lastRemoteAidTurnByPair":{},"lastSupportReasonByActor":{},"lastActionLendTurnByPair":{}},"adaptiveState":{"phase":"normal","daysTriggered":0,"dominanceDays":0,"teamNetWorthGap":0,"teamRegionGap":0,"triggeredBy":[],"activeModifiers":[]},"teamActionBank":{"balance":0,"drawsUsedTodayByActor":{},"lastDrawDay":0},"actionTokens":[],"activeTeamPlan":null,"teamPlanHistory":[],"activeThreatTarget":null,"activeEmergency":null,"teamInitiative":{"value":0,"gainedToday":0,"lastGainDay":0},"comboTracking":{"sequence":[],"comboCountToday":0,"comboCountDay":0},"color":"#3b82f6","sequences":[],"phaseSequenceAssignments":[],"treasury":{"teamId":"team_player","balance":0,"totalContributed":0,"totalWithdrawn":0,"reserve":0,"transactions":[],"pendingFundingRequestIds":[],"fundingRequests":[],"contributionTotalsByActor":{},"withdrawalTotalsByActor":{},"lastContributionDay":{},"lastWithdrawalDay":{}},"governorExceptions":[],"overseer":{"strategicDirectives":[],"directiveHistory":[],"policyOverlays":[],"overlayHistory":[],"currentAdaptiveStrategyMode":"stable","strategyModeSinceDay":0,"safeModeActive":false,"safeModeReason":"","lastEvaluationDay":0,"lastEvaluationTurn":0,"minorChangesThisTurn":0,"majorChangesToday":0,"lastChangeDay":0,"lockedOverlaySettingKeys":[],"lockedDirectiveActorIds":[],"paused":false},"auditor":{"mode":"off","incidents":[],"incidentHistory":[],"eventLog":[],"categoryAuthority":{"turn_lifecycle":"monitor","approval_flow":"monitor","action_proposal":"monitor","action_execution":"locked","action_budget":"locked","action_token":"locked","override":"locked","sequence":"locked","treasury":"locked","economy_governor":"locked","overseer":"monitor","save_load":"monitor","parallel_execution":"monitor","state_invariant":"locked","performance":"monitor","ui_synchronization":"monitor","recovery_failure":"locked"},"metrics":{"totalIncidentsDetected":0,"totalRecoveriesAttempted":0,"totalRecoveriesSucceeded":0,"totalRecoveriesFailed":0},"cooldowns":{},"safeModeActive":false,"safeModeReason":"","lastEvaluationDay":0,"lastEvaluationTurn":0,"proposalSignatureCounts":{},"automaticRecoveryCountToday":0,"automaticRecoveryCountDay":0},"algorithmConfigs":[],"pipelineTraces":[]},"team_opponent":{"id":"team_opponent","name":"Scientist AI","actorIds":["ai"],"messageLog":[],"activeReservations":[],"teamGoals":[],"scoreBreakdown":{"money":0,"netWorth":0,"controlledRegions":0,"challengeValue":0,"craftedValue":0,"investmentsValue":0,"strategicAdvantage":0,"total":0},"contributionByActor":{"ai":{"moneyEarned":0,"regionsInvested":0,"challengesCompleted":0,"craftedValue":0,"supportGiven":0,"supportReceived":0,"cashTransferred":0,"resourcesTransferred":0,"actionsLent":0,"actionsReceived":0,"comboBonusValue":0}},"recentPerformanceByActor":{"ai":[]},"realizedPerformanceByActor":{"ai":[]},"supportLedger":{"cashByActor":{},"resourcesByActor":{},"lowCashTurnsByActor":{},"underfundedTurnsByActor":{},"carryingTurnsByActor":{},"lastCashTransferTurnByPair":{},"lastResourceTransferTurnByPair":{},"lastRemoteAidTurnByPair":{},"lastSupportReasonByActor":{},"lastActionLendTurnByPair":{}},"adaptiveState":{"phase":"normal","daysTriggered":0,"dominanceDays":0,"teamNetWorthGap":0,"teamRegionGap":0,"triggeredBy":[],"activeModifiers":[]},"teamActionBank":{"balance":0,"drawsUsedTodayByActor":{},"lastDrawDay":0},"actionTokens":[],"activeTeamPlan":null,"teamPlanHistory":[],"activeThreatTarget":null,"activeEmergency":null,"teamInitiative":{"value":0,"gainedToday":0,"lastGainDay":0},"comboTracking":{"sequence":[],"comboCountToday":0,"comboCountDay":0},"color":"#ec4899","sequences":[],"phaseSequenceAssignments":[],"treasury":{"teamId":"team_opponent","balance":0,"totalContributed":0,"totalWithdrawn":0,"reserve":0,"transactions":[],"pendingFundingRequestIds":[],"fundingRequests":[],"contributionTotalsByActor":{},"withdrawalTotalsByActor":{},"lastContributionDay":{},"lastWithdrawalDay":{}},"governorExceptions":[],"overseer":{"strategicDirectives":[],"directiveHistory":[],"policyOverlays":[],"overlayHistory":[],"currentAdaptiveStrategyMode":"stable","strategyModeSinceDay":0,"safeModeActive":false,"safeModeReason":"","lastEvaluationDay":0,"lastEvaluationTurn":0,"minorChangesThisTurn":0,"majorChangesToday":0,"lastChangeDay":0,"lockedOverlaySettingKeys":[],"lockedDirectiveActorIds":[],"paused":false},"auditor":{"mode":"off","incidents":[],"incidentHistory":[],"eventLog":[],"categoryAuthority":{"turn_lifecycle":"monitor","approval_flow":"monitor","action_proposal":"monitor","action_execution":"locked","action_budget":"locked","action_token":"locked","override":"locked","sequence":"locked","treasury":"locked","economy_governor":"locked","overseer":"monitor","save_load":"monitor","parallel_execution":"monitor","state_invariant":"locked","performance":"monitor","ui_synchronization":"monitor","recovery_failure":"locked"},"metrics":{"totalIncidentsDetected":0,"totalRecoveriesAttempted":0,"totalRecoveriesSucceeded":0,"totalRecoveriesFailed":0},"cooldowns":{},"safeModeActive":false,"safeModeReason":"","lastEvaluationDay":0,"lastEvaluationTurn":0,"proposalSignatureCounts":{},"automaticRecoveryCountToday":0,"automaticRecoveryCountDay":0},"algorithmConfigs":[],"pipelineTraces":[]}}}`;
+/** What the V10.1 build itself reports for three days played on each real save (its own v101fxPlayDays): a later build must report exactly this. */
+export const V116_V101_PLAY_REFERENCE: Readonly<Record<string, string>> = {
+  v97_d01: "{\"error\":null,\"startDay\":1,\"day\":4,\"v101Rules\":false,\"v101Keys\":[],\"humanActions\":11,\"rivalActions\":6,\"money\":478,\"rivalMoney\":1085}",
+  v98_mid: "{\"error\":null,\"startDay\":6,\"day\":9,\"v101Rules\":false,\"v101Keys\":[],\"humanActions\":12,\"rivalActions\":0,\"money\":308,\"rivalMoney\":0}",
+  v100_d01: "{\"error\":null,\"startDay\":1,\"day\":4,\"stamp\":1000,\"v101Rules\":false,\"v101Keys\":[],\"humanActions\":11,\"rivalActions\":6,\"money\":478,\"rivalMoney\":1085}",
+  v100_mid: "{\"error\":null,\"startDay\":10,\"day\":13,\"stamp\":1000,\"v101Rules\":false,\"v101Keys\":[],\"humanActions\":11,\"rivalActions\":4,\"money\":20881,\"rivalMoney\":50550}",
+  v101_d04: "{\"error\":null,\"startDay\":4,\"day\":7,\"stamp\":1010,\"v101Rules\":true,\"v101Keys\":[],\"humanActions\":10,\"rivalActions\":9,\"money\":4193,\"rivalMoney\":4832}",
+};
+/** The real saves: V9.7, V9.8 and V10.0 (V101FX_OLD_SAVES, SECTION 20BA) and V10.1 (above). */
+export function v116RealSaves(): Readonly<Record<string, string>> {
+  return { ...V101FX_OLD_SAVES, v101_d04: V116_REAL_V101_SAVE };
+}
+/** The map's counts after UX-6: what the walk visits. */
+export const V116_MAP_COUNTS = { settings: 604, v101Settings: 599, indexedSections: 91, sections: 92, windowIds: 91, unused: 8, shortcuts: 17, labCards: 48, cards: 101 } as const;
+/** The ids only the new layout has (Find Anything's box, What's in the game, the side panel): with the classic layout on, none of them is in use, as in V10.1. */
+export const V116_NEW_LAYOUT_IDS: readonly string[] = ['find_anything', 'whats_in_the_game', 'docked_panel'];
+
+export function runV116SwitchOverSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  // A check that could not run returns a text starting with SKIPPED: it is reported as skipped (passed: false, skipped: true), never as a pass.
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try {
+      const r = fn();
+      if (r !== true && /^SKIPPED\b/.test(r)) results.push({ id, name, passed: false, skipped: true, detail: r });
+      else results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) });
+    } catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  const keys = Object.keys(DEFAULT_GAME_SETTINGS);
+  const base = buildV110FindIndex();
+  const defaults = (): GameSettingsState => createDefaultGameSettings();
+  const withClassic = (over: Partial<GameSettingsState> = {}): GameSettingsState => ({ ...createDefaultGameSettings(), classicLayoutV101: true, ...over });
+  const allOff = (): GameSettingsState => ({ ...createDefaultGameSettings(), findAnythingEnabled: false, settingsLayersEnabled: false, whatsInTheGameEnabled: false, dockedPanelEnabled: false });
+  const ctxFor = (settings: GameSettingsState, gameMode: string = 'game'): V110FindContext => ({
+    gameMode, humanTurn: true, settings, facts: { shopRegion: true, competitiveMode: true, loansForPlayer: true, allChallengesCompleted: false, teamMode: false },
+  });
+  const top = (settings: GameSettingsState, q: string, n = 3): string[] => v110FindResults(base, q, ctxFor(settings), n).map(r => r.entry.id);
+  const byTestId = (tree: V113TreeNode[], id: string) => tree.find(n => n.props['data-testid'] === id);
+  const classOf = (n: V113TreeNode | undefined): string => (n && typeof n.props.className === 'string' ? n.props.className : '');
+  const firstRun = (status: FirstRunRecordStatus) => json({ version: 1, status, at: 0 });
+  const record = (store: V99StorageLike & { data: Record<string, string> }): unknown => { const t = store.data[V116_SWITCH_OVER_STORAGE_KEY]; return t === undefined ? null : JSON.parse(t); };
+  const v113Cls: V113Classes = { card: 'card', border: 'border', select: 'select', buttonSecondary: 'secondary', success: 'success', button: 'button' };
+  const noop = (): void => undefined;
+  const v101Table = (): ReadonlyArray<V101SurfaceFlagEntry> => { const sink = v101SurfaceFlagSink.current; try { new GlobalUISurfaceManager().syncWithUIState({}); return v101SurfaceFlagSink.current || []; } finally { v101SurfaceFlagSink.current = sink; } };
+
+  // ---- 1. The four defaults, and nothing else -----------------------------------------------------------------------------------------------
+  check('v116so_01_four_defaults_on', 'The four layout switches are on by default (DEFAULT_GAME_SETTINGS and the catalog), the predicates read them as on, and a stored false still turns each off', () => {
+    const d = defaults();
+    const catalog = V116_LAYOUT_KEYS.map(k => SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(row => row.key === k)?.defaultValue);
+    const off = allOff();
+    return (V116_LAYOUT_KEYS.every(k => DEFAULT_GAME_SETTINGS[k] === true && d[k] === true) && catalog.every(v => v === true)
+      && v110FindAnythingOn(d) && v113LayersOn(d) && v114PageOn(d) && v115DockOn(d)
+      && !v110FindAnythingOn(off) && !v113LayersOn(off) && !v114PageOn(off) && !v115DockOn(off)) || json({ catalog });
+  });
+  check('v116so_02_no_other_default_changes', "No other default changes: V10.1's 599 defaults keep their fingerprint, and the only keys V10.1 did not have are the four switches and the classic switch", () => {
+    const mapKeys = V110_MAP_SETTING_KEYS.slice().sort();
+    const values = new Map<string, unknown>(Object.entries(DEFAULT_GAME_SETTINGS));
+    const fingerprint = v113Fingerprint(json(mapKeys.map(k => [k, values.get(k)])));
+    const extra = keys.filter(k => !V110_MAP_SETTING_KEYS.includes(k)).sort();
+    return (fingerprint === V113_V101_FINGERPRINTS.defaults && json(extra) === json(['classicLayoutV101', 'dockedPanelEnabled', 'findAnythingEnabled', 'settingsLayersEnabled', 'whatsInTheGameEnabled'])
+      && keys.length === V116_MAP_COUNTS.settings && DEFAULT_GAME_SETTINGS.classicLayoutV101 === false) || json({ fingerprint, extra });
+  });
+
+  // ---- 2. The classic switch ------------------------------------------------------------------------------------------------------------------
+  check('v116so_03_classic_switch_scope', 'The classic switch is a profile setting, off by default: only a real boolean changes it, it is remembered between visits, and a save never carries it', () => {
+    const d = defaults();
+    const junk = sanitizeGameSettings({ ...d, classicLayoutV101: 'yes' }); // the sanitizer takes unknown: a stored value can be anything
+    const on = sanitizeGameSettings({ ...d, classicLayoutV101: true });
+    const save: SaveGameData = JSON.parse(json(createV95SaveFixture()));
+    save.gameSettings = { ...save.gameSettings, classicLayoutV101: true };
+    const restored = validateSaveDataCore(save).gameSettings;
+    const matchKeys: readonly string[] = V95_MATCH_SCOPED_SETTING_KEYS;
+    return (junk.classicLayoutV101 === false && on.classicLayoutV101 === true && !v116ClassicOn(d) && !v116ClassicOn({ classicLayoutV101: 'true' }) && v116ClassicOn({ classicLayoutV101: true })
+      && V95_PROFILE_SCOPED_SETTING_KEYS.includes('classicLayoutV101') && V99_PERSISTED_PROFILE_SETTING_KEYS.includes('classicLayoutV101')
+      && !matchKeys.includes('classicLayoutV101') && !('classicLayoutV101' in restored) && isV116SettingKeyName('classicLayoutV101')) || json({ junk: junk.classicLayoutV101, restored: 'classicLayoutV101' in restored });
+  });
+  check('v116so_04_classic_switch_registered', 'Its catalog row, its hub section (Interface & Accessibility › 🕰️ Classic layout), its home in ⭐ Essentials (the section is dissolved in the layered view) and its label', () => {
+    const catalog = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(row => row.key === 'classicLayoutV101');
+    const sections = SETTINGS_HUB_SECTION_INDEX.filter(s => s.fieldKeys.includes('classicLayoutV101'));
+    return (Boolean(catalog) && catalog?.label === V116_CLASSIC_LABEL && catalog?.defaultValue === false && catalog?.isLiveSafe === true && catalog?.affectsFairness === false
+      && sections.length === 1 && sections[0].id === V116_SECTION_ID && sections[0].tab === 'interfaceAcc' && sections[0].title === V116_SECTION_TITLE
+      && json(v116SectionFieldKeys()) === json(['classicLayoutV101']) && v113HomeOf('classicLayoutV101') === 'v113.essentials' && v113GroupOfKey('classicLayoutV101') === 'essentials'
+      && V113_SECTION_GROUP[V116_SECTION_ID] === 'help' && V113_DISSOLVED_SECTIONS.includes(V116_SECTION_ID) && v113SettingLabel('classicLayoutV101') === V116_CLASSIC_LABEL) || json({ catalog: Boolean(catalog), sections: sections.map(s => s.id), home: v113HomeOf('classicLayoutV101') });
+  });
+  check('v116so_05_classic_holds_all_four_off', 'Classic on: all four predicates read false although all four switches are stored on; classic off: each switch decides', () => {
+    const c = withClassic();
+    const mixed = withClassic({ dockedPanelEnabled: false });
+    const readings = v116LayoutReadings(mixed);
+    return (!v110FindAnythingOn(c) && !v113LayersOn(c) && !v114PageOn(c) && !v115DockOn(c) && V116_LAYOUT_KEYS.every(k => c[k] === true)
+      && json(readings.map(r => [r.key, r.stored, r.on, r.held])) === json([['findAnythingEnabled', true, false, true], ['settingsLayersEnabled', true, false, true], ['whatsInTheGameEnabled', true, false, true], ['dockedPanelEnabled', false, false, false]])
+      && json(v116LayoutReadings(defaults()).map(r => r.on)) === json([true, true, true, true])) || json(readings);
+  });
+  check('v116so_06_classic_keeps_the_stored_values', "Turning classic on and off never touches the four switches: the profile store keeps the player's mix, and turning classic off brings it back", () => {
+    const store = createV99MemoryStorage();
+    const mine: GameSettingsState = { ...defaults(), dockedPanelEnabled: false, whatsInTheGameEnabled: false };
+    writeProfileSettings(store, { ...mine, classicLayoutV101: true });
+    const withC = applyStoredProfileSettings(defaults(), readProfileSettings(store));
+    writeProfileSettings(store, { ...withC, classicLayoutV101: false });
+    const back = applyStoredProfileSettings(defaults(), readProfileSettings(store));
+    const pick = (s: GameSettingsState) => V116_LAYOUT_KEYS.map(k => s[k]);
+    return (withC.classicLayoutV101 === true && json(pick(withC)) === json(pick(mine)) && back.classicLayoutV101 === false && json(pick(back)) === json(pick(mine))
+      && v115DockOn(back) === false && v110FindAnythingOn(back) && !v110FindAnythingOn(withC)) || json({ withC: pick(withC), back: pick(back) });
+  });
+  check('v116so_07_classic_is_v101_objects', "Classic on: the surface manager gets V10.1's very table and state, Help V10.1's very shortcut list, Find Anything's index is untouched, every setting's result is the very same object, and Ctrl/⌘+K is the Ask drawer's again", () => {
+    const c = withClassic({ askGameAiUiEnabled: true });
+    const table = v101Table();
+    const ui = { showHelp: true };
+    const sameEntries = base.every(entry => v113LayeredEntry(entry, c) === entry);
+    const noClassic: GameSettingsState = { ...c, classicLayoutV101: false };
+    return (v110SurfaceFlagTable(table, v110FindAnythingOn(c)) === table && v110SyncState(ui, c) === ui && v114SyncState(ui, c) === ui && v115DockMode(c, true, true) === 'off'
+      && v113HelpShortcuts(c) === KEYBOARD_SHORTCUTS && v114IndexFor(base, c) === base && v115IndexFor(base, c) === base && sameEntries
+      && v110AskDrawerKeyActive(c) && !v110AskDrawerKeyActive(noClassic) && v110WindowSurfaceId('help_shortcuts_modal', c) === 'ask_game_ai') || json({ sameEntries });
+  });
+  check('v116so_08_classic_layered_settings_off', "Classic on: Settings draws its classic hub (no layered hub, no group bar), whatever the layers' switch holds", () => {
+    const log: string[] = [];
+    const deps = (settings: GameSettingsState): V113Deps => ({ settings, ui: {}, teamMode: false, difficulty: 'medium', difficultyLocked: false, learning: 'off', theme: 'dark', w: v113RecordingWriters(log), cls: v113Cls, updateUiState: noop, askAgainPrefs: null, disabledClassName: 'disabled' });
+    const classic = v113SettingsLayers(deps(withClassic()));
+    const layered = v113SettingsLayers(deps(defaults()));
+    return (!classic.on && classic.hub(null) === null && layered.on && layered.hub(null) !== null) || json({ classic: classic.on, layered: layered.on });
+  });
+
+  // ---- 3. The switch-over --------------------------------------------------------------------------------------------------------------------
+  check('v116so_09_new_profile', 'A brand-new profile starts in the new layout: nothing moves, no notice, and the record says "new" (so it is never moved later)', () => {
+    const store = createV99MemoryStorage();
+    const d = defaults();
+    const returning = v116IsReturningProfile(store);
+    const boot = v116BootSwitchOver(d, store, returning);
+    const again = v116BootSwitchOver(d, store, true);
+    return (!returning && boot.settings === d && boot.status === 'new' && !boot.moved && !boot.noticeDue && json(record(store)) === json({ version: 1, status: 'new', noticeSeen: true })
+      && again.settings === d && !again.moved && !again.noticeDue) || json({ boot, rec: record(store) });
+  });
+  check('v116so_10_returning_profile_moved_once', 'A returning profile is moved once: the four switches are set on (a stored "off" included), the notice is due, and a second visit moves nothing', () => {
+    const store = createV99MemoryStorage({ [FIRST_RUN_STORAGE_KEY]: firstRun('completed'), [PROFILE_SETTINGS_STORAGE_KEY]: json({ version: 1, settings: { soundEnabled: false, findAnythingEnabled: false, dockedPanelEnabled: false } }) });
+    const booted = applyStoredProfileSettings(defaults(), readProfileSettings(store));
+    const first = v116BootSwitchOver(booted, store, v116IsReturningProfile(store));
+    const second = v116BootSwitchOver(booted, store, v116IsReturningProfile(store));
+    return (booted.findAnythingEnabled === false && first.moved && first.noticeDue && first.status === 'moved' && V116_LAYOUT_KEYS.every(k => first.settings[k] === true) && first.settings.soundEnabled === false
+      && !second.moved && second.settings === booted && second.noticeDue && json(record(store)) === json({ version: 1, status: 'moved', noticeSeen: false })) || json({ first: first.moved, second: second.moved, rec: record(store) });
+  });
+  check('v116so_11_notice_once', 'The notice shows once: marked seen when the main menu draws it, it is never due again; nothing to mark for a new player', () => {
+    const store = createV99MemoryStorage({ [FIRST_RUN_STORAGE_KEY]: firstRun('skipped') });
+    const first = v116BootSwitchOver(defaults(), store, true);
+    const marked = v116MarkNoticeSeen(store);
+    const again = v116MarkNoticeSeen(store);
+    const later = v116BootSwitchOver(defaults(), store, true);
+    const fresh = createV99MemoryStorage();
+    v116BootSwitchOver(defaults(), fresh, false);
+    return (first.noticeDue && marked && !again && !later.noticeDue && !later.moved && !v116MarkNoticeSeen(fresh) && !v116MarkNoticeSeen(null)) || json({ marked, again, later });
+  });
+  check('v116so_12_choices_stick_after_the_move', 'After the move the player\'s own choices stick: a switch turned off is stored (it differs from the new default) and the next visit keeps it off', () => {
+    const store = createV99MemoryStorage({ [FIRST_RUN_STORAGE_KEY]: firstRun('completed') });
+    const moved = v116BootSwitchOver(defaults(), store, true).settings;
+    v116MarkNoticeSeen(store);
+    writeProfileSettings(store, { ...moved, dockedPanelEnabled: false });
+    const stored = readProfileSettings(store);
+    const next = v116BootSwitchOver(applyStoredProfileSettings(defaults(), stored), store, v116IsReturningProfile(store));
+    return (stored !== null && stored.settings.dockedPanelEnabled === false && next.settings.dockedPanelEnabled === false && !next.moved && !next.noticeDue && next.settings.findAnythingEnabled === true) || json({ stored, next: next.settings.dockedPanelEnabled });
+  });
+  check('v116so_13_who_is_returning', 'A returning player is one this browser has seen: any first-run record (completed, skipped, disabled, a loaded save) or stored preferences; an empty, blocked or throwing storage is a new player', () => {
+    const statuses: FirstRunRecordStatus[] = ['completed', 'skipped', 'disabled', 'returning'];
+    const seen = statuses.map(s => v116IsReturningProfile(createV99MemoryStorage({ [FIRST_RUN_STORAGE_KEY]: firstRun(s) })));
+    const prefs = v116IsReturningProfile(createV99MemoryStorage({ [PROFILE_SETTINGS_STORAGE_KEY]: json({ version: 1, settings: { soundEnabled: false } }) }));
+    const throwing: V116Storage = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); }, removeItem: noop };
+    return (seen.every(Boolean) && prefs && !v116IsReturningProfile(createV99MemoryStorage()) && !v116IsReturningProfile(null) && !v116IsReturningProfile(throwing)) || json({ seen, prefs });
+  });
+  check('v116so_14_hostile_records', 'A record that is not one (not JSON, an array, another version, an unknown status) counts as none; a "moved" record without its flag counts as notice not seen', () => {
+    const bad = ['nope', '[]', '{"version":2,"status":"new","noticeSeen":true}', '{"version":1,"status":"done"}', 'null', '{"version":"1","status":"new"}'];
+    const read = bad.map(text => v116ReadSwitchOver(createV99MemoryStorage({ [V116_SWITCH_OVER_STORAGE_KEY]: text })));
+    const partial = v116ReadSwitchOver(createV99MemoryStorage({ [V116_SWITCH_OVER_STORAGE_KEY]: '{"version":1,"status":"moved"}' }));
+    return (read.every(r => r === null) && json(partial) === json({ version: 1, status: 'moved', noticeSeen: false })) || json({ read, partial });
+  });
+  check('v116so_15_blocked_storage', 'Blocked or failing storage never throws: a blocked profile starts new with no notice, and a store that refuses writes still boots', () => {
+    const throwing: V116Storage = { getItem: () => null, setItem: () => { throw new Error('full'); }, removeItem: noop };
+    const blocked = v116BootSwitchOver(defaults(), null, false);
+    const full = v116BootSwitchOver(defaults(), throwing, true);
+    return (blocked.status === 'new' && !blocked.noticeDue && !v116WriteSwitchOver(null, { version: 1, status: 'new', noticeSeen: true }) && !v116WriteSwitchOver(throwing, { version: 1, status: 'new', noticeSeen: true })
+      && full.moved && full.noticeDue) || json({ blocked, full: full.moved });
+  });
+
+  // ---- 4. Where the classic switch is: the notice, the main menu, Essentials, Settings, Find Anything --------------------------------------------------
+  check('v116so_16_notice_names_the_classic_switch', 'The notice is a labelled region that names the classic switch and where it is; Keep closes it, Use the classic layout switches it, and Escape inside it keeps the new layout', () => {
+    const log: string[] = [];
+    const tree = v113Tree(v116SwitchOverNotice({ isDark: true, onKeep: () => log.push('keep'), onClassic: () => log.push('classic') }));
+    const region = tree.find(n => n.props.role === 'region');
+    const heading = tree.find(n => n.type === 'h2');
+    v113Fire(byTestId(tree, 'v116-notice-keep'), 'onClick'); v113Fire(byTestId(tree, 'v116-notice-classic'), 'onClick');
+    const onKey = region ? region.props.onKeyDown : null;
+    if (typeof onKey === 'function') onKey({ key: 'Escape', preventDefault: noop, stopPropagation: noop });
+    return (Boolean(region) && region?.props['aria-labelledby'] === 'v116-notice-title' && heading?.props.id === 'v116-notice-title' && V116_NOTICE_CLASSIC.includes(V116_CLASSIC_LABEL)
+      && /this menu/.test(V116_NOTICE_CLASSIC) && /Essentials/.test(V116_NOTICE_CLASSIC) && /Find Anything/.test(V116_NOTICE_CLASSIC) && json(log) === json(['keep', 'classic', 'keep'])) || json({ log });
+  });
+  check('v116so_17_main_menu_switch', 'The main menu draws the classic switch in both layouts: it says On or Off, aria-pressed follows, and a press calls its handler', () => {
+    let pressed = 0;
+    const off = v113Tree(v116MenuClassicToggle({ on: false, isDark: true, onToggle: () => { pressed += 1; } }));
+    const on = v113Tree(v116MenuClassicToggle({ on: true, isDark: false, onToggle: noop }));
+    v113Fire(byTestId(off, 'v116-menu-classic'), 'onClick');
+    return (byTestId(off, 'v116-menu-classic')?.props['aria-pressed'] === false && byTestId(on, 'v116-menu-classic')?.props['aria-pressed'] === true && pressed === 1
+      && classOf(byTestId(off, 'v116-menu-classic')).includes(V116_UI.focus)) || json({ pressed });
+  });
+  check('v116so_18_essentials_row', "⭐ Essentials keeps its 12 choices and adds the classic switch's row, which writes through the layered rows' setter and closes the V11.0 windows", () => {
+    const log: string[] = [];
+    const tree = v113Tree(V113EssentialsPage({ settings: defaults(), difficulty: 'medium', difficultyLocked: false, theme: 'dark', learning: 'off', w: v113RecordingWriters(log), cls: v113Cls }));
+    const choices = tree.filter(n => typeof n.props['data-testid'] === 'string' && /^v113-essential-[a-z_]+$/.test(String(n.props['data-testid'])) && n.props.id !== undefined);
+    const row = tree.find(n => n.props['data-setting-key'] === 'classicLayoutV101');
+    v113Fire(byTestId(tree, 'v116-setting-classicLayoutV101-essentials'), 'onClick');
+    return (choices.length === 12 && V113_ESSENTIALS.length === 12 && Boolean(row) && row?.props.id === 'settings-field-classicLayoutV101'
+      && log.includes(`set:classicLayoutV101=true|${V116_CLASSIC_LABEL}|Essentials → Classic layout`) && log.includes(`open:${json(v116ClassicTogglePatch())}`)) || json({ choices: choices.length, log });
+  });
+  check('v116so_19_settings_row_lists_what_it_holds', 'The classic Settings row toggles the switch and, while it is on, lists the four switches it holds off with the player\'s own choice for each', () => {
+    let pressed = 0;
+    const offTree = v113Tree(v116ClassicRow({ settings: defaults(), where: 'hub', onToggle: () => { pressed += 1; }, onClassName: 'on', offClassName: 'off' }));
+    const onTree = v113Tree(v116ClassicRow({ settings: withClassic({ dockedPanelEnabled: false }), where: 'hub', onToggle: noop, onClassName: 'on', offClassName: 'off' }));
+    v113Fire(byTestId(offTree, 'v116-setting-classicLayoutV101-hub'), 'onClick');
+    const held = V116_LAYOUT_KEYS.map(k => byTestId(onTree, `v116-held-${k}`));
+    return (!byTestId(offTree, 'v116-classic-held') && Boolean(byTestId(onTree, 'v116-classic-held')) && held.every(Boolean) && pressed === 1
+      && byTestId(onTree, 'v116-setting-classicLayoutV101-hub')?.props['aria-pressed'] === true) || json({ pressed, held: held.map(Boolean) });
+  });
+  check('v116so_20_find_anything_result', 'Find Anything finds the classic switch: by its label and key, and "classic", "classic layout", "old layout" or "v10.1" put it first; in the layered view it opens ⭐ Essentials at its row', () => {
+    const tops = ['classic', 'classic layout', 'old layout', 'v10.1', 'classicLayoutV101', 'Classic layout (V10.1)'].map(q => top(defaults(), q, 3));
+    const entry = base.find(e => e.id === 'setting:classicLayoutV101');
+    const layered = entry ? v113LayeredEntry(entry, defaults()) : null;
+    const rules = top(defaults(), 'classic rules', 4); // the Classic rules card and its switch lead; the classic layout does not jump ahead of them
+    return (tops.every(t => t[0] === 'setting:classicLayoutV101') && Boolean(entry) && entry?.title === V116_CLASSIC_LABEL && json(layered?.route) === json({ kind: 'settings', tab: 'home', field: 'classicLayoutV101' })
+      && rules.includes('setting:classicRulesV100') && !rules.includes('setting:classicLayoutV101')) || json({ tops, route: layered?.route, rules });
+  });
+
+  // ---- 5. Item 4: the twins ------------------------------------------------------------------------------------------------------------------------
+  check('v116so_21_twins_read_the_label_table', 'With the classic layout off the twins read the shared label table (Travel Discipline Strength, Floating UI Conflict Control Options); with it on, their V10.1 titles; any other key reads the table', () => {
+    const off = ['teamBrainTravelDisciplineEnabled', 'teamBrainTravelDiscipline', 'conflictControlEnabled', 'conflictControlSettings'].map(k => v116TwinTitle(k, defaults()));
+    const on = ['teamBrainTravelDisciplineEnabled', 'teamBrainTravelDiscipline', 'conflictControlEnabled', 'conflictControlSettings'].map(k => v116TwinTitle(k, withClassic()));
+    return (json(off) === json(['Travel Discipline', 'Travel Discipline Strength', 'Floating UI Conflict Control', 'Floating UI Conflict Control Options'])
+      && json(on) === json(['Travel Discipline', 'Travel Discipline', 'Floating UI Conflict Control', 'Floating UI Conflict Control']) && new Set(off).size === 4
+      && v116TwinTitle('soundEnabled', withClassic()) === v113SettingLabel('soundEnabled')) || json({ off, on });
+  });
+  check('v116so_22_twins_drawn_through_it', 'The Team Brain rows and the Floating UI change label are drawn through v116TwinTitle (read from the component\'s source)', () => {
+    const src = String(AustraliaGame);
+    if (!/v116TwinTitle/.test(src)) return 'SKIPPED: the component source is not readable in this build (minified)';
+    const uses = ['teamBrainTravelDisciplineEnabled', 'teamBrainTravelDiscipline', 'conflictControlEnabled', 'conflictControlSettings'].filter(k => new RegExp(`v116TwinTitle\\(\\s*["']${k}["']`).test(src));
+    return (uses.length === 4 && !/label:\s*["']Travel Discipline["']/.test(src)) || json({ uses });
+  });
+
+  // ---- 6. The shared look --------------------------------------------------------------------------------------------------------------------------
+  check('v116so_23_one_set_of_styles', 'One set of shared styles: rem sizes or the 11 px Text size scales (nothing smaller), a keyboard-only focus ring, a reduced-motion rule, and buttons of one shape', () => {
+    const all = Object.values(V116_UI).join(' ');
+    const tiny = (all.match(/text-\[(\d+(?:\.\d+)?)px\]/g) || []).filter(t => t !== 'text-[11px]');
+    return (tiny.length === 0 && /focus-visible:outline-2/.test(V116_UI.focus) && !/(^| )focus:ring/.test(V116_UI.focus) && /motion-reduce:transition-none/.test(V116_UI.motion)
+      && [V116_UI.button, V116_UI.buttonSmall, V116_UI.toggle, V116_UI.icon].every(c => /rounded-lg/.test(c)) && /min-h-/.test(V116_UI.button)) || json({ tiny });
+  });
+  check('v116so_24_contrast', "Contrast: the focus ring and the selected mark (sky-600) are 3:1 or more on every card colour of the four themes, and win over the game's normal sky-400 ring; white on the ON state is 4.5:1 or more (green-700 where the theme's green is lighter, Retro's emerald-700 kept)", () => {
+    const rows = Object.entries(V116_CARD_HEXES).map(([name, hex]) => [name, v116Contrast(V116_FOCUS_HEX, hex)] as const);
+    const low = rows.filter(([, c]) => c < 3);
+    const on = ['bg-green-500', 'bg-green-600', 'bg-emerald-700'].map(v116OnClass);
+    return (low.length === 0 && /ring-sky-600/.test(V116_UI.selected) && /outline-sky-600/.test(V116_UI.focus) && V116_UI.focus.includes('[[data-v94]_&]:focus-visible:outline-sky-600') && v116Contrast('#000000', '#ffffff') === 21
+      && json(on) === json(['bg-green-700 text-white', 'bg-green-700 text-white', 'bg-emerald-700 text-white']) && v116Contrast('#15803d', '#ffffff') >= 4.5 && v116Contrast('#047857', '#ffffff') >= 4.5 && v116Contrast('#22c55e', '#ffffff') < 4.5) || json({ rows, on });
+  });
+  check('v116so_25_four_screens_use_it', 'Find Anything, ⭐ Essentials and the group bar, What\'s in the game and the side panel draw with the shared styles: every button has the focus ring, no text there is smaller than 11 px, the counts on the group bar and the filter are not faded (they read 4.5:1 or better in every theme), and the side panel\'s card is solid (Retro\'s see-through card made solid; the others unchanged)', () => {
+    const findTree = v113Tree(V110FindAnythingView({ query: 'shop', results: v110FindResults(base, 'shop', ctxFor(defaults()), 5), activeIndex: 0, status: '', zIndex: 1,
+      theme: { card: 'card', border: 'border', input: 'input', buttonSecondary: 'secondary', shadow: 'shadow' }, dialogProps: {}, onQuery: noop, onKeyDown: noop, onPick: noop, onHover: noop, onClose: noop }));
+    const navTree = v113Tree(V113GroupNav({ active: 'match', searching: false, showInactive: false, inactiveCount: 21, onGroup: noop, onShowInactive: noop, onClassic: noop, cls: v113Cls }));
+    const essTree = v113Tree(V113EssentialsPage({ settings: defaults(), difficulty: 'medium', difficultyLocked: false, theme: 'dark', learning: 'off', w: v113RecordingWriters([]), cls: v113Cls }));
+    const panel = v115BuildPanelView(v115WindowOf('travel'), { humanTurn: true, firstRun: null, investmentsOn: true, investmentsWhere: '' }, { showTravelModal: true });
+    const panelTree = v113Tree(V115DockedPanelView({ view: panel, theme: { card: 'card', border: 'border', text: 'text', button: 'button', buttonSecondary: 'secondary', shadow: 'shadow' }, onTab: noop, onSide: noop, onClose: noop }));
+    const pageView = v114BuildPage({ settings: defaults(), facts: { gameMode: 'game', teamMode: false, competitive: true, v101Match: true, rulesLocked: false }, filter: 'all', focus: '', ctx: ctxFor(defaults()), index: base });
+    const pageTree = v113Tree(V114WhatsInTheGameView({ view: pageView, theme: { card: 'card', border: 'border', button: 'button', buttonSecondary: 'secondary', success: 'success', shadow: 'shadow' }, zIndex: 1, dialogProps: {}, onKeyDown: noop, onClose: noop, onFilter: noop, onToggle: noop, onSettings: noop, onOpen: noop }));
+    const problems: string[] = [];
+    ([['find', findTree], ['nav', navTree], ['essentials', essTree], ['panel', panelTree], ['page', pageTree]] as const).forEach(([name, tree]) => {
+      tree.filter(n => n.type === 'button' || n.type === 'select').forEach(n => { if (!classOf(n).includes(V116_UI.focus)) problems.push(`${name}: ${String(n.props['data-testid'] || n.props['aria-label'] || n.type)}`); });
+      tree.forEach(n => { const c = classOf(n); if (/text-\[(9|10|10\.5)px\]/.test(c)) problems.push(`${name}: small text ${c.slice(0, 40)}`); });
+      if (name === 'nav' || name === 'page') tree.forEach(n => { const c = classOf(n); if (n.type === 'span' && /\bfont-normal\b/.test(c) && /\bopacity-\d+\b/.test(c)) problems.push(`${name}: a faded count (${c})`); });
+    });
+    const retroPanel = v113Tree(V115DockedPanelView({ view: panel, theme: { card: 'bg-amber-900/90 text-amber-100 border-amber-700', border: 'border-amber-700', text: 'text-amber-100', button: 'button', buttonSecondary: 'secondary', shadow: 'shadow' }, onTab: noop, onSide: noop, onClose: noop }));
+    const frame = retroPanel.find(n => n.props['data-testid'] === 'v115-docked-panel');
+    const frameClass = frame ? classOf(frame) : '';
+    if (!/\bbg-amber-900\b/.test(frameClass) || /bg-amber-900\/90/.test(frameClass)) problems.push(`panel: a see-through card (${frameClass.slice(0, 80)})`);
+    if (v116SolidCard('bg-gray-800') !== 'bg-gray-800' || v116SolidCard('bg-white') !== 'bg-white' || v116SolidCard('bg-amber-900/90 text-amber-100 border-amber-700') !== 'bg-amber-900 text-amber-100 border-amber-700' || v116SolidCard('bg-white/90 backdrop-blur-sm') !== 'bg-white backdrop-blur-sm') problems.push('v116SolidCard');
+    return problems.length === 0 || problems.slice(0, 10).join(' · ');
+  });
+
+  // ---- 7. The clean-ups -----------------------------------------------------------------------------------------------------------------------------
+  check('v116so_26_negotiations_each_option_once', 'a. In the layered view the moved block leaves out the three options Negotiations draws itself (six options, each once); the classic view draws both lists as V10.1 did', () => {
+    const layered = V116_NEGOTIATION_SECTION_FIELDS.map(f => v116NegotiationRepeat(f, defaults()));
+    const classic = V116_NEGOTIATION_SECTION_FIELDS.map(f => v116NegotiationRepeat(f, withClassic()));
+    const own = V116_NEGOTIATION_BLOCK_FIELDS.map(f => v116NegotiationRepeat(f, defaults()));
+    const all = new Set([...V116_NEGOTIATION_SECTION_FIELDS, ...V116_NEGOTIATION_BLOCK_FIELDS]);
+    const fields = Object.keys(createDefaultGameSettings().negotiationOptions || {});
+    return (layered.every(Boolean) && classic.every(v => !v) && own.every(v => !v) && all.size === 6 && [...all].every(f => fields.includes(f))) || json({ layered, classic, own, fields });
+  });
+  check('v116so_27_room_for_the_panel', 'b. While the panel is open its style moves the Ask and Guardian buttons, the Widget Dock and the notification lane to its left and centres the classic quick bar and turn pill beside it; widgets placed by hand keep their place', () => {
+    const css = v115DockedCss();
+    const w = V115_DOCK_WIDTH_CSS;
+    const need = ['Guardian AI Safety Controls', 'Ask the Game AI Assistant', 'floating-widget-dock', 'notification-lane-manager', '[class~="z-40"]', 'v96-turn-indicator', 'v99-end-turn-chip'];
+    const missing = need.filter(s => !css.includes(s));
+    return (missing.length === 0 && css.includes(`left:calc((100vw - ${w}) / 2)`) && (css.match(/:not\(\[style\*="left:"\]\)/g) || []).length >= 4 && v115RootStyle(false) === undefined) || json({ missing });
+  });
+  check('v116so_28_dock_finds_the_side_panel', 'c. "dock" finds the side panel as well as the Widget Dock: the panel while its switch is on, its switch while it is off', () => {
+    const merged = v115IndexFor(base, defaults());
+    const on = v110FindSearch(merged, 'dock', 6).map(h => h.entry.id);
+    const off = top({ ...defaults(), dockedPanelEnabled: false }, 'dock', 6);
+    return (on[0] === V115_FIND_ID && on.includes('screen:floating_widget_dock') && off[0] === 'setting:dockedPanelEnabled' && off.includes('screen:floating_widget_dock')) || json({ on, off });
+  });
+  check('v116so_29_exact_row', 'd. A setting opens at its own row: the row around its title that holds a control (a value after the title, ON/OFF before it, the key in words, the most specific title first, then a near match of its words), never the section itself; no title, no row', () => {
+    type N = { t: string; c?: boolean; k?: N[] };
+    const access: V116RowAccess<N> = { children: n => n.k || [], ownText: n => n.t, isControl: n => n.c === true };
+    const toggleRow: N = { t: '', k: [{ t: '', k: [{ t: 'ON' }, { t: 'Travel Discipline' }] }, { t: '', c: true }] };
+    const checkbox: N = { t: '', k: [{ t: '', c: true }, { t: 'ON Travel Discipline' }] };
+    const slider: N = { t: '', k: [{ t: 'Travel Discipline Strength : 1.00 x' }, { t: '', c: true }] };
+    const section: N = { t: '', k: [{ t: 'Team Brain' }, { t: '', k: [checkbox] }, { t: '', k: [slider] }] };
+    const plain: N = { t: '', k: [{ t: '', k: [{ t: 'Sound Effects' }, { t: 'Play sounds' }] }, { t: '', c: true }] };
+    const noRow: N = { t: '', k: [{ t: 'Something else' }] };
+    const loans: N = { t: '', k: [{ t: '', k: [{ t: 'Early Repayment' }, { t: 'Pay a loan back before it is due' }] }, { t: '', c: true }] };
+    return (v116FindRow(section, 'teamBrainTravelDisciplineEnabled', access) === checkbox && v116FindRow(section, 'teamBrainTravelDiscipline', access) === slider
+      && v116FindRow({ t: '', k: [plain] }, 'soundEnabled', access) === plain && v116FindRow(noRow, 'soundEnabled', access) === null && v116FindRow({ t: '', k: [toggleRow] }, 'teamBrainTravelDisciplineEnabled', access) === toggleRow
+      && v116TitleMatches('travel discipline 1 00 x', 'travel discipline') && !v116TitleMatches('travel discipline strength 1 00 x', 'travel discipline') && v116TitleMatches('match shape v9 6', 'match shape')
+      && v116RowTitles('teamBrainTravelDiscipline').indexOf('travel discipline strength') >= 0 && v116RowTitles('teamBrainTravelDiscipline').indexOf('travel discipline strength') < v116RowTitles('teamBrainTravelDiscipline').indexOf('travel discipline') && v116FindRow({ t: '', k: [loans] }, 'earlyRepaymentEnabled', access) === loans
+      && v116TitleMatches('rival dossier panel', 'rival intelligence dossier panel', true) && !v116TitleMatches('rival dossier panel', 'rival intelligence dossier panel')
+      && !v116TitleMatches('auto accept cash', 'confirm expensive tasks', true) && !v116TitleMatches('sound', 'sound effects', true)) || 'a row was not found where it should be';
+  });
+  check('v116so_30_exact_row_wired', 'd. The settings navigation tries the exact row before the section, and only while the classic layout is off (read from the component\'s source)', () => {
+    const src = String(AustraliaGame);
+    if (!/v116LocateRowInPage/.test(src)) return 'SKIPPED: the component source is not readable in this build (minified)';
+    const at = src.indexOf('v116LocateRowInPage(');
+    const sectionFallback = src.indexOf('pending.sectionId !== targetKey', at);
+    return (at > 0 && sectionFallback > at && /v116ExactRowRef\.current\s*=\s*!v116ClassicOn\(gameSettings\)/.test(src)) || json({ at, sectionFallback });
+  });
+  check('v116so_31_panel_effects_complete', 'e. The side panel\'s two effects list every dependency they read (the latest props come through a ref): no lint suppression is left in the hook', () => {
+    const hook = String(useV115DockedPanel);
+    return (!/eslint-disable/.test(hook) && /latest\.current/.test(hook) && /\[mode, flagKey\]/.test(hook) && /\[mode, dockOpenAsked\]/.test(hook)) || 'the hook still suppresses a dependency warning';
+  });
+
+  // ---- 8. The map walk, in the new layout and in classic --------------------------------------------------------------------------------------------
+  check('v116so_32_walk_new_layout', 'Walk, new layout: every window id (the 8 unused aside), section, setting (604), shortcut (17), LAB card (48) and card (101) is a Find Anything result, and the classic switch\'s result can open now', () => {
+    const merged = v115IndexFor(v114IndexWithFeatures(base), defaults());
+    const registry = Object.keys(UI_SURFACE_REGISTRY);
+    const sections = [...SETTINGS_HUB_SECTION_INDEX.map(s => s.id), V110_BALANCE_LAB_SECTION.id];
+    const targets = new Set(merged.map(e => e.surfaceId).filter((id): id is string => Boolean(id)));
+    const lost = [
+      ...registry.filter(id => !V110_UNUSED_SURFACE_IDS.includes(id) && !targets.has(id) && !(id === 'find_anything' && merged.some(e => e.shortcutId === 'ctrl-k'))),
+      ...sections.filter(id => !merged.some(e => e.kind === 'section' && e.sectionId === id)),
+      ...keys.filter(k => !merged.some(e => e.id === `setting:${k}`)),
+      ...V110_MAP_SHORTCUT_IDS.filter(id => !merged.some(e => e.kind === 'shortcut' && e.shortcutId === id)),
+      ...V110_MAP_LAB_CARD_IDS.filter(id => !merged.some(e => e.kind === 'lab' && e.labCardId === id)),
+    ];
+    const classic = v110FindResults(base, 'classic layout', ctxFor(defaults(), 'menu'), 3)[0];
+    return (lost.length === 0 && registry.length === V116_MAP_COUNTS.windowIds && sections.length === V116_MAP_COUNTS.sections && keys.length === V116_MAP_COUNTS.settings
+      && V110_MAP_SHORTCUT_IDS.length === 17 && V110_MAP_LAB_CARD_IDS.length === 48 && merged.filter(e => e.kind === 'feature').length === 101 && classic?.availability.available === true) || json({ lost: lost.slice(0, 8), registry: registry.length, sections: sections.length });
+  });
+  check('v116so_33_walk_classic', 'Walk, classic: every V10.1 id keeps its V10.1 row in the surface manager\'s table, every one of the 604 settings keeps a classic home (a hub section, its window, the LAB) or is named as having no control, the 17 shortcut groups and 48 LAB cards are all there, and only the three new-layout ids go unused', () => {
+    const c = withClassic();
+    const table = v101Table();
+    const used = v110SurfaceFlagTable(table, v110FindAnythingOn(c));
+    const lostIds = [...V110_MAP_SURFACE_IDS, ...V110_MAP_WINDOW_IDS.map(id => V110_MAP_WINDOW_ID_ALIASES[id] || id)].filter(id => !UI_SURFACE_REGISTRY[id]);
+    const noHome = keys.filter(k => {
+      const route = v110SettingRoute(k);
+      const verdict = V110_SETTING_VERDICTS[k];
+      return route.kind === 'none' && verdict !== 'no-control' && verdict !== 'reset-only' && verdict !== 'internal' && k !== 'aiDifficulty' && k !== 'deterministicRngActive';
+    });
+    const sectionsInTabs = SETTINGS_HUB_SECTION_INDEX.filter(s => !SETTINGS_HUB_TAB_ORDER.includes(s.tab)).map(s => s.id);
+    const labIds = V110_LAB_CARDS.map(card => card.id);
+    const newOnly = V116_NEW_LAYOUT_IDS.filter(id => UI_SURFACE_REGISTRY[id]);
+    return (used === table && lostIds.length === 0 && noHome.length === 0 && sectionsInTabs.length === 0 && SETTINGS_HUB_TAB_ORDER.length === 11 && Object.keys(v113HelpShortcuts(c)).length === Object.keys(KEYBOARD_SHORTCUTS).length
+      && json(labIds.slice().sort()) === json(V110_MAP_LAB_CARD_IDS.slice().sort()) && newOnly.length === 3 && !v110FindAnythingOn(c) && !v114PageOn(c) && !v115DockOn(c)) || json({ lostIds, noHome: noHome.slice(0, 8), sectionsInTabs });
+  });
+
+  // ---- 9. What's New, the suite, determinism, saves ------------------------------------------------------------------------------------------------
+  check('v116so_34_whats_new', "What's New leads with V11.0's entry for the whole round: Find Anything, Essentials, What's in the game, the side panel and the classic switch, and that nothing about a match changed", () => {
+    const text = V116_CHANGELOG.join(' ');
+    return (V116_CHANGELOG[0] === `${GAME_VERSION_LABEL} - Everything easier to find` && GAME_VERSION_LABEL === 'V11.0' && new Set(V116_CHANGELOG).size === V116_CHANGELOG.length
+      && ['Find Anything', 'Essentials', "What's in the game", 'Side panel', V116_CLASSIC_LABEL, 'move for move'].every(word => text.includes(word))) || V116_CHANGELOG[0];
+  });
+  check('v116so_35_suite_registered', 'v116so is registered once, quick tier, right after v115dp, and the suite manifest is whole', () => {
+    const ids = V95_EXISTING_SUITES.map(s => s.id);
+    const spec = V95_EXISTING_SUITES.filter(s => s.id === 'v116so');
+    return (spec.length === 1 && spec[0].tier === 'quick' && spec[0].label.startsWith('V11.0 ') && ids.indexOf('v116so') === ids.indexOf('v115dp') + 1 && json(V116_SUITE_IDS) === json(['v116so'])
+      && V101_SUITE_MANIFEST.some(([fn, id]) => fn === 'runV116SwitchOverSelfTests' && id === 'v116so')) || json({ at: ids.indexOf('v116so') });
+  });
+  check('v116so_36_effects_follow_the_classic_switch', 'The surface sync and the Ctrl/⌘+K listener re-run when the classic switch changes (it is in their dependency lists)', () => {
+    const src = String(AustraliaGame);
+    if (!/classicLayoutV101/.test(src)) return 'SKIPPED: the component source is not readable in this build (minified)';
+    const deps = src.match(/\[[^\]]*gameSettings\.classicLayoutV101[^\]]*\]/g) || [];
+    return (deps.length >= 2 && deps.some(d => /findAnythingEnabled/.test(d) && /whatsInTheGameEnabled/.test(d)) && deps.some(d => /askGameAiUiEnabled/.test(d))) || json(deps.slice(0, 3));
+  });
+  check('v116so_37_no_clock_no_random', 'The switch-over reads no clock and draws no random number: its functions name none, and running them leaves every random stream where it was', () => {
+    const text = [v116BootSwitchOver, v116ReadSwitchOver, v116WriteSwitchOver, v116IsReturningProfile, v116MarkNoticeSeen, v116WithNewLayout, v116LayoutReadings, v116SynonymTargets, v116TwinTitle, v116FindRow, v116LocateRowInPage, v116BesidePanelCss, v116NegotiationRepeat, v116ClassicRow, v116SwitchOverNotice].map(String).join('\n');
+    const banned = ['Math.random', 'Date.now', 'performance.now', 'new Date(', 'drawGameplayRandom', 'createSeededRng'].filter(word => text.includes(word));
+    const before = json(captureRngState());
+    v116BootSwitchOver(defaults(), createV99MemoryStorage({ [FIRST_RUN_STORAGE_KEY]: firstRun('completed') }), true);
+    v110FindResults(base, 'classic', ctxFor(withClassic()), 10); v116LayoutReadings(withClassic());
+    return (banned.length === 0 && json(captureRngState()) === before) || json({ banned });
+  });
+  check('v116so_38_rules_stamp', 'The rules stamp stays 1010 with the new layout, all four off and the classic layout; GAME_VERSION is 11.0.0', () => {
+    const stamps = [defaults(), allOff(), withClassic()].map(s => v101RulesVersionForNewMatch(s));
+    return (json(stamps) === json([1010, 1010, 1010]) && V101_RULES_VERSION === 1010 && GAME_VERSION === '11.0.0') || json(stamps);
+  });
+  check('v116so_39_real_saves_move_for_move', "Real V9.7, V9.8, V10.0 and V10.1 saves play the same three days as the V10.1 build itself, as saved, with all four switches on, all off, and with the classic layout on", () => {
+    const saves = v116RealSaves();
+    const wrong: string[] = [];
+    const variants: ReadonlyArray<[string, Partial<GameSettingsState>]> = [['asSaved', {}], ['allOn', { findAnythingEnabled: true, settingsLayersEnabled: true, whatsInTheGameEnabled: true, dockedPanelEnabled: true }],
+      ['allOff', { findAnythingEnabled: false, settingsLayersEnabled: false, whatsInTheGameEnabled: false, dockedPanelEnabled: false }], ['classic', { classicLayoutV101: true }]];
+    Object.keys(saves).forEach(name => {
+      const want = V116_V101_PLAY_REFERENCE[name];
+      variants.forEach(([label, patch]) => {
+        const save: SaveGameData = JSON.parse(saves[name]);
+        save.gameSettings = { ...save.gameSettings, ...patch };
+        const got = json(v101fxPlayDays(save, 3));
+        if (!want || got !== want) wrong.push(`${name}/${label}: ${got.slice(0, 160)}`);
+      });
+    });
+    return (Object.keys(saves).length === 5 && wrong.length === 0) || wrong.slice(0, 4).join(' · ');
+  });
+  check('v116so_40_real_v101_save_is_v101', 'The V10.1 save is a V10.1 match: version 10.1.0, rules stamp 1010, loads cleanly, and it plays V10.1 rules', () => {
+    const save: SaveGameData = JSON.parse(V116_REAL_V101_SAVE);
+    const loaded = validateSaveDataCore(JSON.parse(V116_REAL_V101_SAVE));
+    const played = v101fxPlayDays(JSON.parse(V116_REAL_V101_SAVE), 1);
+    return (save.metadata.gameVersion === '10.1.0' && readRulesVersion(loaded.gameState) === 1010 && played.error === null && played.v101Rules === true && played.stamp === 1010) || json({ version: save.metadata.gameVersion, played });
   });
   return results;
 }
@@ -224850,7 +225789,11 @@ function AustraliaGame() {
   // V9.9 (SECTION 20AT): the session starts from the defaults with the player's stored preferences laid over them
   // (profile-scoped keys only — never a match rule); with nothing stored this is createDefaultGameSettings() itself.
   const [v99ProfileBoot] = useState<ProfileSettingsBoot>(() => bootProfileSettings(createDefaultGameSettings(), v99BrowserStorage(), readCampaignSlot(campaignStorage())));
-  const [gameSettings, setGameSettings] = useState<GameSettingsState>(() => v99ProfileBoot.settings);
+  // V11.0 (SECTION 20BU): the switch-over: a returning player is moved to the new layout once (the main menu says so once); a new player starts in it.
+  const [v116Boot] = useState<V116SwitchOverBoot>(() => v116BootSwitchOver(v99ProfileBoot.settings, v99BrowserStorage(), v116IsReturningProfile(v99BrowserStorage())));
+  const [gameSettings, setGameSettings] = useState<GameSettingsState>(() => v116Boot.settings); // V11.0 (SECTION 20BU): was v99ProfileBoot.settings (the same object unless the switch-over moved a returning player)
+  const [v116NoticeOpen, setV116NoticeOpen] = useState<boolean>(() => v116Boot.noticeDue); // V11.0 (SECTION 20BU): the one-time notice, drawn on the main menu
+  useEffect(() => { if (v116NoticeOpen && gameState.gameMode === 'menu') v116MarkNoticeSeen(v99BrowserStorage()); }, [v116NoticeOpen, gameState.gameMode]); // V11.0 (SECTION 20BU): drawn on the menu = shown: it never shows again
   // V10.1 (SECTION 20BD): when the player is back on the menu or start screen, the Victory Goal / Game Length choices made while the
   // match was locked take effect, so the menu shows what the next match will use. They do NOT apply on the end screen (it still reads
   // the live goal and length to present the finished match), and the next match start applies them too. Same object back when none wait.
@@ -234397,7 +235340,7 @@ function dispatchGameSettingsChange(
     // V10.1 (SECTION 20BJ): the story-decision popup lives in the match state, not in uiState: tell the surface manager it is open (V10.1 matches), so shortcuts stand down and Escape / the rescue can close it.
     const v101NarrativeOpen = isV101Match(gameState) && gameState.narrativePopup?.isOpen === true && Boolean(gameState.narrativePopup?.currentDecision);
     globalUISurfaceManager.syncWithUIState(v115SyncState(v114SyncState(v110SyncState(v101NarrativeOpen ? { ...uiState, showNarrativeDecision: true } : uiState, gameSettings), gameSettings), v115Mode)); /* V11.0 (SECTION 20BR): + the side panel's row while it is docked */ /* V11.0 (SECTION 20BP): + What's in the game's tracking while it is on */ // V11.0 (SECTION 20BL): asks for the V11.0 table only while Find Anything is on
-  }, [uiState, gameState.rulesVersion, gameState.narrativePopup?.isOpen, gameState.narrativePopup?.currentDecision, gameSettings.findAnythingEnabled, gameSettings.whatsInTheGameEnabled, v115Mode]); // V11.0 (SECTION 20BP): + its switch. V11.0 (SECTION 20BR): + the side panel's mode
+  }, [uiState, gameState.rulesVersion, gameState.narrativePopup?.isOpen, gameState.narrativePopup?.currentDecision, gameSettings.findAnythingEnabled, gameSettings.whatsInTheGameEnabled, gameSettings.classicLayoutV101, v115Mode]); // V11.0 (SECTION 20BP): + its switch. V11.0 (SECTION 20BR): + the side panel's mode. V11.0 (SECTION 20BU): + the classic switch
 
   useEffect(() => {
     if (uiState.pendingMode && ['ai', 'grand_tour', 'team_human_ai_vs_ai_ai', 'team_ai_vs_ai'].includes(uiState.pendingMode)) {
@@ -234443,7 +235386,7 @@ function dispatchGameSettingsChange(
     return () => window.removeEventListener('keydown', handleKeyDown);
     // useAskGameAIState returns a new object literal every render; depending on
     // it re-bound this listener on every single render.
-  }, [askAI.toggleDrawer, gameSettings.askGameAiUiEnabled, gameSettings.findAnythingEnabled]); // V11.0 (SECTION 20BM): re-checked when Find Anything is switched
+  }, [askAI.toggleDrawer, gameSettings.askGameAiUiEnabled, gameSettings.findAnythingEnabled, gameSettings.classicLayoutV101]); // V11.0 (SECTION 20BM): re-checked when Find Anything is switched. V11.0 (SECTION 20BU): and the classic switch
 
 
   const handleSettingsSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -234587,6 +235530,8 @@ function dispatchGameSettingsChange(
     });
   }, []);
 
+  const v116ExactRowRef = useRef(true); // V11.0 (SECTION 20BV, d): with the classic layout off, a setting opens at its own row
+  v116ExactRowRef.current = !v116ClassicOn(gameSettings);
   // Deferred Settings Navigation & RAF Multi-Frame Retry Loop (Max 5 frames)
   useEffect(() => {
     const pending = uiState.pendingSettingsNavigation;
@@ -234610,6 +235555,7 @@ function dispatchGameSettingsChange(
              document.getElementById(targetKey) ||
              document.getElementById(`settings-section-${targetKey}`);
       }
+      if (!el && pending.fieldKey && v116ExactRowRef.current) el = v116LocateRowInPage(pending.fieldKey, pending.sectionId); // V11.0 (SECTION 20BV, d): the row itself, not the section's top (the classic layout keeps V10.1's landing)
 
       if (!el && pending.sectionId && pending.sectionId !== targetKey) {
         el = (document.querySelector(`[data-setting-key="${pending.sectionId}"]`) as HTMLElement) ||
@@ -262826,9 +263772,9 @@ function dispatchGameSettingsChange(
                 {/* V10.1 (SECTION 20BA): the current release leads the list (its label derives from VERSION_CONSTANTS); V10.0 and V9.9 follow. */}
                 {/* V11.0 (SECTION 20BL): V11.0 now leads the list; V10.1's entry keeps its own version written out. */}
                 <div className="mb-3 pb-3 border-b border-current border-opacity-10" data-testid="v110-whats-new">
-                  <div className="text-sm font-semibold mb-1">{V110_CHANGELOG[0]} <span className="text-xs font-normal opacity-60">· v{VERSION_CONSTANTS.GAME_VERSION}</span></div>
+                  <div className="text-sm font-semibold mb-1">{V116_CHANGELOG[0] /* V11.0 (SECTION 20BU): V11.0's entry for the whole round (was UX-2's V110_CHANGELOG) */} <span className="text-xs font-normal opacity-60">· v{VERSION_CONSTANTS.GAME_VERSION}</span></div>
                   <div className="text-xs opacity-80">
-                    {V110_CHANGELOG.slice(1).map(item => (
+                    {V116_CHANGELOG.slice(1).map(item => ( /* V11.0 (SECTION 20BU) */
                       <div key={item}>- {item}</div>
                     ))}
                   </div>
@@ -263064,7 +264010,7 @@ function dispatchGameSettingsChange(
                 <div className="space-y-4">
                   <div id="settings-field-conflictControlEnabled" data-setting-key="conflictControlEnabled" className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="font-semibold">Floating UI Conflict Control</div>
+                      <div className="font-semibold">{v116TwinTitle('conflictControlEnabled', gameSettings) /* V11.0 (SECTION 20BU): the label table (classic layout: V10.1's title) */}</div>
                       <div className="text-sm opacity-75">
                         Prevent floating widgets from overlapping with each other or active modal windows.
                       </div>
@@ -263073,7 +264019,7 @@ function dispatchGameSettingsChange(
                       onClick={() => {
                         const current = gameSettings.conflictControlSettings || createDefaultConflictControlSettings();
                         const updated = { ...current, enabled: !current.enabled };
-                        updateGameSetting('conflictControlSettings', updated, { settingLabel: 'Floating UI Conflict Control', section: 'Interface → Floating UI', source: 'direct_player_change' });
+                        updateGameSetting('conflictControlSettings', updated, { settingLabel: v116TwinTitle('conflictControlSettings', gameSettings), section: 'Interface → Floating UI', source: 'direct_player_change' }); // V11.0 (SECTION 20BU): "Floating UI Conflict Control Options" (classic layout: V10.1's title)
                         updateGameSetting('conflictControlEnabled', updated.enabled, { settingLabel: 'Conflict Control Enabled', section: 'Interface → Floating UI', source: 'direct_player_change' });
                         globalUISurfaceManager.setConflictControlSettings(updated);
                       }}
@@ -263305,12 +264251,23 @@ function dispatchGameSettingsChange(
                 </div>
               </SettingsSection>
 
+              {/* V11.0 (SECTION 20BU): the classic switch, filed with the four V11.0 switches (the classic view draws it here; the layered view draws it in ⭐ Essentials). */}
+              <SettingsSection
+                id={V116_SECTION_ID}
+                tab="interfaceAcc"
+                title={V116_SECTION_TITLE}
+                chips={['Off by default']}
+                fieldKeys={v116SectionFieldKeys()}
+              >
+                {v116ClassicRow({ settings: gameSettings, where: 'hub', onToggle: () => v116ToggleClassic(!v116ClassicOn(gameSettings)), onClassName: v116OnClass(themeStyles.success), offClassName: themeStyles.buttonSecondary })}
+              </SettingsSection>
+
               {/* V11.0 (SECTION 20BM, Q7): Find Anything's switch, filed under its goal (no version in the title). */}
               <SettingsSection
                 id={V110_FIND_SECTION_ID}
                 tab="interfaceAcc"
                 title={V110_FIND_SECTION_TITLE}
-                chips={['Off by default']}
+                chips={['On by default'] /* V11.0 (SECTION 20BU): on by default (UX-6) */}
                 fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === V110_FIND_SECTION_ID)!.fieldKeys}
               >
                 <V110FindSettingsBody
@@ -263326,7 +264283,7 @@ function dispatchGameSettingsChange(
                 id={V113_SECTION_ID}
                 tab="interfaceAcc"
                 title={V113_SECTION_TITLE}
-                chips={['Off by default']}
+                chips={['On by default'] /* V11.0 (SECTION 20BU): on by default (UX-6) */}
                 fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === V113_SECTION_ID)!.fieldKeys}
               >
                 <V113LayoutSettingsBody
@@ -263342,13 +264299,14 @@ function dispatchGameSettingsChange(
                 id={V114_SECTION_ID}
                 tab="interfaceAcc"
                 title={V114_SECTION_TITLE}
-                chips={['Off by default']}
+                chips={['On by default'] /* V11.0 (SECTION 20BU): on by default (UX-6) */}
                 fieldKeys={v114SectionFieldKeys()}
               >
                 <V114SettingsBody
                   on={gameSettings.whatsInTheGameEnabled === true}
                   onToggle={() => updateGameSetting('whatsInTheGameEnabled', gameSettings.whatsInTheGameEnabled !== true, { settingLabel: V114_LABEL, section: "Interface → What's in the game", source: 'direct_player_change' })}
                   onOpen={() => v114Whats.open()}
+                  canOpen={v114Whats.on} /* V11.0 (SECTION 20BU): held off by the classic layout = no Open */
                   onClassName={`${themeStyles.success} text-white`}
                   offClassName={themeStyles.buttonSecondary}
                 />
@@ -263359,7 +264317,7 @@ function dispatchGameSettingsChange(
                 id={V115_SECTION_ID}
                 tab="interfaceAcc"
                 title={V115_SECTION_TITLE}
-                chips={['Off by default']}
+                chips={['On by default'] /* V11.0 (SECTION 20BU): on by default (UX-6) */}
                 fieldKeys={v115SectionFieldKeys()}
               >
                 <V115SettingsBody
@@ -264231,9 +265189,9 @@ function dispatchGameSettingsChange(
                     )}
                     {gameSettings.negotiationMode && uiState.settingsViewMode === 'advanced' && (
                       <div className="space-y-3 pt-1">
-                        <div>
+                        {!v116NegotiationRepeat('autoAcceptCashUnder', gameSettings) && (<div>{/* V11.0 (SECTION 20BV, a): Negotiations draws this itself in the layered view */}
                           <SettingsSlider label={(v) => <>Auto-accept cash proposals under ${v}</>} labelClassName="block font-semibold mb-1" id="setting-slider-5-auto-accept-cash-proposals-under-autoacc" min="0" max="1500" step="50" value={gameSettings.negotiationOptions.autoAcceptCashUnder} onChange={(val) => trackedSetGameSettings("direct_player_change", "Negotiations", prev => ({                              ...prev,                              negotiationOptions: {                                ...prev.negotiationOptions,                                autoAcceptCashUnder: Math.max(0, Math.floor(val || 0))                              }                            }))} className="w-full" />
-                        </div>
+                        </div>)}{/* V11.0 (SECTION 20BV, a) */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <label className="flex items-center gap-2 text-sm">
                             <input
@@ -264249,7 +265207,7 @@ function dispatchGameSettingsChange(
                             />
                             <span>Auto-complete ready tasks</span>
                           </label>
-                          <label className="flex items-center gap-2 text-sm">
+                          {!v116NegotiationRepeat('confirmExpensiveTasks', gameSettings) && (<label className="flex items-center gap-2 text-sm">{/* V11.0 (SECTION 20BV, a): Negotiations draws this itself in the layered view */}
                             <input
                               type="checkbox"
                               checked={gameSettings.negotiationOptions.confirmExpensiveTasks}
@@ -264262,8 +265220,8 @@ function dispatchGameSettingsChange(
                               }))}
                             />
                             <span>Confirm expensive tasks (&gt;$500)</span>
-                          </label>
-                          <label className="flex items-center gap-2 text-sm">
+                          </label>)}
+                          {!v116NegotiationRepeat('suggestCounterOffers', gameSettings) && (<label className="flex items-center gap-2 text-sm">{/* V11.0 (SECTION 20BV, a): Negotiations draws this itself in the layered view */}
                             <input
                               type="checkbox"
                               checked={gameSettings.negotiationOptions.suggestCounterOffers}
@@ -264276,7 +265234,7 @@ function dispatchGameSettingsChange(
                               }))}
                             />
                             <span>Enable AI counter-offer suggestions</span>
-                          </label>
+                          </label>)}{/* V11.0 (SECTION 20BV, a) */}
                           <label className="flex items-center gap-2 text-sm">
                             <input
                               type="checkbox"
@@ -266008,7 +266966,7 @@ function dispatchGameSettingsChange(
                           { key: 'teamBrainOpponentPressureEnabled', label: 'Opponent Pressure Logic' },
                           { key: 'teamBrainComebackLogicEnabled', label: 'Comeback Logic' },
                           { key: 'teamBrainRecoveryLogicEnabled', label: 'Recovery Logic' },
-                          { key: 'teamBrainTravelDisciplineEnabled', label: 'Travel Discipline' },
+                          { key: 'teamBrainTravelDisciplineEnabled', label: v116TwinTitle('teamBrainTravelDisciplineEnabled', gameSettings) }, // V11.0 (SECTION 20BU): the label table (classic layout: V10.1's title)
                           { key: 'teamBrainResourceLogicEnabled', label: 'Resource Logic' },
                           { key: 'teamBrainExplanationEnabled', label: 'Team Brain Explanations' }
                         ] as Array<{ key: keyof GameSettingsState; label: string }>).map(toggle => (
@@ -266028,7 +266986,7 @@ function dispatchGameSettingsChange(
                         {([
                           { key: 'teamBrainTeammateSupportBias', label: 'Support Bias' },
                           { key: 'teamBrainOpponentPressureBias', label: 'Opponent Pressure Bias' },
-                          { key: 'teamBrainTravelDiscipline', label: 'Travel Discipline' },
+                          { key: 'teamBrainTravelDiscipline', label: v116TwinTitle('teamBrainTravelDiscipline', gameSettings) }, // V11.0 (SECTION 20BU): "Travel Discipline Strength" (classic layout: V10.1's "Travel Discipline")
                           { key: 'teamBrainRiskScaling', label: 'Risk Scaling' }
                         ] as Array<{
                           key: 'teamBrainTeammateSupportBias' | 'teamBrainOpponentPressureBias' | 'teamBrainTravelDiscipline' | 'teamBrainRiskScaling';
@@ -274784,6 +275742,12 @@ function dispatchGameSettingsChange(
   // Due to length constraints, I'll include the key changes and mention that other render functions remain the same
 
   // Menu Screen with AI Mode Option
+  // V11.0 (SECTION 20BU): the classic switch as the main menu, the notice and the classic Settings row turn it (⭐ Essentials writes through its own row).
+  const v116ToggleClassic = (next: boolean) => {
+    updateGameSetting('classicLayoutV101', next, { settingLabel: V116_CLASSIC_LABEL, section: 'Interface → Classic layout', source: 'direct_player_change' });
+    updateUiState(v116ClassicTogglePatch());
+    addNotification(v116ClassicToggleMessage(next), 'info');
+  };
   const renderMenu = () => {
     const isDark = resolveIsDarkSurface(uiState.theme, systemPrefersDark); // V9.9 (SECTION 20AU): Retro is a dark surface
 
@@ -274826,6 +275790,7 @@ function dispatchGameSettingsChange(
               Explore Australia, take on challenges, and become the ultimate adventurer!
             </p>
           </div>
+          {v116NoticeOpen ? v116SwitchOverNotice({ isDark, onKeep: () => setV116NoticeOpen(false), onClassic: () => { setV116NoticeOpen(false); v116ToggleClassic(true); } }) : null}{/* V11.0 (SECTION 20BU): the one-time notice for a player the switch-over moved */}
 
           {/* Character Selection */}
           <div className="mb-6">
@@ -275044,6 +276009,7 @@ function dispatchGameSettingsChange(
             {v114Whats.on && (
               <V114MenuButton onOpen={() => v114Whats.open()} className={`w-full py-3 rounded-xl font-semibold transition-all duration-300 ${isDark ? 'bg-gray-700/80 hover:bg-gray-600 text-gray-200 border border-gray-600' : 'bg-white/80 hover:bg-white text-gray-700 border border-gray-200 shadow-sm'}`} />
             )}
+            {v116MenuClassicToggle({ on: v116ClassicOn(gameSettings), isDark, onToggle: () => v116ToggleClassic(!v116ClassicOn(gameSettings)) })}{/* V11.0 (SECTION 20BU): the classic switch on the main menu (drawn in both layouts) */}
           </div>
 
           {/* Inline Difficulty Selection Panel */}

@@ -7,7 +7,8 @@ export default async (G) => {
   const md = fs.readFileSync(MAP, 'utf8');
   const section = (start, end) => { const a = md.indexOf(start); const b = end ? md.indexOf(end, a + 1) : md.length; return md.slice(a, b); };
   const firstCol = (text, col = 0) => text.split('\n').filter(l => l.startsWith('| ') && !l.startsWith('|---')).map(l => l.split(/(?<!\\)\|/)[col + 1]?.trim() || '').map(c => (c.match(/^`([^`]+)`$/) || [])[1]).filter(Boolean);
-  const out = []; const fail = []; const ok = (name, cond, detail) => { out.push(`${cond ? 'PASS' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`); if (!cond) fail.push(name); };
+  const out = []; const fail = []; const skipped = []; // UX-6: declared before the first check that can be skipped (it was declared after the §4 side panel check, which pushes to it on a file before UX-5)
+  const ok = (name, cond, detail) => { out.push(`${cond ? 'PASS' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`); if (!cond) fail.push(name); };
   // §4 surfaces
   const s4 = firstCol(section('## 4. Surfaces', '## 5.'), 1);
   const reg = Object.keys(G.UI_SURFACE_REGISTRY);
@@ -58,7 +59,6 @@ export default async (G) => {
   ok('§7 marks exactly the 20 inactive settings', inertRows.length === inert.size && inertRows.every(k => inert.has(k)), `${inertRows.length} marked`);
   // UX-4: §7's "card:" notes against What's in the game's cards: every card switch, and nothing else, names its card as the page does
   // (a note reads "card: <page name>", followed by " (UX-1: <working name>)" where the two differ).
-  const skipped = [];
   if (G.V114_CARDS) {
     const want = new Map(); G.V114_CARDS.forEach(c => G.v114CardKeys(c).forEach(k => want.set(k, G.v114CardName(c))));
     const got = new Map();
@@ -72,6 +72,18 @@ export default async (G) => {
     const extra = [...got.keys()].filter(k => !want.has(k)).map(k => `${k}: not a card switch`);
     ok(`§7 marks exactly the ${want.size} switches of the ${G.V114_CARDS.length} cards, each with its card's name`, wrong.length === 0 && extra.length === 0, [...wrong, ...extra].slice(0, 5).join(' / '));
   } else skipped.push("§7 card notes: this module has no What's in the game cards (a file before UX-4)");
+  // UX-6: the classic switch's §7 row and §6 section, and the four layout switches on by default (a file before UX-6: skipped).
+  if (G.V116_SETTING_KEYS) {
+    const colsOf = l => l.split(/(?<!\\)\|/).map(x => x.trim());
+    const key = G.V116_SETTING_KEYS[0];
+    const r = rows7.find(l => l.startsWith('| `' + key + '` |')); const c = r ? colsOf(r) : [];
+    ok(`§7 lists the classic switch (${key}): profile, off by default, homed in ⭐ Essentials, new in UX-6`, Boolean(r) && c[4] === 'profile' && c[3] === 'false' && c[9].startsWith('⭐ Essentials') && /UX-6 \(new\)/.test(c[10]) && G.v113HomeOf(key) === 'v113.essentials', r ? r.slice(0, 80) : 'missing');
+    const s6rows = section('## 6. Settings sections', '**Proposed groups').split('\n').filter(l => /^\| \d+ \| `/.test(l));
+    const r6 = s6rows.find(l => l.includes('| `' + G.V116_SECTION_ID + '` |'));
+    ok(`§6 lists the classic switch's section (${G.V116_SECTION_ID}), new in UX-6`, Boolean(r6) && /UX-6 \(new\)/.test(r6), r6 ? r6.slice(0, 80) : 'missing');
+    const four = G.V116_LAYOUT_KEYS.filter(k => { const row = rows7.find(l => l.startsWith('| `' + k + '` |')); const cc = row ? colsOf(row) : []; return !(G.DEFAULT_GAME_SETTINGS[k] === true && cc[3] === 'true' && /UX-6 \(on by default\)/.test(cc[10] || '')); });
+    ok('§7 shows the four layout switches on by default since UX-6', four.length === 0, four.join(','));
+  } else skipped.push('§6/§7 classic switch: this module has no classic switch (a file before UX-6)');
   // §8 nested
   const s8 = section('## 8. Nested settings', '## 9.');
   const objs = keys.filter(k => G.DEFAULT_GAME_SETTINGS[k] && typeof G.DEFAULT_GAME_SETTINGS[k] === 'object' && !Array.isArray(G.DEFAULT_GAME_SETTINGS[k]));
